@@ -567,6 +567,22 @@ export class Demo extends Layout {
 - `CubeCamera.update(renderer, scene)` renders the six faces; hide the
   reflecting object yourself (three.js examples do the same).
 
+## Addon geometries and text
+
+- RoundedBoxGeometry, ParametricGeometry (+ ParametricFunctions klein,
+  mobius, mobius3d), ConvexGeometry (on `addons/math/ConvexHull`, an
+  incremental hull rather than three.js's quickhull, same results),
+  DecalGeometry and TextGeometry are addons. **ParametricGeometry takes a
+  top-level function** (no closures: `ParametricFunctions.plane(w, h)`,
+  which returns one in three.js, is not ported). TeapotGeometry is not
+  ported.
+- `FontLoader(context).load(name)` reads a typeface JSON BlobAsset;
+  `parse(json)` takes its text. **Rive-only `RiveFont(context.font(name))`**
+  makes a Font of any font in the Rive file, shaped by Rive's text engine
+  (kerning, ligatures, any script): `new TextGeometry("Hi", { font, size,
+  depth })` works with either. TextGeometryParameters has three.js's
+  defaults (depth 50, bevel off, bevelThickness 10, bevelSize 8).
+
 ## Helpers
 
 - AxesHelper, GridHelper, PolarGridHelper, BoxHelper, Box3Helper,

@@ -1,9 +1,18 @@
 // Editor: three.js's scene tools. Helpers for the grid, axes, lights, a
-// second camera, a box, a plane, an arrow and vertex normals.
+// second camera, a box, a plane, an arrow and vertex normals; addon
+// geometries (a rounded box, a Klein bottle, a convex hull with a decal)
+// and text extruded from the Rive file's Orbitron font.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
 import { VertexNormalsHelper } from "../three/addons/helpers/VertexNormalsHelper";
+import { RoundedBoxGeometry } from "../three/addons/geometries/RoundedBoxGeometry";
+import { ParametricGeometry } from "../three/addons/geometries/ParametricGeometry";
+import { klein } from "../three/addons/geometries/ParametricFunctions";
+import { ConvexGeometry } from "../three/addons/geometries/ConvexGeometry";
+import { DecalGeometry } from "../three/addons/geometries/DecalGeometry";
+import { RiveFont } from "../three/addons/loaders/FontLoader";
+import { TextGeometry, TextGeometryParameters } from "../three/addons/geometries/TextGeometry";
 import { Context } from "rive/host";
 
 export class Editor extends THREE.ThreeLayout {
@@ -63,6 +72,50 @@ export class Editor extends THREE.ThreeLayout {
         other.updateMatrixWorld();
         scene.add(other);
         scene.add(new THREE.CameraHelper(other));
+
+        // Addon geometries.
+        const rounded = new THREE.Mesh(new RoundedBoxGeometry(0.9, 0.9, 0.9, 4, 0.18),
+            new THREE.MeshStandardMaterial({ color: 0xef8354, roughness: 0.5 }));
+        rounded.position.set(-1.8, 0.45, 1.4);
+        scene.add(rounded);
+        const bottle = new THREE.Mesh(new ParametricGeometry(klein, 48, 24),
+            new THREE.MeshStandardMaterial({ color: 0x9d8df1, roughness: 0.4, side: THREE.DoubleSide }));
+        bottle.scale.setScalar(0.08);
+        bottle.position.set(1.6, 0.8, 1.8);
+        scene.add(bottle);
+        const pts: Array<THREE.Vector3> = [];
+        for (let i = 0; i < 40; i++) {
+            const a = <f64>i * 2.399, r = 0.5 + 0.25 * Math.sin(<f64>i * 1.7);
+            pts.push(new THREE.Vector3(Math.cos(a) * r, (<f64>(i % 7) / 6 - 0.5) * 1.1, Math.sin(a) * r));
+        }
+        const hull = new THREE.Mesh(new ConvexGeometry(pts),
+            new THREE.MeshStandardMaterial({ color: 0x5ab1bb, roughness: 0.6, flatShading: true }));
+        hull.position.set(-0.4, 0.6, -2.4);
+        scene.add(hull);
+        hull.updateMatrixWorld();
+        const decal = new THREE.Mesh(new DecalGeometry(hull, new THREE.Vector3(-0.4, 0.6, -1.9), new THREE.Euler(),
+            new THREE.Vector3(0.6, 0.6, 1)), new THREE.MeshBasicMaterial({
+                color: 0xffe066, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+        scene.add(decal);
+        // Text shaped by Rive from the file's Orbitron font.
+        const orbitron = context.font("Orbitron");
+        if (orbitron != null) {
+            const p = new TextGeometryParameters();
+            p.font = new RiveFont(orbitron);
+            p.size = 0.6;
+            p.depth = 0.12;
+            p.curveSegments = 6;
+            p.bevelEnabled = true;
+            p.bevelThickness = 0.02;
+            p.bevelSize = 0.015;
+            p.bevelSegments = 2;
+            const text = new THREE.Mesh(new TextGeometry("THREEAS", p),
+                new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.3, metalness: 0.2 }));
+            text.geometry.computeBoundingBox();
+            const bb = text.geometry.boundingBox!;
+            text.position.set(-(bb.max.x + bb.min.x) / 2, 2.4, -2.5);
+            scene.add(text);
+        }
 
         this.camera.position.set(5, 4, 7);
         const controls = new OrbitControls(this.camera, this.renderer);

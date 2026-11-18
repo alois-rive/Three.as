@@ -25,3 +25,10 @@ export * from "./helpers/VertexNormalsHelper";
 // Utilities are namespaces, imported by path as in three.js:
 //     import * as BufferGeometryUtils from "../three/addons/utils/BufferGeometryUtils";
 //     (also SceneUtils, SkeletonUtils)
+export * from "./geometries/RoundedBoxGeometry";
+export * from "./geometries/ParametricGeometry";
+export * from "./geometries/ConvexGeometry";
+export * from "./geometries/DecalGeometry";
+export * from "./geometries/TextGeometry";
+export * from "./math/ConvexHull";
+export * from "./loaders/FontLoader";

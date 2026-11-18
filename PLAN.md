@@ -260,7 +260,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   on controls, `added`/`removed`, `dispose`), BufferGeometryUtils
   (`mergeGeometries`, `mergeVertices`, `computeMikkTSpaceTangents`),
   SceneUtils, SkeletonUtils (`clone`, `retarget`).
-- **M10c, more geometries.** RoundedBoxGeometry, ParametricGeometry,
+- **M10c, more geometries (done; TeapotGeometry left out).** RoundedBoxGeometry, ParametricGeometry,
   ConvexGeometry (ConvexHull), DecalGeometry, TeapotGeometry, and
   TextGeometry: FontLoader's typeface JSON, plus Rive-only text from a Rive
   `Font`'s glyph outlines (`rive/text`).
