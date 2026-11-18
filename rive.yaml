@@ -9,6 +9,10 @@ exclude:
   - docs
   - "*.md"
   - "**/*.md"
+  # The gallery (rive . --artboard=Gallery): its generator and font licences
+  # are not sources.
+  - "gallery/*.py"
+  - "gallery/fonts/*.txt"
 
 # Test suites run with `rive . --test` and never ship.
 excludeFromRev:

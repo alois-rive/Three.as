@@ -2,7 +2,7 @@
     <!-- FirstScene: a ScriptedLayout running examples/first_scene.as, filling
          the artboard. Its `screen` input is the Screen artboard below, which
          the script draws onto the cube as a live texture. -->
-    <Artboard defaultStateMachineId="0:107" clip="true" width="800" height="600" styleId="0:101" name="FirstScene" id="0:100">
+    <Artboard isComponent="true" defaultStateMachineId="0:107" clip="true" width="800" height="600" styleId="0:101" name="FirstScene" id="0:100">
         <Fill name="Background">
             <SolidColor colorValue="FF0E1116" name="Color"/>
         </Fill>
@@ -84,7 +84,7 @@
 
     <!-- HelloCube: three.js's "Creating a scene" tutorial, verbatim apart
          from types (examples/hello_cube.as). -->
-    <Artboard defaultStateMachineId="0:307" clip="true" y="700" width="800" height="600" styleId="0:301" name="HelloCube" id="0:300">
+    <Artboard isComponent="true" defaultStateMachineId="0:307" clip="true" y="700" width="800" height="600" styleId="0:301" name="HelloCube" id="0:300">
         <LayoutComponentStyle name="Artboard Style" id="0:301"/>
         <LayoutComponent width="800" height="600" styleId="0:303" name="Root" id="0:302">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:303"/>
@@ -98,7 +98,7 @@
     </Artboard>
 
     <!-- Geometries: every built-in geometry (examples/geometries.as). -->
-    <Artboard defaultStateMachineId="0:407" clip="true" y="1400" width="800" height="600" styleId="0:401" name="Geometries" id="0:400">
+    <Artboard isComponent="true" defaultStateMachineId="0:407" clip="true" y="1400" width="800" height="600" styleId="0:401" name="Geometries" id="0:400">
         <LayoutComponentStyle name="Artboard Style" id="0:401"/>
         <LayoutComponent width="800" height="600" styleId="0:403" name="Root" id="0:402">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:403"/>
@@ -113,7 +113,7 @@
 
     <!-- Materials: every mesh material, lights, fog, sky, tone mapping
          (examples/materials.as). -->
-    <Artboard defaultStateMachineId="0:507" clip="true" x="900" y="1400" width="800" height="600" styleId="0:501" name="Materials" id="0:500">
+    <Artboard isComponent="true" defaultStateMachineId="0:507" clip="true" x="900" y="1400" width="800" height="600" styleId="0:501" name="Materials" id="0:500">
         <LayoutComponentStyle name="Artboard Style" id="0:501"/>
         <LayoutComponent width="800" height="600" styleId="0:503" name="Root" id="0:502">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:503"/>
@@ -128,7 +128,7 @@
 
     <!-- Primitives: instancing, points, lines, sprites, LOD
          (examples/primitives.as). -->
-    <Artboard defaultStateMachineId="0:607" clip="true" x="1800" y="1400" width="800" height="600" styleId="0:601" name="Primitives" id="0:600">
+    <Artboard isComponent="true" defaultStateMachineId="0:607" clip="true" x="1800" y="1400" width="800" height="600" styleId="0:601" name="Primitives" id="0:600">
         <LayoutComponentStyle name="Artboard Style" id="0:601"/>
         <LayoutComponent width="800" height="600" styleId="0:603" name="Root" id="0:602">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:603"/>
@@ -144,7 +144,7 @@
     <!-- Shapes: curves, extrusion, tubes, and a Rive path extruded
          (examples/shapes.as). The Emblem artboard's StarPath is read by the
          script and extruded. -->
-    <Artboard defaultStateMachineId="0:707" clip="true" x="2700" y="1400" width="800" height="600" styleId="0:701" name="Shapes" id="0:700">
+    <Artboard isComponent="true" defaultStateMachineId="0:707" clip="true" x="2700" y="1400" width="800" height="600" styleId="0:701" name="Shapes" id="0:700">
         <LayoutComponentStyle name="Artboard Style" id="0:701"/>
         <LayoutComponent width="800" height="600" styleId="0:703" name="Root" id="0:702">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:703"/>
@@ -184,7 +184,7 @@
          toggle on a panel, a RenderTarget "TV", hover highlights and a
          propeller driven by the Screen artboard's animated Spinner node
          (examples/interactive.as). -->
-    <Artboard defaultStateMachineId="0:807" clip="true" y="2100" width="800" height="600" styleId="0:801" name="Interactive" id="0:800">
+    <Artboard isComponent="true" defaultStateMachineId="0:807" clip="true" y="2100" width="800" height="600" styleId="0:801" name="Interactive" id="0:800">
         <LayoutComponentStyle name="Artboard Style" id="0:801"/>
         <LayoutComponent width="800" height="600" styleId="0:803" name="Root" id="0:802">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:803"/>
@@ -268,7 +268,7 @@
     </Artboard>
 
     <!-- Deform: GPU skinning and morph targets (examples/deform.as). -->
-    <Artboard defaultStateMachineId="0:907" clip="true" x="1800" y="2100" width="800" height="600" styleId="0:901" name="Deform" id="0:900">
+    <Artboard isComponent="true" defaultStateMachineId="0:907" clip="true" x="1800" y="2100" width="800" height="600" styleId="0:901" name="Deform" id="0:900">
         <LayoutComponentStyle name="Artboard Style" id="0:901"/>
         <LayoutComponent width="800" height="600" styleId="0:903" name="Root" id="0:902">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:903"/>
@@ -282,7 +282,7 @@
     </Artboard>
 
     <!-- Model: a glb loaded with GLTFLoader, animated (examples/model.as). -->
-    <Artboard defaultStateMachineId="0:1007" clip="true" x="2700" y="2100" width="800" height="600" styleId="0:1001" name="Model" id="0:1000">
+    <Artboard isComponent="true" defaultStateMachineId="0:1007" clip="true" x="2700" y="2100" width="800" height="600" styleId="0:1001" name="Model" id="0:1000">
         <LayoutComponentStyle name="Artboard Style" id="0:1001"/>
         <LayoutComponent width="800" height="600" styleId="0:1003" name="Root" id="0:1002">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1003"/>
@@ -297,7 +297,7 @@
 
     <!-- CustomShader: a ShaderMaterial with a WGSL shader asset
          (examples/custom_shader.as, examples/shaders/wave.wgsl). -->
-    <Artboard defaultStateMachineId="0:1107" clip="true" y="2800" width="800" height="600" styleId="0:1101" name="CustomShader" id="0:1100">
+    <Artboard isComponent="true" defaultStateMachineId="0:1107" clip="true" y="2800" width="800" height="600" styleId="0:1101" name="CustomShader" id="0:1100">
         <LayoutComponentStyle name="Artboard Style" id="0:1101"/>
         <LayoutComponent width="800" height="600" styleId="0:1103" name="Root" id="0:1102">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1103"/>
@@ -314,7 +314,7 @@
     </Artboard>
 
     <!-- Environment: image-based lighting (examples/environment.as). -->
-    <Artboard defaultStateMachineId="0:1207" clip="true" x="900" y="2800" width="800" height="600" styleId="0:1201" name="Environment" id="0:1200">
+    <Artboard isComponent="true" defaultStateMachineId="0:1207" clip="true" x="900" y="2800" width="800" height="600" styleId="0:1201" name="Environment" id="0:1200">
         <LayoutComponentStyle name="Artboard Style" id="0:1201"/>
         <LayoutComponent width="800" height="600" styleId="0:1203" name="Root" id="0:1202">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1203"/>
@@ -329,7 +329,7 @@
 
     <!-- Shadows: directional, spot and point light shadow maps
          (examples/shadows.as). -->
-    <Artboard defaultStateMachineId="0:1307" clip="true" x="1800" y="2800" width="800" height="600" styleId="0:1301" name="Shadows" id="0:1300">
+    <Artboard isComponent="true" defaultStateMachineId="0:1307" clip="true" x="1800" y="2800" width="800" height="600" styleId="0:1301" name="Shadows" id="0:1300">
         <LayoutComponentStyle name="Artboard Style" id="0:1301"/>
         <LayoutComponent width="800" height="600" styleId="0:1303" name="Root" id="0:1302">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1303"/>
@@ -344,7 +344,7 @@
 
     <!-- PostProcessing: EffectComposer with bloom, output and FXAA passes
          (examples/postprocessing.as). -->
-    <Artboard defaultStateMachineId="0:1407" clip="true" x="2700" y="2800" width="800" height="600" styleId="0:1401" name="PostProcessing" id="0:1400">
+    <Artboard isComponent="true" defaultStateMachineId="0:1407" clip="true" x="2700" y="2800" width="800" height="600" styleId="0:1401" name="PostProcessing" id="0:1400">
         <LayoutComponentStyle name="Artboard Style" id="0:1401"/>
         <LayoutComponent width="800" height="600" styleId="0:1403" name="Root" id="0:1402">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1403"/>
@@ -359,7 +359,7 @@
 
     <!-- Benchmark: 1000 meshes and 10000 instances, moving
          (examples/benchmark.as; rive . --artboard=Benchmark --bench=300). -->
-    <Artboard defaultStateMachineId="0:1507" clip="true" x="3600" y="2800" width="800" height="600" styleId="0:1501" name="Benchmark" id="0:1500">
+    <Artboard isComponent="true" defaultStateMachineId="0:1507" clip="true" x="3600" y="2800" width="800" height="600" styleId="0:1501" name="Benchmark" id="0:1500">
         <LayoutComponentStyle name="Artboard Style" id="0:1501"/>
         <LayoutComponent width="800" height="600" styleId="0:1503" name="Root" id="0:1502">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1503"/>
@@ -374,7 +374,7 @@
 
     <!-- Environments: cube maps, CubeTextureLoader, CubeCamera
          (examples/environments.as). -->
-    <Artboard defaultStateMachineId="0:1607" clip="true" x="0" y="3500" width="800" height="600" styleId="0:1601" name="Environments" id="0:1600">
+    <Artboard isComponent="true" defaultStateMachineId="0:1607" clip="true" x="0" y="3500" width="800" height="600" styleId="0:1601" name="Environments" id="0:1600">
         <LayoutComponentStyle name="Artboard Style" id="0:1601"/>
         <LayoutComponent width="800" height="600" styleId="0:1603" name="Root" id="0:1602">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1603"/>
@@ -389,7 +389,7 @@
 
     <!-- Textures: uv transforms, uv channels, KTX2 compressed textures
          (examples/textures.as). -->
-    <Artboard defaultStateMachineId="0:1707" clip="true" x="900" y="3500" width="800" height="600" styleId="0:1701" name="Textures" id="0:1700">
+    <Artboard isComponent="true" defaultStateMachineId="0:1707" clip="true" x="900" y="3500" width="800" height="600" styleId="0:1701" name="Textures" id="0:1700">
         <LayoutComponentStyle name="Artboard Style" id="0:1701"/>
         <LayoutComponent width="800" height="600" styleId="0:1703" name="Root" id="0:1702">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1703"/>
@@ -405,7 +405,7 @@
     <!-- MaterialsPlus: bump, displacement, light, normal (tangent and object
          space), specular and env maps, clearcoat and sheen maps
          (examples/materials_plus.as). -->
-    <Artboard defaultStateMachineId="0:1807" clip="true" x="1800" y="3500" width="800" height="600" styleId="0:1801" name="MaterialsPlus" id="0:1800">
+    <Artboard isComponent="true" defaultStateMachineId="0:1807" clip="true" x="1800" y="3500" width="800" height="600" styleId="0:1801" name="MaterialsPlus" id="0:1800">
         <LayoutComponentStyle name="Artboard Style" id="0:1801"/>
         <LayoutComponent width="800" height="600" styleId="0:1803" name="Root" id="0:1802">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1803"/>
@@ -420,7 +420,7 @@
 
     <!-- Clipping: clipping planes with stencil caps, clipShadows,
          clipIntersection (examples/clipping.as). -->
-    <Artboard defaultStateMachineId="0:1907" clip="true" x="2700" y="3500" width="800" height="600" styleId="0:1901" name="Clipping" id="0:1900">
+    <Artboard isComponent="true" defaultStateMachineId="0:1907" clip="true" x="2700" y="3500" width="800" height="600" styleId="0:1901" name="Clipping" id="0:1900">
         <LayoutComponentStyle name="Artboard Style" id="0:1901"/>
         <LayoutComponent width="800" height="600" styleId="0:1903" name="Root" id="0:1902">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1903"/>
