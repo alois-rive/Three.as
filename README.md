@@ -85,9 +85,11 @@ rive . --screenshot=build/s.png --advance=1s      # headless render
 ## Gallery
 
 `gallery/` is the project's landing page, built in Rive (RML, no HTML) in
-the Rive brand: install, quickstart, features, and a card per example.
-Clicking a card plays that example artboard live on the page's stage, full
-size, with its pointer input (orbit, zoom, clicks).
+rive.app's style: install, quickstart, features, and a card per example.
+It is made of Rive layouts, so it reflows to the window (two columns when
+wide, one on a phone) and scrolls. Clicking a card plays that example
+artboard live on the page's stage, at the stage's size, with its pointer
+input (orbit, zoom, clicks).
 
 ```bash
 rive . --artboard=Gallery                         # the landing page
