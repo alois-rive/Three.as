@@ -20,7 +20,10 @@ import { Context } from "rive/host";
 import { Artboard } from "rive/artboard";
 import { Canvas } from "rive/canvas";
 import { Mat2D } from "rive/mat2d";
+import { PointerEvent } from "rive/events";
+import { Vector } from "rive/vector";
 import { Texture } from "../textures/Texture";
+import { Vector2 } from "../math/Vector2";
 
 export class ArtboardTexture extends Texture {
     readonly isArtboardTexture: bool = true;
@@ -29,6 +32,9 @@ export class ArtboardTexture extends Texture {
     /// Canvas clear colour, a Rive Color (0xAARRGGBB). Transparent by
     /// default; the artboard's own background, if any, covers it.
     clearColor: u32 = 0;
+    /// Takes pointer events at a UV (ThreeLayout forwards the pointer's
+    /// raycast hits on meshes using this texture as their map).
+    interactive: bool = true;
 
     private requestedWidth: u32;
     private requestedHeight: u32;
@@ -53,6 +59,33 @@ export class ArtboardTexture extends Texture {
         const changed = this.artboard.advance(seconds);
         if (changed) this.version++;
         return changed;
+    }
+
+    /// Forwards a pointer press at texture coordinate `uv` (a raycast hit's
+    /// uv) to the artboard; true when something in it was hit.
+    pointerDown(uv: Vector2, id: f64 = 0): bool { return this.forward(0, uv, id); }
+    pointerMove(uv: Vector2, id: f64 = 0): bool { return this.forward(1, uv, id); }
+    pointerUp(uv: Vector2, id: f64 = 0): bool { return this.forward(2, uv, id); }
+    pointerExit(uv: Vector2, id: f64 = 0): bool { return this.forward(3, uv, id); }
+
+    /// The artboard point at texture coordinate `uv`.
+    artboardPoint(uv: Vector2): Vector {
+        const b = this.artboard.bounds();
+        const v = this.flipY ? 1 - uv.y : uv.y;
+        return Vector.xy(b.v0.x + <f32>uv.x * (b.v1.x - b.v0.x), b.v0.y + <f32>v * (b.v1.y - b.v0.y));
+    }
+
+    private forward(kind: i32, uv: Vector2, id: f64): bool {
+        const p = this.artboardPoint(uv);
+        const types: StaticArray<string> = ["down", "move", "up", "exit"];
+        const event = new PointerEvent(id, p, p, types[kind]);
+        let hit: f64 = 0;
+        if (kind == 0) hit = this.artboard.pointerDown(event);
+        else if (kind == 1) hit = this.artboard.pointerMove(event);
+        else if (kind == 2) hit = this.artboard.pointerUp(event);
+        else hit = this.artboard.pointerExit(event);
+        this.version++;   // a hover or press may change what it draws
+        return hit != 0;
     }
 
     override get width(): u32 {

@@ -21,7 +21,10 @@ with Rive's `GPUCanvas` and WGSL shaders. Read these before changing code:
 - **Prefer an existing Rive API to new code**: `Mat4` (projection, multiply,
   invert), `Image`/`Canvas` for textures, `context.image/blob/shader` for
   assets, `advance` for time, Rive pointer events for input.
-- **Rive-only features go in `three/rive/`** (e.g. `ArtboardTexture`).
+- **Rive-only features go in `three/rive/`** (e.g. `ArtboardTexture`,
+  `ThreeLayout`); ports of three.js addons (`examples/jsm/...`) go in
+  `three/addons/` with three.js's folder names, and are not re-exported from
+  `Three.as` (import them by path, as three.js's `three/addons/...`).
 - **Export every public class from `three/Three.as`.**
 - Library files under `three/` declare no protocol classes (no `Layout`,
   `Node` ...), so they never become script assets of their own.
@@ -40,7 +43,16 @@ rive .                                           # live preview window
 ```
 
 `--verify` does not look at pixels: after a rendering change, take a
-screenshot and look at it.
+screenshot and look at it. Interaction can be scripted headless:
+`--pointer=click@x,y`, `--pointer=drag@x1,y1>x2,y2:steps`,
+`--pointer=wheel@x,y:dx,dy`, `--touch=down:1@x,y` (multi-touch), and
+`--probe=x,y` prints a pixel. Headless runs advance without drawing, so
+world matrices can be stale between frames.
+
+Gotchas: integer `/` truncates and `<f64>(a / b)` divides as floats (see
+DEVIATIONS.md); `Array.splice` cannot insert; arrays are invariant; Rive
+paints the first-declared shape on top; `Layout` already has an `update()`
+hook; generic code is only type-checked once instantiated, so test it.
 
 ## Layout
 

@@ -6,6 +6,8 @@ import { Object3D } from "../core/Object3D";
 import { BufferGeometry } from "../core/BufferGeometry";
 import { Material } from "../materials/Material";
 import { PointsMaterial } from "../materials/PointsMaterial";
+import { Raycaster, Intersection } from "../core/Raycaster";
+import { raycastPoints } from "./raycasting";
 
 export class Points extends Object3D {
     readonly isPoints: bool = true;
@@ -17,5 +19,11 @@ export class Points extends Object3D {
         this.type = "Points";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    /// Hits within raycaster.params.Points.threshold of a point.
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        raycastPoints(this, raycaster, intersects);
+        return true;
     }
 }

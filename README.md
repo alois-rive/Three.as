@@ -36,6 +36,23 @@ material.map = texture;
 texture.advance(seconds);
 ```
 
+Or as an app, with controls and pointer handling done for you:
+
+```as
+export class Demo extends THREE.ThreeLayout {
+    cube: THREE.Mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshNormalMaterial());
+    override setup(context: Context): bool {
+        this.scene.add(this.cube);
+        this.camera.position.z = 3;
+        this.controls = new OrbitControls(this.camera, this.renderer);
+        return true;
+    }
+    override animate(seconds: f64): void {
+        this.cube.rotation.y += seconds;
+    }
+}
+```
+
 ## Run it
 
 Needs the Rive CLI (`rive --version` 1.9.2 or later).
@@ -47,6 +64,7 @@ rive . --artboard=Geometries                      # every built-in geometry
 rive . --artboard=Materials                       # materials, lights, fog, sky
 rive . --artboard=Primitives                      # instancing, points, lines, sprites
 rive . --artboard=Shapes                          # curves, extrusion, a Rive path in 3D
+rive . --artboard=Interactive                     # orbit, click a Rive switch in 3D, render target
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```
@@ -61,6 +79,20 @@ Wireframe, Box3/Sphere/Plane/Ray/Triangle/Frustum, frustum culling), Basic/Norma
 Standard materials, ambient/directional/point lights, Texture, DataTexture,
 CanvasTexture, TextureLoader, ArtboardTexture, and `GPURenderer` (MSAA,
 depth, transparency sorting, sRGB output).
+
+## Use it in another project
+
+Copy `three/` into the project (shaders included), or publish this project
+as a Rive library and import it (needs a Rive account; `rive library
+publish` pushes the project first):
+
+```bash
+rive login
+rive library publish --description="ThreeAS"
+# in the other project:
+rive library search
+rive library add --library=<id>
+```
 
 - [PLAN.md](PLAN.md): the milestones.
 - [docs/DEVIATIONS.md](docs/DEVIATIONS.md): where and why the API differs

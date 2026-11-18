@@ -29,6 +29,8 @@ export * from "./math/Cylindrical";
 
 export * from "./core/Object3D";
 export * from "./core/Layers";
+export * from "./core/Raycaster";
+export * from "./core/Clock";
 export * from "./core/ColorOrTexture";
 export * from "./core/BufferAttribute";
 export * from "./core/InstancedBufferAttribute";
@@ -105,7 +107,10 @@ export * from "./textures/CanvasTexture";
 export * from "./loaders/TextureLoader";
 
 export * from "./renderers/GPURenderer";
+export * from "./renderers/RenderTarget";
 
 // Rive integrations.
 export * from "./rive/ArtboardTexture";
 export * from "./rive/RivePaths";
+export * from "./rive/RiveNodes";
+export * from "./rive/ThreeLayout";

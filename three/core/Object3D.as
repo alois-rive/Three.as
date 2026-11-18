@@ -7,6 +7,7 @@ import { Euler } from "../math/Euler";
 import { Matrix4 } from "../math/Matrix4";
 import { Matrix3 } from "../math/Matrix3";
 import { Layers } from "./Layers";
+import { Raycaster, Intersection } from "./Raycaster";
 
 let _object3DId: i32 = 0;
 
@@ -61,6 +62,11 @@ export class Object3D {
 
     /// Cameras and lights face their -Z (lookAt, getWorldDirection).
     facesNegativeZ(): bool { return false; }
+
+    /// Adds this object's hits by `raycaster` to `intersects` (three.js's
+    /// raycast; empty for objects with nothing to hit). Return false to stop
+    /// the raycaster descending into the children.
+    raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool { return true; }
 
     // ------------------------------------------------------------- hierarchy
 

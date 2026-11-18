@@ -64,7 +64,7 @@ export class Demo extends Layout {
 | `renderer.domElement` (an HTML canvas) | `renderer.domElement` is the Rive `GPUCanvas` (null before the first render) |
 | `render()` anywhere | `render()` only inside the script's `draw()`; then `present(renderer)` composites the canvas into the artboard |
 | `setSize(w, h, updateStyle)` | `setSize(w, h)` in points; there is no style |
-| `setAnimationLoop(fn)` | the script's `advance(seconds)` |
+| `setAnimationLoop(fn)` | the script's `advance(seconds)` (or ThreeLayout's `animate`) |
 | `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
@@ -113,6 +113,9 @@ export class Demo extends Layout {
   (1.25 for 5); to truncate, divide first into an `i32` local.
 - **Down-casting** uses `instanceof` and `as`: `if (o instanceof THREE.Mesh)
   { const mesh = o as THREE.Mesh; }`. The `isMesh`-style flags exist too.
+- **Arrays are invariant**: an `Array<Mesh>` is not an `Array<Object3D>`.
+  Declare `Array<Object3D>` for what you pass to `intersectObjects` and cast
+  elements back (`arr[i] as Mesh`).
 - **No `userData`** (no untyped objects). Subclass, or keep a `Map` keyed by
   `object.id`.
 - `uuid` and `MathUtils.generateUUID` are missing; `id` is unique.
@@ -214,6 +217,52 @@ export class Demo extends Layout {
 - `LineDashedMaterial` reads "lineDistance" through the uv slot, so a line
   with both "uv" and "lineDistance" dashes along u instead.
 
+## Interaction, controls and time
+
+- **Raycaster**: as three.js (`setFromCamera`, `intersectObject(s)`,
+  `params.Line.threshold`, `params.Points.threshold`, layers, hits sorted by
+  distance). `Intersection` is a class: fields three.js leaves undefined are
+  `null` (`uv`, `normal`, `face`, `barycoord`) or `-1` (`faceIndex`,
+  `index`, `instanceId`, `distanceToRay`). Objects' `raycast()` returns a
+  bool (false stops the descent into children). As in three.js, world
+  matrices must be current: call `scene.updateMatrixWorld()` before
+  raycasting outside a render (ThreeLayout does it for pointer events).
+- **Controls take Rive events, not DOM listeners.** `new OrbitControls(
+  camera, renderer)`: the second argument is the GPURenderer (for the
+  viewport size), three.js's `domElement`. Forward the script's pointer hooks
+  to `controls.pointerDown/Move/Up/Exit/Scroll(event)` (ThreeLayout does).
+  Rive pointer events have no mouse button, so one pointer rotates
+  (MapControls: pans), two pointers dolly and pan (three.js's touch
+  mapping), the wheel dollies. `keys`, `listenToKeyEvents`, `zoomToCursor`
+  and change events are not ported. Import controls from
+  `three/addons/controls/OrbitControls` (or `three/addons/Addons`).
+- **Time comes from `advance(seconds)`.** `Clock` has `tick(seconds)` to
+  feed it (call it each advance); `Timer.update(seconds)` takes the frame's
+  seconds instead of a timestamp. `renderer.setAnimationLoop` does not
+  exist.
+- **Render targets**: `RenderTarget(width, height, options)` (alias
+  `WebGLRenderTarget`), `renderer.setRenderTarget(rt)`. Size in pixels;
+  `options` is a `RenderTargetOptions` (`depthBuffer`, `samples`,
+  `generateMipmaps`). Its texture holds the renderer's output: sRGB,
+  premultiplied, top row first (`colorSpace = SRGBColorSpace`,
+  `premultiplyAlpha = true`, `flipY = true`), so sampling it gives the same
+  colours as three.js. `rt.image` is a Rive `Image` for 2D drawing.
+  `readRenderTargetPixels`, depth textures and multiple render targets are
+  not ported.
+
+## Rive app structure (Rive-only)
+
+- `ThreeLayout`: a Layout subclass that owns `renderer`, `scene`, `camera`
+  (a PerspectiveCamera whose aspect follows the layout), optional
+  `controls`, `pointer` (NDC) and `raycaster`. Override `setup(context)`,
+  `animate(seconds)`, `onResize`, `onPointerDown/Move/Up`, not
+  `init/advance/resize`. It forwards pointer events into interactive
+  `ArtboardTexture`s under the pointer (by raycast UV) before the controls.
+- `ArtboardTexture.pointerDown/Move/Up/Exit(uv, id)` forward events by
+  texture coordinate; `artboardPoint(uv)` converts.
+- `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
+  an (animated) Rive node.
+
 ## Lighting
 
 - Intensities are three.js's physically based ones (r155+, no legacy
@@ -266,7 +315,6 @@ export class Demo extends Layout {
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
 SkinnedMesh, RectAreaLight (not planned: it needs three.js's LTC tables), cube textures, shadows,
-environment maps, ShaderMaterial, render targets,
-Raycaster, curves, loaders other
+environment maps, ShaderMaterial, loaders other
 than TextureLoader, animation (AnimationMixer), skinning, controls,
 post-processing, `EventDispatcher` events (`dispose` events are internal).

@@ -5,6 +5,8 @@
 import { Object3D } from "../core/Object3D";
 import { Vector2 } from "../math/Vector2";
 import { SpriteMaterial } from "../materials/SpriteMaterial";
+import { Raycaster, Intersection } from "../core/Raycaster";
+import { raycastSprite } from "./raycasting";
 
 export class Sprite extends Object3D {
     readonly isSprite: bool = true;
@@ -16,5 +18,11 @@ export class Sprite extends Object3D {
         super();
         this.type = "Sprite";
         this.material = material;
+    }
+
+    /// Needs raycaster.camera (setFromCamera sets it).
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        raycastSprite(this, raycaster, intersects);
+        return true;
     }
 }

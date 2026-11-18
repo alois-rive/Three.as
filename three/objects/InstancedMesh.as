@@ -11,6 +11,8 @@ import { Matrix4 } from "../math/Matrix4";
 import { Color } from "../math/Color";
 import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
+import { Raycaster, Intersection } from "../core/Raycaster";
+import { raycastInstancedMesh } from "./raycasting";
 
 export class InstancedMesh extends Mesh {
     readonly isInstancedMesh: bool = true;
@@ -94,6 +96,11 @@ export class InstancedMesh extends Mesh {
             _sphere.copy(geometry.boundingSphere!).applyMatrix4(_m);
             sphere.union(_sphere);
         }
+    }
+
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        raycastInstancedMesh(this, raycaster, intersects);
+        return true;
     }
 
     dispose(): void {}

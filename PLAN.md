@@ -105,20 +105,25 @@ In steps, each committed with tests and a screenshot check:
   textures moved to M5, uniform chunks with dynamic offsets to M6;
   RectAreaLight dropped: it needs three.js's LTC lookup tables.)
 
-### M3: Rive integration
+### M3: Rive integration (done)
 
-- `ThreeLayout` / `ThreeNode` base classes: lifecycle, resize, pixel ratio
-  and present handled; scene graph exposed to Rive script inputs so
-  timelines, state machines and data binding can drive transforms and
-  material values.
-- Raycaster on Rive pointer events; `ArtboardTexture` forwards pointer
-  events at the hit UV so artboard UIs on 3D surfaces are interactive.
-- Addons: OrbitControls, MapControls, TrackballControls on Rive pointer and
-  scroll events.
-- `GPURenderTarget` (three's `WebGLRenderTarget`): render to a texture, use
-  it as a material map, or hand its `Image` to Rive 2D drawing.
-- `Clock` / `Timer` fed by `advance`.
-- Publish as a Rive library (`lib:three/...`) so other projects import it.
+- `ThreeLayout`: lifecycle, resize, pixel ratio, present, controls and
+  pointer forwarding handled; scripts override `setup` and `animate`.
+- Raycaster (meshes with groups, instances, lines, points, sprites) on Rive
+  pointer events; `ArtboardTexture` takes pointer events at the hit UV, so
+  artboard UIs on 3D surfaces are interactive (clicks reach their state
+  machines).
+- OrbitControls and MapControls on Rive pointer and scroll events (one
+  pointer rotates or pans, two pinch and pan, the wheel zooms).
+- `RenderTarget` (WebGLRenderTarget): render to a texture, use it as a map,
+  or draw its Rive `Image` in 2D.
+- `Clock` / `Timer` fed by `advance`; `copyNodeTransform` drives objects
+  from animated Rive nodes. Script inputs drive the scene directly (any
+  `@input` field read in `animate`).
+- Publishing as a Rive library is documented in the README (it needs a
+  Rive account: `rive login`, `rive library publish`), not done from here.
+- Not ported: TrackballControls, FlyControls, PointerLockControls,
+  TransformControls, DragControls.
 
 ### M4: assets and animation
 

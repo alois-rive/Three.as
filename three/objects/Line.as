@@ -7,6 +7,8 @@ import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Material } from "../materials/Material";
 import { LineBasicMaterial } from "../materials/LineBasicMaterial";
 import { Vector3 } from "../math/Vector3";
+import { Raycaster, Intersection } from "../core/Raycaster";
+import { raycastLine } from "./raycasting";
 
 /// A continuous line through the vertices (a line strip).
 export class Line extends Object3D {
@@ -19,6 +21,12 @@ export class Line extends Object3D {
         this.type = "Line";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    /// Hits within raycaster.params.Line.threshold of the line.
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        raycastLine(this, raycaster, intersects);
+        return true;
     }
 
     /// Fills the "lineDistance" attribute LineDashedMaterial reads: the

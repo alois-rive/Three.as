@@ -78,6 +78,7 @@ import {
 } from "../constants";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
+import { RenderTarget } from "./RenderTarget";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
@@ -101,7 +102,25 @@ const KEY_DEPTH_WRITE: i32 = 1 << 6;
 const KEY_MIRRORED: i32 = 1 << 7;
 const KEY_COLOR_WRITE: i32 = 1 << 8;
 const KEY_PRIM_SHIFT: i32 = 9;          // 2 bits: PRIM_*
+const KEY_MSAA: i32 = 1 << 11;
 const KEY_BACKGROUND: i32 = 1 << 30;
+
+// The depth (and MSAA colour) attachments of one render destination.
+class PassTargets {
+    depthTex: GPUTexture? = null;
+    depthView: GPUTextureView? = null;
+    msaaTex: GPUTexture? = null;
+    msaaView: GPUTextureView? = null;
+    width: u32 = 0;
+    height: u32 = 0;
+    format: u32 = 0xFFFFFFFF;
+    samples: u32 = 0;
+
+    release(): void {
+        releaseTex(this.depthTex); this.depthTex = null; this.depthView = null;
+        releaseTex(this.msaaTex); this.msaaTex = null; this.msaaView = null;
+    }
+}
 
 // What a draw rasterizes.
 const PRIM_TRIANGLES: i32 = 0;
@@ -229,13 +248,14 @@ export class GPURenderer {
     private bgView: GPUTextureView? = null;
     private bgTexture: Texture? = null;
 
-    private depthTex: GPUTexture? = null;
-    private depthView: GPUTextureView? = null;
-    private msaaTex: GPUTexture? = null;
-    private msaaView: GPUTextureView? = null;
-    private targetW: u32 = 0;
-    private targetH: u32 = 0;
-    private targetFormat: u32 = 0xFFFFFFFF;
+    private mainTargets: PassTargets = new PassTargets();
+    private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
+    private renderTarget: RenderTarget? = null;
+    // The destination of the render in progress.
+    private passSamples: u32 = 1;
+    private passWidth: u32 = 0;
+    private passHeight: u32 = 0;
+    private passRatio: f64 = 1;
 
     private geometries: GPUGeometries = new GPUGeometries();
     private textures: GPUTextures;
@@ -301,6 +321,10 @@ export class GPURenderer {
         this.clearAlpha = alpha;
     }
 
+    /// Renders into `target` from now on (null: the canvas presented).
+    setRenderTarget(target: RenderTarget?): void { this.renderTarget = target; }
+    getRenderTarget(): RenderTarget? { return this.renderTarget; }
+
     getClearColor(target: Color): Color { return target.copy(this.clearColor); }
     getClearAlpha(): f64 { return this.clearAlpha; }
     setClearAlpha(alpha: f64): void { this.clearAlpha = alpha; }
@@ -318,18 +342,37 @@ export class GPURenderer {
         info.lines = 0;
         info.points = 0;
         if (this.broken) return;
-        const pw = this.pixelWidth(), ph = this.pixelHeight();
-        if (pw == 0 || ph == 0) return;
-        const canvas = this.ensureCanvas();
-        if (canvas == null) return;
-        if (canvas.width != pw || canvas.height != ph) {
-            if (!canvas.resize(pw, ph)) return;
+        // The destination: a render target, or the canvas presented.
+        const rt = this.renderTarget;
+        let canvas: GPUCanvas?;
+        let pw: u32, ph: u32;
+        let targets: PassTargets;
+        if (rt != null) {
+            pw = rt.width; ph = rt.height;
+            if (pw == 0 || ph == 0) return;
+            canvas = rt.ensureCanvas(this.context);
+            if (!this.rtTargets.has(rt.id)) this.rtTargets.set(rt.id, new PassTargets());
+            targets = this.rtTargets.get(rt.id);
+            this.passRatio = 1;
+        } else {
+            pw = this.pixelWidth(); ph = this.pixelHeight();
+            if (pw == 0 || ph == 0) return;
+            canvas = this.ensureCanvas();
+            if (canvas != null && (canvas.width != pw || canvas.height != ph)) {
+                if (!canvas.resize(pw, ph)) return;
+            }
+            targets = this.mainTargets;
+            this.passRatio = this.pixelRatio;
         }
+        if (canvas == null) return;
         const target = canvas.view;
         if (target == null) return;
         if (!this.ensureSetup(canvas)) return;
-        this.ensureTargets(canvas, pw, ph);
-        const depthView = this.depthView;
+        this.passSamples = rt != null ? (rt.samples > 1 ? this.samples : 1) : this.samples;
+        this.passWidth = pw;
+        this.passHeight = ph;
+        this.ensureTargets(targets, canvas, pw, ph, this.passSamples);
+        const depthView = targets.depthView;
         if (depthView == null) return;
         this.drainDisposed();
 
@@ -371,7 +414,7 @@ export class GPURenderer {
         color.clearB = <f32>(LinearToSRGB(b) * a);
         color.clearA = <f32>a;
         color.loadOp = this.autoClear ? LoadOp.clear : LoadOp.load;
-        const msaa = this.msaaView;
+        const msaa = targets.msaaView;
         if (msaa != null) {
             color.view = msaa;
             color.resolveTarget = target;
@@ -392,7 +435,7 @@ export class GPURenderer {
         pd.depthClearValue = 1;
         const pass = canvas.beginRenderPass(pd);
         if (background) {
-            pass.setPipeline(this.pipeline(KEY_BACKGROUND));
+            pass.setPipeline(this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0)));
             pass.setBindGroup(0, this.frameGroup!);
             pass.setBindGroup(3, this.bgGroup!);
             pass.draw(3);
@@ -422,8 +465,10 @@ export class GPURenderer {
         for (let i = 0; i < states.length; i++) states[i].ubo.release();
         this.states.clear();
         this.pipelines.clear();
-        releaseTex(this.depthTex); this.depthTex = null; this.depthView = null;
-        releaseTex(this.msaaTex); this.msaaTex = null; this.msaaView = null;
+        this.mainTargets.release();
+        const rts = this.rtTargets.values();
+        for (let i = 0; i < rts.length; i++) rts[i].release();
+        this.rtTargets.clear();
         const canvas = this.canvas;
         if (canvas != null) canvas.release();
         this.canvas = null;
@@ -519,33 +564,31 @@ export class GPURenderer {
         return true;
     }
 
-    private ensureTargets(canvas: GPUCanvas, w: u32, h: u32): void {
-        if (this.depthView != null && this.targetW == w && this.targetH == h && this.targetFormat == canvas.format) return;
-        releaseTex(this.depthTex);
-        releaseTex(this.msaaTex);
-        this.msaaTex = null;
-        this.msaaView = null;
+    private ensureTargets(t: PassTargets, canvas: GPUCanvas, w: u32, h: u32, samples: u32): void {
+        if (t.depthView != null && t.width == w && t.height == h && t.format == canvas.format && t.samples == samples) return;
+        t.release();
         const dd = new GPUTextureDesc();
         dd.width = w; dd.height = h;
         dd.format = TextureFormat.depth32float;
         dd.renderTarget = true;
-        dd.sampleCount = this.samples;
+        dd.sampleCount = samples;
         const depth = new GPUTexture(dd);
-        this.depthTex = depth;
-        this.depthView = depth.view();
-        if (this.samples > 1) {
+        t.depthTex = depth;
+        t.depthView = depth.view();
+        if (samples > 1) {
             const md = new GPUTextureDesc();
             md.width = w; md.height = h;
             md.format = <TextureFormat>canvas.format;
             md.renderTarget = true;
-            md.sampleCount = this.samples;
+            md.sampleCount = samples;
             const msaa = new GPUTexture(md);
-            this.msaaTex = msaa;
-            this.msaaView = msaa.view();
+            t.msaaTex = msaa;
+            t.msaaView = msaa.view();
         }
-        this.targetW = w;
-        this.targetH = h;
-        this.targetFormat = canvas.format;
+        t.width = w;
+        t.height = h;
+        t.format = canvas.format;
+        t.samples = samples;
     }
 
     private pipeline(key: i32): GPUPipeline {
@@ -557,9 +600,9 @@ export class GPURenderer {
         const d = new GPUPipelineDesc();
         d.vertexModule = this.module;
         d.fragmentModule = this.module;
-        d.sampleCount = this.samples;
+        d.sampleCount = (key & KEY_MSAA) != 0 ? this.samples : 1;
         d.depthStencil = ds;
-        if (key == KEY_BACKGROUND) {
+        if ((key & KEY_BACKGROUND) != 0) {
             d.vertexEntryPoint = "vs_background";
             d.fragmentEntryPoint = "fs_background";
             ds.compare = CompareFunction.always;
@@ -807,7 +850,8 @@ export class GPURenderer {
         if (blending == NormalBlending && !material.transparent) blending = NoBlending;
         item.pipelineKey = cull | (blending << KEY_BLEND_SHIFT)
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
-            | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT);
+            | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT)
+            | (this.passSamples > 1 ? KEY_MSAA : 0);
         const e = object.matrixWorld.elements;
         _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
         item.depth = _pos.z;
@@ -901,7 +945,7 @@ export class GPURenderer {
         camera.matrixWorldInverse.mat4.writeToBuffer(buf, FRAME_VIEW);
         this.invViewProj.mat4.writeToBuffer(buf, FRAME_INV_VIEW_PROJ);
         camera.projectionMatrix.mat4.writeToBuffer(buf, FRAME_PROJ);
-        put4(f, FRAME_VIEWPORT, <f64>this.pixelWidth(), <f64>this.pixelHeight(), this.pixelRatio, 0);
+        put4(f, FRAME_VIEWPORT, <f64>this.passWidth, <f64>this.passHeight, this.passRatio, 0);
         const cw = camera.matrixWorld.elements;
         let o = FRAME_CAMERA_POS >> 2;
         f[o] = cw[12]; f[o + 1] = cw[13]; f[o + 2] = cw[14];
@@ -1061,7 +1105,7 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL0, mu.clearcoat, mu.clearcoatRoughness, mu.sheenRoughness, mu.specularIntensity);
             put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
             put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
-            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.pixelHeight() * 0.5);
+            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.passHeight * 0.5);
             put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, 0);
             if (object instanceof Sprite) {
                 const c = (object as Sprite).center;

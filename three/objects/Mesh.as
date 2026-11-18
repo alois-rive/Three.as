@@ -5,6 +5,8 @@ import { Object3D } from "../core/Object3D";
 import { BufferGeometry } from "../core/BufferGeometry";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
+import { Raycaster, Intersection } from "../core/Raycaster";
+import { raycastMesh } from "./raycasting";
 
 export class Mesh extends Object3D {
     readonly isMesh: bool = true;
@@ -21,5 +23,10 @@ export class Mesh extends Object3D {
         this.type = "Mesh";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        raycastMesh(this, raycaster, intersects, this.matrixWorld, -1);
+        return true;
     }
 }
