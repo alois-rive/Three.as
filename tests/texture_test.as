@@ -4,6 +4,10 @@ import { Tests } from "rive/test";
 import { Texture } from "../three/textures/Texture";
 import { Vector2 } from "../three/math/Vector2";
 import { Vector3 } from "../three/math/Vector3";
+import { CubeTexture } from "../three/textures/CubeTexture";
+import { CubeCamera } from "../three/cameras/CubeCamera";
+import { WebGLCubeRenderTarget } from "../three/renderers/WebGLCubeRenderTarget";
+import { CubeReflectionMapping, HalfFloatType } from "../three/constants";
 
 function apply(t: Texture, u: f64, v: f64): Vector2 {
     const p = new Vector3(u, v, 1).applyMatrix3(t.matrix);
@@ -44,6 +48,32 @@ export class TextureTests extends Tests {
             });
             test("channel defaults to the first uv set", (expect) => {
                 expect.that(<f64>new Texture().channel).is(0);
+            });
+        });
+        group("CubeTexture", () => {
+            test("six faces, cube mapping, not sampled until ready", (expect) => {
+                const t = new CubeTexture();
+                expect.that(<f64>t.faces.length).is(6);
+                expect.that(<f64>t.mapping).is(<f64>CubeReflectionMapping);
+                expect.that(t.ready).is(false);
+                expect.that(t.flipX).is(true);
+            });
+            test("a cube render target's faces are its targets' textures", (expect) => {
+                const rt = new WebGLCubeRenderTarget(32);
+                expect.that(<f64>rt.faces.length).is(6);
+                expect.that(rt.texture.faces[3] === rt.faces[3].texture).is(true);
+                expect.that(<f64>rt.faces[0].type).is(<f64>HalfFloatType);
+                expect.that(rt.texture.flipX).is(false);
+            });
+            test("CubeCamera faces look along +x -x +y -y +z -z", (expect) => {
+                const cc = new CubeCamera(0.1, 10, new WebGLCubeRenderTarget(8));
+                cc.updateMatrixWorld();
+                const want: StaticArray<f64> = [1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1];
+                for (let i = 0; i < 6; i++) {
+                    const d = cc.cameras[i].getWorldDirection(new Vector3());
+                    expect.that(Math.abs(d.x - want[i * 3]) + Math.abs(d.y - want[i * 3 + 1])
+                        + Math.abs(d.z - want[i * 3 + 2]) < 1e-9).is(true);
+                }
             });
         });
     }

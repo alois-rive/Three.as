@@ -48,8 +48,9 @@ export const OBJ_DASH: i32 = 320;
 export const OBJ_SPRITE: i32 = 336;
 export const OBJ_BIND_MATRIX: i32 = 352;
 export const OBJ_BIND_MATRIX_INVERSE: i32 = 416;
-export const OBJ_UV_MATRIX: i32 = 480;   // 7 slots x 2 vec4
-export const OBJ_USED: i32 = 704;
+export const OBJ_UV_MATRIX: i32 = 480;   // 8 slots x 2 vec4
+export const OBJ_ENV: i32 = 736;         // x material envMap, y its max lod
+export const OBJ_USED: i32 = 752;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384

@@ -34,6 +34,7 @@ const SLOT_METALNESS: u32 = 3u;
 const SLOT_AO: u32 = 4u;
 const SLOT_EMISSIVE: u32 = 5u;
 const SLOT_ALPHA: u32 = 6u;
+const SLOT_ENV: u32 = 7u;
 
 const FLAG_VERTEX_COLORS: u32 = 1u;
 const FLAG_FOG: u32 = 2u;
@@ -119,7 +120,8 @@ struct ObjU {
     bind_matrix_inverse: mat4x4<f32>,
     // Per texture slot: its uv transform (three.js's texture.matrix rows,
     // xyz) and, in the first row's w, its uv channel.
-    uv_matrix: array<vec4<f32>, 14>,
+    uv_matrix: array<vec4<f32>, 16>,
+    env: vec4<f32>,          // x 1: the material's envMap, y its max lod
 };
 
 const MAX_BONES: u32 = 256u;
@@ -144,6 +146,7 @@ struct BonesU {
 @group(2) @binding(4) var t_ao: texture_2d<f32>;
 @group(2) @binding(5) var t_emissive: texture_2d<f32>;
 @group(2) @binding(6) var t_alpha: texture_2d<f32>;
+@group(2) @binding(7) var t_envmap: texture_2d<f32>;
 @group(3) @binding(0) var s_map: sampler;
 @group(3) @binding(1) var s_normal: sampler;
 @group(3) @binding(2) var s_aux: sampler;
@@ -151,6 +154,7 @@ struct BonesU {
 @group(3) @binding(4) var s_ao: sampler;
 @group(3) @binding(5) var s_emissive: sampler;
 @group(3) @binding(6) var s_alpha: sampler;
+@group(3) @binding(7) var s_envmap: sampler;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -473,6 +477,15 @@ fn BRDF_Sheen(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, sheen_color: vec3<f32>, 
 /// The environment's colour along world direction `dir` (equirectangular),
 /// at mip `lod`.
 fn env_sample(dir: vec3<f32>, lod: f32) -> vec3<f32> {
+    if (O.env.x > 0.5) {
+        // The material's own envMap (equirectangular; cube maps arrive
+        // converted).
+        var uv = vec2<f32>(atan2(dir.z, dir.x) * 0.5 * RECIPROCAL_PI + 0.5,
+                           asin(clamp(dir.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);
+        uv = flip_uv(uv, SLOT_ENV);
+        let texel = textureSampleLevel(t_envmap, s_envmap, uv, lod);
+        return decode(texel, has_flag(O.flags.x, SLOT_ENV), has_flag(O.tex_flags.z, SLOT_ENV)).rgb;
+    }
     let d = (F.env_rotation * vec4<f32>(dir, 0.0)).xyz;
     var uv = vec2<f32>(atan2(d.z, d.x) * 0.5 * RECIPROCAL_PI + 0.5,
                        asin(clamp(d.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);
@@ -753,11 +766,13 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             }
         }
         rgb = diffuse_light * (diffuse_color * RECIPROCAL_PI) + specular + emissive;
-        if (pbr && F.env.x > 0.5) {
+        let own_env = O.env.x > 0.5;
+        if (pbr && (own_env || F.env.x > 0.5)) {
             // Image-based light (three.js's getIBLIrradiance / getIBLRadiance
-            // and multiscattering), from the environment's mip chain.
-            let intensity = F.env.y * O.extra.z;
-            let max_lod = F.env.z;
+            // and multiscattering), from the environment's mip chain:
+            // envMap, else scene.environment (with environmentIntensity).
+            let intensity = select(F.env.y, 1.0, own_env) * O.extra.z;
+            let max_lod = select(F.env.z, O.env.y, own_env);
             // Irradiance from a coarse level that still separates sky and
             // ground (the last levels average them away).
             let irradiance = PI * env_sample(N, max(0.0, max_lod - 1.0)) * intensity;

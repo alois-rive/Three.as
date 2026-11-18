@@ -77,6 +77,10 @@ export class Texture extends ColorOrTexture {
         }
     }
 
+    /// Whether getView() is a float (rgba16float) texture (internal: mip
+    /// chains keep its format).
+    get isHDRSource(): bool { return false; }
+
     /// Rebuilds `matrix` from offset, repeat, rotation and center.
     updateMatrix(): void {
         this.matrix.setUvTransform(this.offset.x, this.offset.y, this.repeat.x, this.repeat.y, this.rotation,

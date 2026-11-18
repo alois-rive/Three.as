@@ -180,7 +180,7 @@ three.js lighting setups look the same.
   (`offset`, `repeat`, `rotation`, `center`, `wrapS/T`, filters) and
   `channel` (uv, uv1, uv2), as three.js's `*MapTransform` uniforms; the
   "one sampler per material" deviation goes away.
-- **M7b, cube textures.** CubeTexture, CubeTextureLoader (six image
+- **M7b, cube textures (done).** CubeTexture, CubeTextureLoader (six image
   assets), cube backgrounds and `envMap`s, `CubeReflectionMapping` /
   `CubeRefractionMapping`; WebGLCubeRenderTarget and CubeCamera (six passes
   into a cube texture: `TextureType.cube`).

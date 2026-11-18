@@ -372,6 +372,21 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Environments: cube maps, CubeTextureLoader, CubeCamera
+         (examples/environments.as). -->
+    <Artboard defaultStateMachineId="0:1607" clip="true" x="0" y="3500" width="800" height="600" styleId="0:1601" name="Environments" id="0:1600">
+        <LayoutComponentStyle name="Artboard Style" id="0:1601"/>
+        <LayoutComponent width="800" height="600" styleId="0:1603" name="Root" id="0:1602">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1603"/>
+            <ScriptedLayout scriptAssetId="0:1690" name="Scene" id="0:1604"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1607">
+            <StateMachineLayer name="Layer 1" id="0:1608">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -387,4 +402,11 @@
     <ScriptAsset file="examples/shadows.as" name="shadows" id="0:1390"/>
     <ScriptAsset file="examples/postprocessing.as" name="postprocessing" id="0:1490"/>
     <ScriptAsset file="examples/benchmark.as" name="benchmark" id="0:1590"/>
+    <ScriptAsset file="examples/environments.as" name="environments" id="0:1690"/>
+    <ImageAsset file="examples/assets/studio_px.png" name="studio_px" id="0:1691"/>
+    <ImageAsset file="examples/assets/studio_nx.png" name="studio_nx" id="0:1692"/>
+    <ImageAsset file="examples/assets/studio_py.png" name="studio_py" id="0:1693"/>
+    <ImageAsset file="examples/assets/studio_ny.png" name="studio_ny" id="0:1694"/>
+    <ImageAsset file="examples/assets/studio_pz.png" name="studio_pz" id="0:1695"/>
+    <ImageAsset file="examples/assets/studio_nz.png" name="studio_nz" id="0:1696"/>
 </Rive>

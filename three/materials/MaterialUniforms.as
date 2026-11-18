@@ -25,7 +25,10 @@ export const SLOT_METALNESS: i32 = 3;
 export const SLOT_AO: i32 = 4;
 export const SLOT_EMISSIVE: i32 = 5;
 export const SLOT_ALPHA: i32 = 6;
-export const TEXTURE_SLOTS: i32 = 7;
+/// envMap (Standard/Physical): the material's own environment, over
+/// scene.environment.
+export const SLOT_ENV: i32 = 7;
+export const TEXTURE_SLOTS: i32 = 8;
 
 export class MaterialUniforms {
     kind: i32 = KIND_BASIC;

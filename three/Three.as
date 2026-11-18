@@ -108,6 +108,10 @@ export * from "./extras/PMREMGenerator";
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";
 export * from "./textures/CanvasTexture";
+export * from "./textures/CubeTexture";
+export * from "./loaders/CubeTextureLoader";
+export * from "./renderers/WebGLCubeRenderTarget";
+export * from "./cameras/CubeCamera";
 export * from "./loaders/TextureLoader";
 
 export * from "./animation/KeyframeTrack";

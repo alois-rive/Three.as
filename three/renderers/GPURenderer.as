@@ -63,9 +63,8 @@ import { DirectionalLight } from "../lights/DirectionalLight";
 import { PointLight } from "../lights/PointLight";
 import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
-import { MaterialUniforms, TEXTURE_SLOTS } from "../materials/MaterialUniforms";
+import { MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV } from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
-import { MeshStandardMaterial } from "../materials/MeshStandardMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
@@ -83,6 +82,7 @@ import {
 
 } from "../constants";
 import { LightShadow } from "../lights/LightShadow";
+import { CubeTexture } from "../textures/CubeTexture";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
@@ -96,7 +96,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -358,7 +358,6 @@ export class GPURenderer {
     private frameGroupBg: GPUTextureView? = null;
     private bgTexture: Texture? = null;
     private envTexture: Texture? = null;
-    private envCandidate: Texture? = null;
     private envView: GPUTextureView? = null;
     private envLevels: u32 = 1;
     private frameGroupView: GPUTextureView? = null;
@@ -1240,10 +1239,6 @@ export class GPURenderer {
             state = new DrawState();
             this.states.set(stateKey, state);
         }
-        if (this.envCandidate == null && material instanceof MeshStandardMaterial) {
-            const em = (material as MeshStandardMaterial).envMap;
-            if (em != null) this.envCandidate = em;
-        }
         // Textures draw and upload now, before any pass.
         const u = this.uniforms;
         material.fillUniforms(u);
@@ -1343,8 +1338,6 @@ export class GPURenderer {
     /// envMap seen) and the frame bind group that samples it.
     private prepareEnvironment(scene: Object3D, frame: i32, canvas: GPUCanvas): void {
         let env: Texture? = scene instanceof Scene ? (scene as Scene).environment : null;
-        if (env == null) env = this.envCandidate;
-        this.envCandidate = null;
         let view: GPUTextureView? = null;
         if (env != null) {
             env.generateMipmaps = true;
@@ -1754,12 +1747,14 @@ export class GPURenderer {
             _bgRotation.makeRotationFromEuler(_euler);
             _bgRotation.mat4.writeToBuffer(buf, FRAME_BG_ROTATION);
             const b = FRAME_BG_FLAGS >> 2;
-            const equirect = bt.mapping == EquirectangularReflectionMapping
+            const cube = bt instanceof CubeTexture;
+            const equirect = cube || bt.mapping == EquirectangularReflectionMapping
                 || bt.mapping == EquirectangularRefractionMapping;
             u[b] = equirect ? <u32>EquirectangularReflectionMapping : 0;
-            u[b + 1] = bt.colorSpace == SRGBColorSpace ? 1 : 0;
-            u[b + 2] = bt.flipY ? 1 : 0;
-            u[b + 3] = bt.premultiplyAlpha ? 1 : 0;
+            // Cube textures sample their conversion: linear, straight, top row first.
+            u[b + 1] = !cube && bt.colorSpace == SRGBColorSpace ? 1 : 0;
+            u[b + 2] = cube || bt.flipY ? 1 : 0;
+            u[b + 3] = !cube && bt.premultiplyAlpha ? 1 : 0;
         }
         // Shadow layers.
         o = FRAME_SHADOW_PARAMS >> 2;
@@ -1786,9 +1781,10 @@ export class GPURenderer {
             _bgRotation.makeRotationFromEuler(_euler);
             _bgRotation.mat4.writeToBuffer(buf, FRAME_ENV_ROTATION);
             const b = FRAME_ENV_FLAGS >> 2;
-            u[b] = et.colorSpace == SRGBColorSpace ? 1 : 0;
-            u[b + 1] = et.flipY ? 1 : 0;
-            u[b + 2] = et.premultiplyAlpha ? 1 : 0;
+            const cube = et instanceof CubeTexture;
+            u[b] = !cube && et.colorSpace == SRGBColorSpace ? 1 : 0;
+            u[b + 1] = cube || et.flipY ? 1 : 0;
+            u[b + 2] = !cube && et.premultiplyAlpha ? 1 : 0;
             u[b + 3] = 0;
         } else {
             f[o] = 0;
@@ -1912,6 +1908,7 @@ export class GPURenderer {
             let present: u32 = 0, srgb: u32 = 0, flip: u32 = 0, premul: u32 = 0;
             const views = _views;
             const samplers = _samplers;
+            put4(f, OBJ_ENV, 0, 0, 0, 0);
             for (let s = 0; s < TEXTURE_SLOTS; s++) {
                 views[s] = this.white;
                 samplers[s] = this.defaultSampler();
@@ -1920,15 +1917,26 @@ export class GPURenderer {
                 f[o + 4] = 0; f[o + 5] = 1; f[o + 6] = 0; f[o + 7] = 0;
                 const t = mu.textures[s];
                 if (t == null) continue;
+                const envSlot = s == SLOT_ENV;
+                if (envSlot) {
+                    // Environments read their mip chain by roughness.
+                    t.generateMipmaps = true;
+                    if (t.minFilter != LinearMipmapLinearFilter) t.minFilter = LinearMipmapLinearFilter;
+                    this.textures.update(t, frame);
+                }
                 const v = this.textures.view(t, canvas);
                 if (v == null) continue;
                 views[s] = v;
-                samplers[s] = this.sampler(t, this.textures.levels(t) > 1);
+                const levels = this.textures.levels(t);
+                samplers[s] = envSlot ? this.backgroundSampler(true) : this.sampler(t, levels > 1);
+                if (envSlot) put4(f, OBJ_ENV, 1, Math.max(0, <f64>levels - 2), 0, 0);
                 const bit: u32 = 1 << <u32>s;
                 present |= bit;
-                if (t.colorSpace == SRGBColorSpace) srgb |= bit;
-                if (t.flipY) flip |= bit;
-                if (t.premultiplyAlpha) premul |= bit;
+                // Cube textures sample their conversion: linear, straight, top row first.
+                const cube = t instanceof CubeTexture;
+                if (!cube && t.colorSpace == SRGBColorSpace) srgb |= bit;
+                if (cube || t.flipY) flip |= bit;
+                if (!cube && t.premultiplyAlpha) premul |= bit;
                 if (t.matrixAutoUpdate) t.updateMatrix();
                 const e = t.matrix.elements;   // column-major 3x3
                 f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;

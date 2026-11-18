@@ -54,6 +54,8 @@ export class RenderTargetTexture extends Texture {
     override get width(): u32 { return this.pixelWidth; }
     override get height(): u32 { return this.pixelHeight; }
 
+    override get isHDRSource(): bool { return this.hdrView != null; }
+
     override getView(): GPUTextureView? {
         const h = this.hdrView;
         if (h != null) return h;

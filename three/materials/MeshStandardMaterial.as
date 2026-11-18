@@ -4,7 +4,7 @@
 import { Material, MaterialParameters } from "./Material";
 import {
     MaterialUniforms, KIND_STANDARD, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_METALNESS, SLOT_AO, SLOT_EMISSIVE,
-    SLOT_ALPHA,
+    SLOT_ALPHA, SLOT_ENV,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -88,6 +88,7 @@ export class MeshStandardMaterial extends Material {
         u.normalScaleX = this.normalScale.x; u.normalScaleY = this.normalScale.y;
         u.aoMapIntensity = this.aoMapIntensity;
         u.envMapIntensity = this.envMapIntensity;
+        u.textures[SLOT_ENV] = this.envMap;
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_NORMAL] = this.normalMap;
         u.textures[SLOT_AUX] = this.roughnessMap;

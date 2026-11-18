@@ -180,9 +180,14 @@ export class Demo extends Layout {
   (Lambert/Phong/Basic ignore `envMap`; no `reflectivity`/`combine`), with
   three.js's IBL maths, but **reflections read the equirectangular map's own
   mip chain by roughness, not a GGX-prefiltered PMREM**: rough reflections
-  are box-blurred. One environment per render: `scene.environment`, else the
-  first material `envMap` drawn. Equirectangular textures only (no cube
-  textures yet); clearcoat ignores the environment.
+  are box-blurred. A material's `envMap` overrides `scene.environment` for
+  that material (`envMapIntensity` scales it; `envMapRotation` is not read).
+  Clearcoat ignores the environment.
+- **Cube textures are converted to equirectangular maps** on the GPU (an
+  rgba16float texture 4 x 2 faces wide, redone when a face or `version`
+  changes) and sampled as those, for `background`, `environment` and
+  `envMap`. Image cube maps follow three.js's orientation (mirrored in x,
+  `flipEnvMap`). `CubeRefractionMapping` reflects instead.
   `PMREMGenerator.fromEquirectangular(t).texture` is a shim returning `t`
   prepared; `fromScene`, `fromCubemap` and RoomEnvironment are not ported.
 - **ShaderMaterial / RawShaderMaterial take a WGSL shader asset**, not GLSL
@@ -404,6 +409,16 @@ export class Demo extends Layout {
 - Not ported: MaskPass/ClearMaskPass, SMAA, SSAO, BokehPass, the other
   shader passes; `Uniform.clone()` is UniformsUtils.clone per uniform.
 
+## Cube maps and CubeCamera
+
+- `CubeTextureLoader(context).load([px, nx, py, ny, pz, nz])` takes six
+  image asset names (`setPath` prefixes them).
+- `WebGLCubeRenderTarget(size, options)` is six RenderTargets (`faces`),
+  HalfFloatType by default; its `texture` is a CubeTexture over them.
+  `fromEquirectangularTexture` and `clear` are not ported.
+- `CubeCamera.update(renderer, scene)` renders the six faces; hide the
+  reflecting object yourself (three.js examples do the same).
+
 ## Rive-only additions
 
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
@@ -417,4 +432,4 @@ export class Demo extends Layout {
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
 RectAreaLight (not planned: it needs three.js's LTC tables),
-cube textures, ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), `EventDispatcher` events (`dispose` events are internal).
+ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), `EventDispatcher` events (`dispose` events are internal).
