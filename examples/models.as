@@ -15,6 +15,8 @@ import { RoomEnvironment } from "../three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
 import { Promise } from "rive/promise";
 
+const DUCK_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF/Duck.gltf";
+
 export class Models extends THREE.ThreeLayout {
     mixer: THREE.AnimationMixer? = null;
 
@@ -35,6 +37,9 @@ export class Models extends THREE.ThreeLayout {
 
         // Decoded in a Rive job; the scene fills in a frame or two later.
         this.load(new GLTFLoader(context).setMeshoptDecoder(MeshoptDecoder));
+        // A .gltf with external .bin and .png files, over the network where
+        // the host allows it.
+        this.loadDuck(new GLTFLoader(context));
 
         this.camera.position.set(0, 3.2, 6.2);
         const controls = new OrbitControls(this.camera, this.renderer);
@@ -56,6 +61,20 @@ export class Models extends THREE.ThreeLayout {
         const mixer = new THREE.AnimationMixer(gltf.scene);
         for (let i = 0; i < gltf.animations.length; i++) mixer.clipAction(gltf.animations[i]).play();
         this.mixer = mixer;
+    }
+
+    async loadDuck(loader: GLTFLoader): Promise<void> {
+        const settled = await loader.loadAsync(DUCK_URL).settled();
+        if (!settled.ok) {
+            this.context!.log("Duck.gltf: " + settled.error);
+            return;
+        }
+        const duck = settled.value.scene;
+        duck.scale.setScalar(0.7);
+        duck.position.set(2.4, -0.4, 0.4);
+        duck.rotation.y = -0.9;
+        this.scene.add(duck);
+        this.context!.log("Duck.gltf: loaded");
     }
 
     private stripes(): THREE.DataTexture {

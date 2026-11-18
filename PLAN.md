@@ -290,7 +290,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   (`rive/jobs`), vertex and index buffers created from Blobs
   (`GPUBuffer.fromBlob`), `loadAsync` returning a Rive `Promise`, so big
   models stay within the init budget and never stall a frame.
-- **M11c, URLs.** `load(url)` through `rive/net` `fetch` where the host
+- **M11c, URLs (done).** `load(url)` through `rive/net` `fetch` where the host
   allows it (LoadingManager, `setPath`, progress callbacks as a listener
   interface).
 - **M11d, other formats.** STLLoader, PLYLoader, SVGLoader (to ShapePaths;

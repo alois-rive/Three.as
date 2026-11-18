@@ -27,6 +27,10 @@ import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { parseJson } from "rive/json";
 import { Jobs } from "rive/jobs";
 import { Promise } from "rive/promise";
+import { Loader } from "../../loaders/Loader";
+import { LoadingManager } from "../../loaders/LoadingManager";
+import { LoaderUtils } from "../../loaders/LoaderUtils";
+import { fetchBytes } from "../../loaders/FileLoader";
 import { Dynamic } from "rive/dynamic";
 import { MeshoptDecoderModule, MeshoptDecoder } from "../libs/meshopt_decoder";
 import { InstancedMesh } from "../../objects/InstancedMesh";
@@ -119,18 +123,17 @@ const SUPPORTED_EXTENSIONS: StaticArray<string> = [
     "EXT_meshopt_compression",
 ];
 
-export class GLTFLoader {
-    /// Loads blob assets, decodes images and logs; without one, `parse`
-    /// still builds the scene (images stay empty, errors go to `error`).
-    context: Context?;
+export class GLTFLoader extends Loader {
+    // `context` loads blob assets, decodes images and logs; without one,
+    // `parse` still builds the scene (images stay empty, errors go to `error`).
     meshoptDecoder: MeshoptDecoderModule? = null;
     /// Why the last load or parse returned null, or a warning.
     error: string = "";
     /// Warnings of the last parse (unsupported features met).
     warnings: Array<string> = [];
 
-    constructor(context: Context? = null) {
-        this.context = context;
+    constructor(context: Context? = null, manager: LoadingManager? = null) {
+        super(context, manager);
     }
 
     /// The decoder for EXT_meshopt_compression (MeshoptDecoder from
@@ -140,40 +143,70 @@ export class GLTFLoader {
         return this;
     }
 
-    /// Loads the .glb BlobAsset called `name`; null (and a log line) when it
-    /// is missing or not a glb this loader reads.
+    /// Loads the BlobAsset called `name` (`path` + name), at once; null (and
+    /// a log line) when it is missing or not a glTF this loader reads. A
+    /// .gltf's external files resolve to blob assets named after them
+    /// without extension ("scene.bin" -> "scene"). Urls need loadAsync.
     load(name: string): GLTF? {
         const context = this.context;
-        const bytes = context != null ? context.blob(name) : null;
+        const full = LoaderUtils.resolveURL(name, this.path);
+        if (LoaderUtils.isURL(full)) {
+            this.error = "urls load with loadAsync";
+            if (context != null) context.log("three: GLTFLoader: " + this.error);
+            return null;
+        }
+        const bytes = context != null ? context.blob(full) : null;
         if (bytes == null) {
-            this.error = "no blob asset named '" + name + "'";
+            this.error = "no blob asset named '" + full + "'";
             if (context != null) context.log("three: GLTFLoader: " + this.error);
             return null;
         }
         return this.parse(bytes);
     }
 
-    /// Parses .glb bytes, or .gltf JSON text as bytes.
+    /// Parses .glb bytes, or .gltf JSON text as bytes (external files as
+    /// blob assets, see load).
     parse(data: ArrayBuffer): GLTF? {
-        return this.parseData(new GLTFData(data, this.meshoptDecoder));
-    }
-
-    /// As load, with the decoding (container, meshopt, accessors) in a Rive
-    /// job off the main lane; the scene is built when the job is done, on a
-    /// later frame. Rejects with the reason `load` would log.
-    loadAsync(name: string): Promise<GLTF> {
-        const context = this.context;
-        const bytes = context != null ? context.blob(name) : null;
-        if (bytes == null) {
-            this.error = "no blob asset named '" + name + "'";
-            return Promise.reject<GLTF>(this.error);
+        const gd = new GLTFData(data, this.meshoptDecoder);
+        if (!gd.readContainer()) {
+            this.error = gd.error;
+            const context = this.context;
+            if (context != null) context.log("three: GLTFLoader: " + this.error);
+            return null;
         }
-        return parseInJob(this, bytes!);
+        const context = this.context;
+        if (context != null) {
+            const buffers = arr(gd.json, "buffers");
+            for (let i = 0; i < buffers.length; i++) {
+                const uri = str(buffers[i], "uri", "");
+                if (uri.length == 0 || uri.startsWith("data:")) continue;
+                const bytes = context.blob(assetName(uri));
+                if (bytes != null) gd.external.set(i, Uint8Array.wrap(bytes!));
+            }
+            const images = arr(gd.json, "images");
+            for (let i = 0; i < images.length; i++) {
+                const uri = str(images[i], "uri", "");
+                if (uri.length == 0 || uri.startsWith("data:")) continue;
+                const bytes = context.blob(assetName(uri));
+                if (bytes != null) gd.externalImages.set(i, Uint8Array.wrap(bytes!));
+            }
+        }
+        return this.parseData(gd);
     }
 
-    /// As parse, decoding in a job (see loadAsync).
-    parseAsync(data: ArrayBuffer): Promise<GLTF> {
-        return parseInJob(this, data);
+    /// Loads `url`: an https: url (fetched where the host allows the
+    /// network, a .gltf's external files from beside it, or from
+    /// `resourcePath`), else the blob asset of that name. The decoding
+    /// (container, meshopt, accessors) runs in a Rive job off the main lane;
+    /// the scene is built when it is done, on a later frame. Progress goes
+    /// to the `manager`.
+    loadAsync(url: string): Promise<GLTF> {
+        return loadInJob(this, url);
+    }
+
+    /// As parse, decoding in a job; `path` is where external files resolve.
+    parseAsync(data: ArrayBuffer, path: string = ""): Promise<GLTF> {
+        return parseInJob(this, data, path);
     }
 
     /// Builds the scene from bytes already decoded or to decode now.
@@ -194,20 +227,104 @@ export class GLTFLoader {
     }
 }
 
-async function parseInJob(loader: GLTFLoader, data: ArrayBuffer): Promise<GLTF> {
-    const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null);
+async function loadInJob(loader: GLTFLoader, url: string): Promise<GLTF> {
+    const resolved = LoaderUtils.resolveURL(url, loader.path);
+    const settled = await fetchBytes(loader, url).settled();
+    if (!settled.ok) {
+        loader.error = settled.error;
+        return await Promise.reject<GLTF>(settled.error);
+    }
+    const base = loader.resourcePath.length > 0 ? loader.resourcePath
+        : LoaderUtils.isURL(resolved) ? LoaderUtils.extractUrlBase(resolved) : "";
+    return await parseInJob(loader, settled.value, base);
+}
+
+async function parseInJob(loader: GLTFLoader, data: ArrayBuffer, base: string): Promise<GLTF> {
+    // External files first (the job cannot fetch).
+    const head = new GLTFData(data, null);
+    if (!head.readContainer()) {
+        loader.error = head.error;
+        return await Promise.reject<GLTF>(head.error);
+    }
+    const externalBuffers: Array<ArrayBuffer> = [];
+    const externalIndices: Array<i32> = [];
+    const externalImages: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    const buffers = arr(head.json, "buffers");
+    for (let i = 0; i < buffers.length; i++) {
+        const uri = str(buffers[i], "uri", "");
+        if (uri.length == 0 || uri.startsWith("data:")) continue;
+        const bytes = await externalFile(loader, uri, base);
+        if (bytes == null) continue;
+        externalBuffers.push(bytes!);
+        externalIndices.push(i);
+    }
+    const images = arr(head.json, "images");
+    for (let i = 0; i < images.length; i++) {
+        const uri = str(images[i], "uri", "");
+        if (uri.length == 0 || uri.startsWith("data:")) continue;
+        const bytes = await externalFile(loader, uri, base);
+        if (bytes != null) externalImages.set(i, Uint8Array.wrap(bytes!));
+    }
+    const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null, externalBuffers, externalIndices);
     const decoded = await job.promise();
     if (decoded.error.length > 0) {
         loader.error = decoded.error;
         return await Promise.reject<GLTF>(decoded.error);
     }
     const gd = new GLTFData(data, loader.meshoptDecoder);
+    for (let i = 0; i < externalIndices.length; i++) gd.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
+    gd.externalImages = externalImages;
     gd.decoded = decoded.floats;
     gd.decodedOffsets = decoded.offsets;
     gd.decodedLengths = decoded.lengths;
     const gltf = loader.parseData(gd);
     if (gltf == null) return await Promise.reject<GLTF>(loader.error);
     return gltf!;
+}
+
+/// An external file of a glTF: fetched beside it when `base` is a url,
+/// else the blob asset named after it; null (logged) when missing.
+async function externalFile(loader: GLTFLoader, uri: string, base: string): Promise<ArrayBuffer?> {
+    const url = LoaderUtils.isURL(base) ? LoaderUtils.resolveURL(decodeURIComponentLite(uri), base) : assetName(uri);
+    const settled = await fetchBytes(loader, url, LoaderUtils.isURL(base) ? "" : loader.path).settled();
+    if (!settled.ok) {
+        const context = loader.context;
+        if (context != null) context.log("three: GLTFLoader: " + settled.error);
+        return null;
+    }
+    return settled.value;
+}
+
+/// The blob asset name for a file a glTF references: its file name
+/// without folders or extension.
+function assetName(uri: string): string {
+    let name = uri;
+    const slash = name.lastIndexOf("/");
+    if (slash >= 0) name = name.substring(slash + 1);
+    const dot = name.lastIndexOf(".");
+    if (dot > 0) name = name.substring(0, dot);
+    return decodeURIComponentLite(name);
+}
+
+/// %20 and friends (glTF uris are uri-encoded).
+function decodeURIComponentLite(s: string): string {
+    if (s.indexOf("%") < 0) return s;
+    let out = "";
+    let i = 0;
+    while (i < s.length) {
+        const c = s.charAt(i);
+        if (c == "%" && i + 2 < s.length) {
+            const hex = parseInt(s.substring(i + 1, i + 3), 16);
+            if (!isNaN(hex)) {
+                out += String.fromCharCode(<i32>hex);
+                i += 3;
+                continue;
+            }
+        }
+        out += c;
+        i++;
+    }
+    return out;
 }
 
 /// The container, buffers, views and accessors of a glTF: pure code, so a
@@ -223,6 +340,9 @@ export class GLTFData {
     bin: Uint8Array? = null;
     buffers: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     views: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    /// External files, loaded ahead: buffers and images by index.
+    external: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    externalImages: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     /// Accessors decoded ahead (by a job): floats from offsets[i], lengths[i]
     /// long; offset -1 when not decoded.
     decoded: Float32Array? = null;
@@ -305,6 +425,8 @@ export class GLTFData {
             if (index == 0) out = this.bin;
         } else if (uri.startsWith("data:")) {
             out = decodeDataUri(uri);
+        } else if (this.external.has(index)) {
+            out = this.external.get(index);
         } else if (this.error.length == 0) {
             this.warnings.push("external buffer '" + uri + "' is not supported (embed it, or use a .glb)");
         }
@@ -411,9 +533,13 @@ export class GLTFDecoded {
 
 /// The job behind loadAsync / parseAsync: parses the container, decodes
 /// meshopt views and every accessor, off the main lane.
-@job export function decodeGLTF(data: ArrayBuffer, meshopt: bool): GLTFDecoded {
+@job export function decodeGLTF(data: ArrayBuffer, meshopt: bool, externalBuffers: Array<ArrayBuffer>,
+                                externalIndices: Array<i32>): GLTFDecoded {
     const out = new GLTFDecoded();
     const gd = new GLTFData(data, meshopt ? MeshoptDecoder : null);
+    for (let i = 0; i < externalIndices.length && i < externalBuffers.length; i++) {
+        gd.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
+    }
     if (!gd.readContainer()) {
         out.error = gd.error;
         return out;
@@ -1055,12 +1181,13 @@ class GLTFParser {
         const bv = <i32>num(image, "bufferView", -1);
         let bytes: Uint8Array? = null;
         if (bv >= 0) bytes = this.viewBytes(bv);
+        else if (this.gd.externalImages.has(source)) bytes = this.gd.externalImages.get(source);
         else {
             const uri = str(image, "uri", "");
             if (uri.startsWith("data:")) bytes = decodeDataUri(uri);
         }
         if (bytes == null || bytes.length == 0) {
-            this.warn("external image URIs are not supported");
+            this.warn("image " + source.toString() + " is missing (external files: see load / loadAsync)");
             return;
         }
         pendingDecodes.push(listener);

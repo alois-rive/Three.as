@@ -440,11 +440,26 @@ export class Demo extends Layout {
 
 ## Loaders
 
-- **Loaders are synchronous and read Rive assets by name**: `new
+- **`load(name)` is synchronous and reads Rive assets by name**: `new
   GLTFLoader(context).load("robot")` returns a `GLTF` (or null) from the
-  BlobAsset `robot`; no URLs, no callbacks, no `LoadingManager`. Embedded
-  images decode asynchronously; their textures fill in a few frames later.
-  Import loaders from `three/addons/loaders/...`.
+  BlobAsset `robot`, with no callbacks (three.js's `load(url, onLoad,
+  onProgress, onError)`). Embedded images decode asynchronously; their
+  textures fill in a few frames later. Import loaders from
+  `three/addons/loaders/...`. Loaders take the Rive `Context` first:
+  `new GLTFLoader(context, manager)`.
+- **Urls load with `loadAsync`**, which returns a Rive `Promise`:
+  `FileLoader`, `TextureLoader` and `GLTFLoader` fetch https: urls through
+  `rive/net` `fetch` where the host allows the network (`rive . --allow-net`
+  in the CLI; a host without it rejects with "disabled"), and fall back to
+  the blob asset of that name. A `.gltf`'s external buffers and images load
+  from beside it (or `resourcePath`); with `load(name)` they are blob assets
+  named after the files without extension (`scene.bin` -> `scene`).
+  `FileLoader.loadAsync` resolves with bytes, `loadTextAsync` with text
+  (three.js picks by `responseType`).
+- `LoadingManager` reports through a `LoadingManagerListener` (override
+  `onStart`, `onProgress`, `onLoad`, `onError`) instead of callbacks;
+  `setURLModifier` is `addURLRewrite(prefix, replacement)`. Progress is
+  counted per file, as three.js.
 - GLTFLoader reads `.glb`, and `.gltf` JSON whose buffers and images are
   base64 `data:` URIs (external files are not read: there are no URLs).
   Extensions read: KHR_lights_punctual, KHR_materials_unlit,

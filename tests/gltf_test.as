@@ -142,7 +142,7 @@ export class GLTFTests extends Tests {
             test("decodeGLTF (the loadAsync job) matches parse", (expect) => {
                 const bytes = this.blob("features");
                 if (bytes == null) return;
-                const decoded = decodeGLTF(bytes!, true);
+                const decoded = decodeGLTF(bytes!, true, [], []);
                 expect.that(decoded.error).is("");
                 expect.that(decoded.offsets.length > 10).is(true);
                 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
