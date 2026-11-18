@@ -104,7 +104,7 @@ struct ObjU {
     color: vec4<f32>,        // rgb linear, a opacity
     emissive: vec4<f32>,     // rgb emissive x intensity, w alphaTest
     pbr: vec4<f32>,          // roughness, metalness, flat shading, aoMapIntensity
-    uv_xform: vec4<f32>,     // xy offset, zw repeat
+    unused_uv: vec4<f32>,
     specular: vec4<f32>,     // rgb Phong specular, w shininess
     extra: vec4<f32>,        // xy normalScale, z envMapIntensity, w ior
     physical0: vec4<f32>,    // clearcoat, clearcoatRoughness, sheenRoughness, specularIntensity
@@ -117,6 +117,9 @@ struct ObjU {
     sprite: vec4<f32>,       // xy sprite center
     bind_matrix: mat4x4<f32>,
     bind_matrix_inverse: mat4x4<f32>,
+    // Per texture slot: its uv transform (three.js's texture.matrix rows,
+    // xyz) and, in the first row's w, its uv channel.
+    uv_matrix: array<vec4<f32>, 14>,
 };
 
 const MAX_BONES: u32 = 256u;
@@ -130,6 +133,8 @@ struct BonesU {
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
 @group(0) @binding(4) var s_shadow: sampler_comparison;
+@group(0) @binding(5) var t_background: texture_2d<f32>;
+@group(0) @binding(6) var s_background: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
@@ -139,15 +144,20 @@ struct BonesU {
 @group(2) @binding(4) var t_ao: texture_2d<f32>;
 @group(2) @binding(5) var t_emissive: texture_2d<f32>;
 @group(2) @binding(6) var t_alpha: texture_2d<f32>;
-@group(2) @binding(7) var s_material: sampler;
-@group(3) @binding(0) var t_background: texture_2d<f32>;
-@group(3) @binding(1) var s_background: sampler;
+@group(3) @binding(0) var s_map: sampler;
+@group(3) @binding(1) var s_normal: sampler;
+@group(3) @binding(2) var s_aux: sampler;
+@group(3) @binding(3) var s_metalness: sampler;
+@group(3) @binding(4) var s_ao: sampler;
+@group(3) @binding(5) var s_emissive: sampler;
+@group(3) @binding(6) var s_alpha: sampler;
 
 struct VsIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
+    @location(11) uv1: vec2<f32>,
 };
 
 struct InstanceIn {
@@ -165,6 +175,7 @@ struct VsOut {
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
     @location(4) view_depth: f32,
+    @location(5) uv1: vec2<f32>,
 };
 
 fn has_flag(bits: u32, slot: u32) -> bool {
@@ -204,7 +215,8 @@ fn transform_vertex(position: vec3<f32>, normal: vec3<f32>, in: VsIn, inst: Inst
     let im3 = mat3x3<f32>(im[0].xyz, im[1].xyz, im[2].xyz);
     let n = im3 * (normal / vec3<f32>(dot(im3[0], im3[0]), dot(im3[1], im3[1]), dot(im3[2], im3[2])));
     out.normal = (O.normal_matrix * vec4<f32>(n, 0.0)).xyz;
-    out.uv = in.uv * O.uv_xform.zw + O.uv_xform.xy;
+    out.uv = in.uv;
+    out.uv1 = in.uv1;
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.color = vcolor * inst.color;
     out.view_depth = -(F.view * world).z;
@@ -241,7 +253,8 @@ fn vs_points(p: PointIn, @builtin(vertex_index) vi: u32) -> VsOut {
     out.clip = clip + vec4<f32>(offset * clip.w, 0.0, 0.0);
     out.world = world.xyz;
     out.normal = -F.camera_dir.xyz;
-    out.uv = (corner * 0.5 + vec2<f32>(0.5)) * O.uv_xform.zw + O.uv_xform.xy;
+    out.uv = corner * 0.5 + vec2<f32>(0.5);
+    out.uv1 = out.uv;
     out.color = select(vec4<f32>(1.0), p.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.view_depth = -view_z;
     return out;
@@ -266,7 +279,8 @@ fn vs_sprite(@builtin(vertex_index) vi: u32) -> VsOut {
     out.clip = F.proj * mv;
     out.world = origin.xyz;
     out.normal = -F.camera_dir.xyz;
-    out.uv = (corner + vec2<f32>(0.5)) * O.uv_xform.zw + O.uv_xform.xy;
+    out.uv = corner + vec2<f32>(0.5);
+    out.uv1 = out.uv;
     out.color = vec4<f32>(1.0);
     out.view_depth = -mv.z;
     return out;
@@ -299,12 +313,21 @@ fn decode(texel: vec4<f32>, premultiplied: bool, srgb: bool) -> vec4<f32> {
     return t;
 }
 
-fn slot_uv(uv: vec2<f32>, slot: u32) -> vec2<f32> {
+/// A slot's uv: its channel's uv through its texture.matrix (three.js's
+/// vMapUv and friends), before the flipY flip.
+fn slot_uv(uv: vec2<f32>, uv1: vec2<f32>, slot: u32) -> vec2<f32> {
+    let r0 = O.uv_matrix[slot * 2u];
+    let r1 = O.uv_matrix[slot * 2u + 1u];
+    let p = vec3<f32>(select(uv, uv1, r0.w > 0.5), 1.0);
+    return vec2<f32>(dot(r0.xyz, p), dot(r1.xyz, p));
+}
+
+fn flip_uv(uv: vec2<f32>, slot: u32) -> vec2<f32> {
     return select(uv, vec2<f32>(uv.x, 1.0 - uv.y), has_flag(O.tex_flags.w, slot));
 }
 
-fn sample_slot(t: texture_2d<f32>, uv: vec2<f32>, slot: u32) -> vec4<f32> {
-    let texel = textureSample(t, s_material, slot_uv(uv, slot));
+fn sample_slot(t: texture_2d<f32>, s: sampler, uv: vec2<f32>, slot: u32) -> vec4<f32> {
+    let texel = textureSample(t, s, flip_uv(uv, slot));
     return decode(texel, has_flag(O.flags.x, slot), has_flag(O.tex_flags.z, slot));
 }
 
@@ -540,8 +563,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     // Derivatives and the view, in uniform control flow.
     let dpx = dpdx(in.world);
     let dpy = dpdy(in.world);
-    let duvx = dpdx(in.uv);
-    let duvy = dpdy(in.uv);
+    let uv_normal = slot_uv(in.uv, in.uv1, SLOT_NORMAL);
+    let duvx = dpdx(uv_normal);
+    let duvy = dpdy(uv_normal);
     let dnx = dpdx(in.normal);
     let dny = dpdy(in.normal);
     let orthographic = F.camera_pos.w > 0.5;
@@ -565,23 +589,23 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let mx = normalize(vec3<f32>(view_dir.z, 0.0, -view_dir.x));
     let my = cross(view_dir, mx);
     let matcap_uv = vec2<f32>(dot(mx, view_n), dot(my, view_n)) * 0.495 + 0.5;
-    let aux_uv = select(in.uv, matcap_uv, kind == KIND_MATCAP);
+    let aux_uv = select(slot_uv(in.uv, in.uv1, SLOT_AUX), matcap_uv, kind == KIND_MATCAP);
 
-    let s_map = sample_slot(t_map, in.uv, SLOT_MAP);
-    let s_normal = textureSample(t_normal, s_material, slot_uv(in.uv, SLOT_NORMAL));
-    let s_aux = sample_slot(t_aux, aux_uv, SLOT_AUX);
-    let s_metal = sample_slot(t_metalness, in.uv, SLOT_METALNESS);
-    let s_ao = sample_slot(t_ao, in.uv, SLOT_AO);
-    let s_emissive = sample_slot(t_emissive, in.uv, SLOT_EMISSIVE);
-    let s_alpha = sample_slot(t_alpha, in.uv, SLOT_ALPHA);
+    let c_map = sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP);
+    let c_normal = textureSample(t_normal, s_normal, flip_uv(uv_normal, SLOT_NORMAL));
+    let c_aux = sample_slot(t_aux, s_aux, aux_uv, SLOT_AUX);
+    let c_metal = sample_slot(t_metalness, s_metalness, slot_uv(in.uv, in.uv1, SLOT_METALNESS), SLOT_METALNESS);
+    let c_ao = sample_slot(t_ao, s_ao, slot_uv(in.uv, in.uv1, SLOT_AO), SLOT_AO);
+    let c_emissive = sample_slot(t_emissive, s_emissive, slot_uv(in.uv, in.uv1, SLOT_EMISSIVE), SLOT_EMISSIVE);
+    let c_alpha = sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA);
 
     // Diffuse colour and alpha.
     var diffuse = O.color * in.color;
     if (has_flag(present, SLOT_MAP)) {
-        diffuse *= s_map;
+        diffuse *= c_map;
     }
     if (has_flag(present, SLOT_ALPHA)) {
-        diffuse.a *= s_alpha.g;
+        diffuse.a *= c_alpha.g;
     }
     if (diffuse.a < O.emissive.w) {
         discard;
@@ -597,7 +621,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     // Normal mapping in a tangent frame built from derivatives (three.js's
     // getTangentFrame), so no tangent attribute is needed.
     if (has_flag(present, SLOT_NORMAL) && kind != KIND_DEPTH) {
-        var map_n = s_normal.xyz * 2.0 - 1.0;
+        var map_n = c_normal.xyz * 2.0 - 1.0;
         map_n = vec3<f32>(map_n.xy * O.extra.xy, map_n.z);
         let q1perp = cross(dpy, N);
         let q0perp = cross(N, dpx);
@@ -610,11 +634,11 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
 
     var ao = 1.0;
     if (has_flag(present, SLOT_AO)) {
-        ao = (s_ao.r - 1.0) * O.pbr.w + 1.0;
+        ao = (c_ao.r - 1.0) * O.pbr.w + 1.0;
     }
     var emissive = O.emissive.rgb;
     if (has_flag(present, SLOT_EMISSIVE)) {
-        emissive *= s_emissive.rgb;
+        emissive *= c_emissive.rgb;
     }
 
     if (kind == KIND_NORMAL) {
@@ -630,7 +654,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if (kind == KIND_BASIC || kind == KIND_LINE_DASHED) {
         rgb = diffuse.rgb * ao;
     } else if (kind == KIND_MATCAP) {
-        rgb = diffuse.rgb * select(vec3<f32>(1.0), s_aux.rgb, has_flag(present, SLOT_AUX));
+        rgb = diffuse.rgb * select(vec3<f32>(1.0), c_aux.rgb, has_flag(present, SLOT_AUX));
     } else {
         // Lit materials.
         let physical = kind == KIND_PHYSICAL;
@@ -643,10 +667,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             metalness = saturate(O.pbr.y);
             roughness = O.pbr.x;
             if (has_flag(present, SLOT_AUX)) {
-                roughness *= s_aux.g;
+                roughness *= c_aux.g;
             }
             if (has_flag(present, SLOT_METALNESS)) {
-                metalness *= s_metal.b;
+                metalness *= c_metal.b;
             }
             // Specular anti-aliasing from the geometry's curvature.
             let dxy = max(abs(dnx), abs(dny));
@@ -665,7 +689,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         let diffuse_color = diffuse.rgb * (1.0 - metalness);
         var specular_strength = 1.0;
         if (kind == KIND_PHONG && has_flag(present, SLOT_AUX)) {
-            specular_strength = s_aux.r;
+            specular_strength = c_aux.r;
         }
 
         // Indirect: ambient and hemisphere light, occluded by the aoMap.

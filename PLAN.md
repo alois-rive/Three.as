@@ -176,7 +176,7 @@ a step can start by checking them (`rive docs animascript/api/<module>`).
 Goal: environments and textures as three.js has them, so glTF scenes and
 three.js lighting setups look the same.
 
-- **M7a, per-map sampling.** Every map its own sampler and UV transform
+- **M7a, per-map sampling (done).** Every map its own sampler and UV transform
   (`offset`, `repeat`, `rotation`, `center`, `wrapS/T`, filters) and
   `channel` (uv, uv1, uv2), as three.js's `*MapTransform` uniforms; the
   "one sampler per material" deviation goes away.

@@ -17,13 +17,19 @@ export class GeometryGPU {
     position: GPUBuffer? = null;
     normal: GPUBuffer? = null;
     uv: GPUBuffer? = null;
+    /// "uv1", or the uv buffer when there is none.
+    uv1: GPUBuffer? = null;
+    uv1Version: i32 = -1;
+    uv1Attr: BufferAttribute? = null;
     /// RGBA per vertex (white when the geometry has no "color").
     color: GPUBuffer? = null;
     /// Skinning: joint indices and weights as float4 (null without them).
-    skinIndex: GPUBuffer? = null;
-    skinWeight: GPUBuffer? = null;
+    /// skinIndex and skinWeight interleaved (32 bytes a vertex: Rive allows
+    /// 8 vertex buffers a pipeline).
+    skin: GPUBuffer? = null;
     skinIndexVersion: i32 = -1;
     skinWeightVersion: i32 = -1;
+    private skinStaging: Float32Array = new Float32Array(0);
     index: GPUBuffer? = null;
     indexFormat: IndexFormat = IndexFormat.none;
     /// Indices when indexed, else vertices.
@@ -47,6 +53,19 @@ export class GeometryGPU {
     lineCounts: StaticArray<i32> = new StaticArray<i32>(4);
     lineStamps: StaticArray<i64> = [-1, -1, -1, -1];
 
+    /// Index then weight, 8 floats a vertex.
+    interleaveSkin(index: Float32Array, weight: Float32Array, count: i32): Float32Array {
+        if (this.skinStaging.length != count * 8) this.skinStaging = new Float32Array(count * 8);
+        const out = this.skinStaging;
+        for (let v = 0; v < count; v++) {
+            for (let k = 0; k < 4; k++) {
+                out[v * 8 + k] = index[v * 4 + k];
+                out[v * 8 + 4 + k] = weight[v * 4 + k];
+            }
+        }
+        return out;
+    }
+
     release(): void {
         for (let i = 0; i < 4; i++) {
             releaseBuffer(this.lineBuffers[i]);
@@ -56,9 +75,10 @@ export class GeometryGPU {
         releaseBuffer(this.position); this.position = null;
         releaseBuffer(this.normal); this.normal = null;
         releaseBuffer(this.uv); this.uv = null;
+        if (this.uv1Attr != null) releaseBuffer(this.uv1);
+        this.uv1 = null;
         releaseBuffer(this.color); this.color = null;
-        releaseBuffer(this.skinIndex); this.skinIndex = null;
-        releaseBuffer(this.skinWeight); this.skinWeight = null;
+        releaseBuffer(this.skin); this.skin = null;
         releaseBuffer(this.index); this.index = null;
     }
 }
@@ -128,6 +148,20 @@ export class GPUGeometries {
             g.uvAttr = null;
         }
 
+        // The second UV set (texture.channel 1), or the first again.
+        const uv1 = geometry.getAttribute("uv1");
+        if (uv1 != null && uv1.itemSize == 2 && uv1.count == vertexCount) {
+            if (resized || g.uv1Attr !== uv1 || g.uv1Version != uv1.version) {
+                g.uv1 = upload(g.uv1Attr != null ? g.uv1 : null, uv1.array);
+                g.uv1Attr = uv1;
+                g.uv1Version = uv1.version;
+            }
+        } else {
+            if (g.uv1Attr != null) releaseBuffer(g.uv1);
+            g.uv1 = g.uv;
+            g.uv1Attr = null;
+        }
+
         const color = geometry.getAttribute("color");
         if (color != null && color.count == vertexCount && (color.itemSize == 3 || color.itemSize == 4)) {
             if (resized || g.colorAttr !== color || g.colorVersion != color.version) {
@@ -146,12 +180,9 @@ export class GPUGeometries {
         const sw = geometry.getAttribute("skinWeight");
         if (si != null && sw != null && si.itemSize == 4 && sw.itemSize == 4 && si.count == vertexCount
                 && sw.count == vertexCount) {
-            if (resized || g.skinIndex == null || g.skinIndexVersion != si.version) {
-                g.skinIndex = upload(g.skinIndex, si.array);
+            if (resized || g.skin == null || g.skinIndexVersion != si.version || g.skinWeightVersion != sw.version) {
+                g.skin = upload(g.skin, g.interleaveSkin(si.array, sw.array, vertexCount));
                 g.skinIndexVersion = si.version;
-            }
-            if (resized || g.skinWeight == null || g.skinWeightVersion != sw.version) {
-                g.skinWeight = upload(g.skinWeight, sw.array);
                 g.skinWeightVersion = sw.version;
             }
         }

@@ -69,7 +69,7 @@ export class Demo extends Layout {
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
-| custom vertex layouts | fixed slots: 0 position, 1 normal, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6-7 skin index/weight |
+| custom vertex layouts | fixed slots: 0 position, 1 normal, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
 | `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
 
 ## Language (AnimaScript is typed and compiled)
@@ -164,10 +164,6 @@ export class Demo extends Layout {
 
 ## Materials
 
-- **All the maps of a material share one sampler and one UV transform**,
-  taken from the first map present (`map` first). three.js gives each map
-  its own (`offset`, `repeat`, `wrapS`/`wrapT`, filters, `channel`). Use
-  the same settings on every map of a material.
 - Normal maps are tangent space, with the tangent frame built from screen
   derivatives (three.js's path without a `tangent` attribute);
   `normalMapType` and `bumpMap` are not supported.
@@ -369,8 +365,10 @@ export class Demo extends Layout {
 - `DataTexture(data: Uint8Array, width, height)` takes RGBA8 only.
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),
   not an HTML canvas.
-- UV transform: `offset` and `repeat` work; `rotation` and `center` are
-  ignored for now.
+- UV transforms as three.js: each map has its own `offset`, `repeat`,
+  `rotation`, `center` (`matrix`, `matrixAutoUpdate`, `updateMatrix()`),
+  wrapping and filters. `channel` 0 reads "uv", 1 reads "uv1" (2 and 3
+  read "uv1" too: two uv sets only); a geometry without "uv1" reads "uv".
 - Mipmaps: a texture with `generateMipmaps` and a mipmap `minFilter` (the
   default) is copied into a mipmapped texture, redone when its source
   changes (a Rive image that decoded, `needsUpdate`, an ArtboardTexture

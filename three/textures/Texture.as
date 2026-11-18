@@ -11,6 +11,7 @@ import { Context } from "rive/host";
 import { Image } from "rive/image";
 import { GPUTextureView } from "rive/gpu";
 import { Vector2 } from "../math/Vector2";
+import { Matrix3 } from "../math/Matrix3";
 import { ColorOrTexture } from "../core/ColorOrTexture";
 import {
     ClampToEdgeWrapping, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, SRGBColorSpace,
@@ -39,11 +40,16 @@ export class Texture extends ColorOrTexture {
     format: i32 = RGBAFormat;
     type: i32 = UnsignedByteType;
 
-    /// UV transform: uv * repeat + offset (rotation and center come later).
+    /// UV transform, as three.js: `matrix` is made from offset, repeat,
+    /// rotation (radians) and center when matrixAutoUpdate is set.
     offset: Vector2 = new Vector2(0, 0);
     repeat: Vector2 = new Vector2(1, 1);
     center: Vector2 = new Vector2(0, 0);
     rotation: f64 = 0;
+    matrixAutoUpdate: bool = true;
+    matrix: Matrix3 = new Matrix3();
+    /// The UV set read: 0 "uv", 1 "uv1" (2 and 3 read "uv1" too).
+    channel: i32 = 0;
 
     generateMipmaps: bool = true;
     /// The image's first row is the top (v = 1); false for data laid out
@@ -69,6 +75,12 @@ export class Texture extends ColorOrTexture {
             this.premultiplyAlpha = true;
             this.colorSpace = SRGBColorSpace;
         }
+    }
+
+    /// Rebuilds `matrix` from offset, repeat, rotation and center.
+    updateMatrix(): void {
+        this.matrix.setUvTransform(this.offset.x, this.offset.y, this.repeat.x, this.repeat.y, this.rotation,
+            this.center.x, this.center.y);
     }
 
     set needsUpdate(value: bool) { if (value) this.version++; }

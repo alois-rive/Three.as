@@ -49,6 +49,10 @@ screenshot and look at it. Interaction can be scripted headless:
 `--probe=x,y` prints a pixel. Headless runs advance without drawing, so
 world matrices can be stale between frames.
 
+Rive GPU limits that shape the renderer: bindings 0-7 in each bind group
+(textures, samplers and buffers together), 4 bind groups, 8 vertex
+buffers a pipeline (`context.features()` has the rest).
+
 Gotchas: integer `/` truncates and `<f64>(a / b)` divides as floats (see
 DEVIATIONS.md); `Array.splice` cannot insert; arrays are invariant; Rive
 paints the first-declared shape on top; `Layout` already has an `update()`

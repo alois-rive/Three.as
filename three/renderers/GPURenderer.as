@@ -93,10 +93,10 @@ import {
     FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_PROJ, FRAME_VIEWPORT, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES, OBJ_SPRITE,
     FRAME_ENV, FRAME_ENV_ROTATION, FRAME_ENV_FLAGS, FRAME_SHADOW_PARAMS, FRAME_SHADOW_TILES, SHADOW_TILE_BYTES,
     MAX_SHADOW_TILES, FLAG_RECEIVE_SHADOW,
-    OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
+    OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -241,8 +241,9 @@ class DrawState {
     arena: GPUBuffer? = null;
     bones: GPUBuffer? = null;
     matGroup: GPUBindGroup? = null;
+    samplerGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
-    sampler: GPUSampler? = null;
+    samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
     frame: i32 = -1;
 }
 
@@ -310,7 +311,9 @@ export class GPURenderer {
     private frameLayout: GPUBindGroupLayout? = null;
     private objLayout: GPUBindGroupLayout? = null;
     private matLayout: GPUBindGroupLayout? = null;
-    private bgLayout: GPUBindGroupLayout? = null;
+    // Group 3: the material's samplers (Rive allows bindings 0-7 a group,
+    // so textures and samplers do not fit in one).
+    private samplerLayout: GPUBindGroupLayout? = null;
     private vertexBuffers: Array<GPUVertexBufferLayout> = [];
     private pointBuffers: Array<GPUVertexBufferLayout> = [];
     private skinBuffers: Array<GPUVertexBufferLayout> = [];
@@ -350,8 +353,9 @@ export class GPURenderer {
     private whiteColors: GPUBuffer? = null;
     private whiteCount: i32 = 0;
     private samplers: Map<i32, GPUSampler> = new Map<i32, GPUSampler>();
-    private bgGroup: GPUBindGroup? = null;
     private bgView: GPUTextureView? = null;
+    private bgMipmapped: bool = false;
+    private frameGroupBg: GPUTextureView? = null;
     private bgTexture: Texture? = null;
     private envTexture: Texture? = null;
     private envCandidate: Texture? = null;
@@ -591,7 +595,6 @@ export class GPURenderer {
         if (background) {
             pass.setPipeline(this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0)));
             pass.setBindGroup(0, this.frameGroup!);
-            pass.setBindGroup(3, this.bgGroup!);
             pass.draw(3);
         }
         this.drawList(pass, this.opaque);
@@ -666,7 +669,7 @@ export class GPURenderer {
             this.frameLayout = g0;
             this.objLayout = g1;
             this.matLayout = g2;
-            this.bgLayout = g3;
+            this.samplerLayout = g3;
 
             // Instances: matrices at slot 4 (InstancedMesh.instanceMatrix as
             // is), colours at slot 5 (instanceColor, rgb).
@@ -688,16 +691,20 @@ export class GPURenderer {
                 vertexLayout(16, VertexFormat.float4, 3),
                 instance,
                 instanceColor,
+                vertexLayout(8, VertexFormat.float2, 11),   // uv1
             ];
             const pointPosition = vertexLayout(12, VertexFormat.float3, 0);
             pointPosition.stepMode = VertexStepMode.instance;
             const pointColor = vertexLayout(16, VertexFormat.float4, 3);
             pointColor.stepMode = VertexStepMode.instance;
             this.pointBuffers = [pointPosition, pointColor];
-            this.skinBuffers = this.vertexBuffers.concat([
-                vertexLayout(16, VertexFormat.float4, 9),
-                vertexLayout(16, VertexFormat.float4, 10),
-            ]);
+            const skin = new GPUVertexBufferLayout();
+            skin.stride = 32;
+            skin.attributes = [
+                new GPUVertexAttribute(VertexFormat.float4, 9, 0),
+                new GPUVertexAttribute(VertexFormat.float4, 10, 16),
+            ];
+            this.skinBuffers = this.vertexBuffers.concat([skin]);
             this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
             const sd = new GPUTextureDesc();
             sd.width = 1; sd.height = 1;
@@ -784,7 +791,7 @@ export class GPURenderer {
             ds.compare = CompareFunction.always;
             ds.write = false;
             d.colorTargets = [target];
-            d.bindGroupLayouts = [this.frameLayout, null, null, this.bgLayout];
+            d.bindGroupLayouts = [this.frameLayout];
         } else {
             const cull = key & KEY_CULL_MASK;
             const blending = (key >> KEY_BLEND_SHIFT) & 7;
@@ -796,7 +803,7 @@ export class GPURenderer {
             const prim = (key >> KEY_PRIM_SHIFT) & 3;
             d.fragmentEntryPoint = "fs_main";
             d.colorTargets = [target];
-            d.bindGroupLayouts = [this.frameLayout, this.objLayout, this.matLayout];
+            d.bindGroupLayouts = [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout];
             d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
             // three.js flips the front face of mirrored (negative determinant)
             // objects, so front_facing stays true on their outside.
@@ -1163,7 +1170,7 @@ export class GPURenderer {
         if (!(mesh instanceof SkinnedMesh)) return;
         const sm = mesh as SkinnedMesh;
         const skeleton = sm.skeleton;
-        if (skeleton == null || g.skinIndex == null || g.skinWeight == null) return;
+        if (skeleton == null || g.skin == null) return;
         if (skeleton.bones.length > MAX_BONES) {
             if (!this.warnedBones) {
                 this.context.log("three: skeletons over " + MAX_BONES.toString() + " bones draw unskinned");
@@ -1327,12 +1334,8 @@ export class GPURenderer {
         const view = this.textures.view(t, canvas);
         if (view == null) return false;
         this.bgTexture = t;
-        if (this.bgGroup == null || this.bgView !== view) {
-            const mipmapped = wantsMipmaps(t);
-            this.bgGroup = new GPUBindGroup(this.bgLayout!, [],
-                [new GPUBindGroupTexture(0, view)], [new GPUBindGroupSampler(1, this.backgroundSampler(mipmapped))]);
-            this.bgView = view;
-        }
+        this.bgView = view;
+        this.bgMipmapped = wantsMipmaps(t);
         return true;
     }
 
@@ -1353,12 +1356,16 @@ export class GPURenderer {
         this.envLevels = env != null && view != null ? this.textures.levels(env) : 1;
         const bind = view != null ? view! : this.white!;
         const shadow = this.tileCount > 0 && this.shadowView != null ? this.shadowView! : this.dummyShadowView!;
-        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow) {
+        const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
+        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow
+                || this.frameGroupBg !== bg) {
             this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]);
+                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, bg)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                    new GPUBindGroupSampler(6, this.backgroundSampler(this.bgMipmapped))]);
             this.frameGroupView = bind;
             this.frameGroupShadow = shadow;
+            this.frameGroupBg = bg;
         }
     }
 
@@ -1492,8 +1499,10 @@ export class GPURenderer {
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.tileUbos.push(ubo);
             this.tileGroups.push(new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
-                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]));
+                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
+                    new GPUBindGroupTexture(5, this.white!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]));
         }
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
@@ -1527,9 +1536,9 @@ export class GPURenderer {
                 pass.setVertexBuffer(3, g.color!);
                 pass.setVertexBuffer(4, item.instances);
                 pass.setVertexBuffer(5, item.instanceColors);
+                pass.setVertexBuffer(6, g.uv1!);
                 if (item.skinned) {
-                    pass.setVertexBuffer(6, g.skinIndex!);
-                    pass.setVertexBuffer(7, g.skinWeight!);
+                    pass.setVertexBuffer(7, g.skin!);
                 }
                 const index = item.index;
                 if (index != null) {
@@ -1898,36 +1907,32 @@ export class GPURenderer {
                 put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);
             }
 
-            // Textures: views, flags, the shared sampler and UV transform
-            // (from the first texture present, `map` first).
+            // Textures: per slot a view, a sampler, flags and the uv
+            // transform (texture.matrix and channel).
             let present: u32 = 0, srgb: u32 = 0, flip: u32 = 0, premul: u32 = 0;
-            let first: Texture? = null;
-            let firstMipmapped = false;
             const views = _views;
+            const samplers = _samplers;
             for (let s = 0; s < TEXTURE_SLOTS; s++) {
                 views[s] = this.white;
+                samplers[s] = this.defaultSampler();
+                o = (OBJ_UV_MATRIX >> 2) + s * 8;
+                f[o] = 1; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 0;
+                f[o + 4] = 0; f[o + 5] = 1; f[o + 6] = 0; f[o + 7] = 0;
                 const t = mu.textures[s];
                 if (t == null) continue;
                 const v = this.textures.view(t, canvas);
                 if (v == null) continue;
                 views[s] = v;
+                samplers[s] = this.sampler(t, this.textures.levels(t) > 1);
                 const bit: u32 = 1 << <u32>s;
                 present |= bit;
                 if (t.colorSpace == SRGBColorSpace) srgb |= bit;
                 if (t.flipY) flip |= bit;
                 if (t.premultiplyAlpha) premul |= bit;
-                if (first == null) {
-                    first = t;
-                    firstMipmapped = this.textures.levels(t) > 1;
-                }
-            }
-            let sampler: GPUSampler;
-            if (first != null) {
-                sampler = this.sampler(first, firstMipmapped);
-                put4(f, OBJ_UV, first.offset.x, first.offset.y, first.repeat.x, first.repeat.y);
-            } else {
-                sampler = this.defaultSampler();
-                put4(f, OBJ_UV, 0, 0, 1, 1);
+                if (t.matrixAutoUpdate) t.updateMatrix();
+                const e = t.matrix.elements;   // column-major 3x3
+                f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;
+                f[o + 4] = <f32>e[1]; f[o + 5] = <f32>e[4]; f[o + 6] = <f32>e[7];
             }
             o = OBJ_TEX_FLAGS >> 2;
             u[o] = <u32>mu.kind; u[o + 1] = present; u[o + 2] = srgb; u[o + 3] = flip;
@@ -1953,7 +1958,7 @@ export class GPURenderer {
                 item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
                 continue;
             }
-            let changed = state.matGroup == null || state.sampler !== sampler;
+            let changed = state.matGroup == null;
             for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.views[s] !== views[s];
             if (changed) {
                 const entries: Array<GPUBindGroupTexture> = [];
@@ -1961,9 +1966,17 @@ export class GPURenderer {
                     entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
                     state.views[s] = views[s];
                 }
-                state.matGroup = new GPUBindGroup(this.matLayout!, [], entries,
-                    [new GPUBindGroupSampler(<u32>TEXTURE_SLOTS, sampler)]);
-                state.sampler = sampler;
+                state.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
+            }
+            changed = state.samplerGroup == null;
+            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.samplers[s] !== samplers[s];
+            if (changed) {
+                const entries: Array<GPUBindGroupSampler> = [];
+                for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                    entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
+                    state.samplers[s] = samplers[s];
+                }
+                state.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
             }
         }
         // One upload: the new blocks, or everything this render wrote when
@@ -1981,7 +1994,7 @@ export class GPURenderer {
         const info = this.info.render;
         let lastKey = -1;
         // Bindings already set (draws sharing a geometry or material skip them).
-        let lastMat: GPUBindGroup? = null;
+        let lastMat: GPUBindGroup? = null, lastSamplers: GPUBindGroup? = null;
         let lastPos: GPUBuffer? = null, lastNrm: GPUBuffer? = null, lastUv: GPUBuffer? = null;
         let lastColor: GPUBuffer? = null, lastInst: GPUBuffer? = null, lastIndex: GPUBuffer? = null;
         let lastSkin: GPUBuffer? = null;
@@ -1994,7 +2007,7 @@ export class GPURenderer {
                 pass.setPipeline(cp.pipeline);
                 lastKey = -1;
                 pass.setBindGroup(0, cp.frameGroup);
-                lastMat = null; lastPos = null; lastNrm = null; lastUv = null; lastColor = null;
+                lastMat = null; lastSamplers = null; lastPos = null; lastNrm = null; lastUv = null; lastColor = null;
                 lastInst = null; lastIndex = null; lastSkin = null;
                 this.dynamicOffset[0] = state.objOffset;
                 pass.setBindGroup(1, this.customObjGroup(cp), this.dynamicOffset);
@@ -2006,6 +2019,7 @@ export class GPURenderer {
                 pass.setVertexBuffer(3, g.color!);
                 pass.setVertexBuffer(4, item.instances);
                 pass.setVertexBuffer(5, item.instanceColors);
+                pass.setVertexBuffer(6, g.uv1!);
                 const index = item.index;
                 if (index != null) {
                     pass.setIndexBuffer(index, item.indexFormat);
@@ -2029,6 +2043,11 @@ export class GPURenderer {
             if (mat !== lastMat) {
                 pass.setBindGroup(2, mat);
                 lastMat = mat;
+            }
+            const smp = state.samplerGroup!;
+            if (smp !== lastSamplers) {
+                pass.setBindGroup(3, smp);
+                lastSamplers = smp;
             }
             const prim = item.prim;
             if (prim == PRIM_SPRITE) {
@@ -2054,7 +2073,11 @@ export class GPURenderer {
             if (pos !== lastPos) { pass.setVertexBuffer(0, pos); lastPos = pos; }
             if (nrm !== lastNrm) { pass.setVertexBuffer(1, nrm); lastNrm = nrm; }
             const uv = g.uv!;
-            if (uv !== lastUv) { pass.setVertexBuffer(2, uv); lastUv = uv; }
+            if (uv !== lastUv) {
+                pass.setVertexBuffer(2, uv);
+                pass.setVertexBuffer(6, g.uv1!);
+                lastUv = uv;
+            }
             const color = g.color!;
             if (color !== lastColor) { pass.setVertexBuffer(3, color); lastColor = color; }
             const inst = item.instances;
@@ -2064,10 +2087,9 @@ export class GPURenderer {
                 lastInst = inst;
             }
             if (item.skinned) {
-                const si = g.skinIndex!;
+                const si = g.skin!;
                 if (si !== lastSkin) {
-                    pass.setVertexBuffer(6, si);
-                    pass.setVertexBuffer(7, g.skinWeight!);
+                    pass.setVertexBuffer(7, si);
                     lastSkin = si;
                 }
             }
@@ -2199,3 +2221,4 @@ const _sphere: Sphere = new Sphere();
 const _euler: Euler = new Euler();
 const _bgRotation: Matrix4 = new Matrix4();
 const _views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
+const _samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);

@@ -642,7 +642,10 @@ class GLTFParser {
         if (index < 0 || index >= textures.length) return null;
         const tdef = textures[index];
         const transform = dget(dget(info, "extensions"), "KHR_texture_transform");
-        const key = index.toString() + (srgb ? "s" : "l") + (transform != null ? Dynamic.toText(transform) : "");
+        let channel = <i32>num(info, "texCoord", 0);
+        if (transform != null) channel = <i32>num(transform, "texCoord", <f64>channel);
+        const key = index.toString() + (srgb ? "s" : "l") + channel.toString()
+            + (transform != null ? Dynamic.toText(transform) : "");
         if (this.textures.has(key)) return this.textures.get(key);
         const source = <i32>num(tdef, "source", -1);
         const images = arr(this.json, "images");
@@ -657,6 +660,7 @@ class GLTFParser {
         texture.minFilter = LinearMipmapLinearFilter;
         texture.wrapS = RepeatWrapping;
         texture.wrapT = RepeatWrapping;
+        texture.channel = channel;
         const samplerIndex = <i32>num(tdef, "sampler", -1);
         const samplers = arr(this.json, "samplers");
         if (samplerIndex >= 0 && samplerIndex < samplers.length) {
