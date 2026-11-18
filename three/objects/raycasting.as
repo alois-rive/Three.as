@@ -10,6 +10,7 @@ import { InstancedMesh } from "./InstancedMesh";
 import { Line, LineSegments, LineLoop } from "./Line";
 import { Points } from "./Points";
 import { Sprite } from "./Sprite";
+import { SkinnedMesh } from "./SkinnedMesh";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { Ray } from "../math/Ray";
 import { Sphere } from "../math/Sphere";
@@ -38,8 +39,15 @@ const _instanceLocal: Matrix4 = new Matrix4();
 export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<Intersection>,
                             matrixWorld: Matrix4, instanceId: i32): void {
     const geometry = mesh.geometry;
-    if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
-    _sphere.copy(geometry.boundingSphere!).applyMatrix4(matrixWorld);
+    const skinned = mesh instanceof SkinnedMesh;
+    if (skinned) {
+        const sm = mesh as SkinnedMesh;
+        if (sm.boundingSphere == null) sm.computeBoundingSphere();
+        _sphere.copy(sm.boundingSphere!).applyMatrix4(matrixWorld);
+    } else {
+        if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
+        _sphere.copy(geometry.boundingSphere!).applyMatrix4(matrixWorld);
+    }
     _ray.copy(raycaster.ray).recast(raycaster.near);
     if (!_sphere.containsPoint(_ray.origin)) {
         if (_ray.intersectSphere(_sphere, _hitAt) == null) return;
@@ -49,7 +57,7 @@ export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<
     _inverse.copy(matrixWorld).invert();
     _ray.copy(raycaster.ray).applyMatrix4(_inverse);
     const box = geometry.boundingBox;
-    if (box != null && !_ray.intersectsBox(box)) return;
+    if (!skinned && mesh.morphTargetInfluences.length == 0 && box != null && !_ray.intersectsBox(box)) return;
 
     const position = geometry.getAttribute("position");
     if (position == null) return;
@@ -85,9 +93,9 @@ function meshTriangles(mesh: Mesh, material: Material, geometry: BufferGeometry,
         const a = index != null ? index.getX(j) : j;
         const b = index != null ? index.getX(j + 1) : j + 1;
         const c = index != null ? index.getX(j + 2) : j + 2;
-        _vA.set(position.getX(a), position.getY(a), position.getZ(a));
-        _vB.set(position.getX(b), position.getY(b), position.getZ(b));
-        _vC.set(position.getX(c), position.getY(c), position.getZ(c));
+        mesh.getVertexPosition(a, _vA);
+        mesh.getVertexPosition(b, _vB);
+        mesh.getVertexPosition(c, _vC);
         let hit: Vector3?;
         if (material.side == BackSide) hit = _ray.intersectTriangle(_vC, _vB, _vA, true, _point);
         else hit = _ray.intersectTriangle(_vA, _vB, _vC, material.side == FrontSide, _point);

@@ -100,10 +100,19 @@ struct ObjU {
     points: vec4<f32>,       // size, sizeAttenuation, rotation, viewport height / 2
     dash: vec4<f32>,         // dashSize, gapSize, scale
     sprite: vec4<f32>,       // xy sprite center
+    bind_matrix: mat4x4<f32>,
+    bind_matrix_inverse: mat4x4<f32>,
+};
+
+const MAX_BONES: u32 = 256u;
+
+struct BonesU {
+    bones: array<mat4x4<f32>, 256>,   // bone.matrixWorld x boneInverse
 };
 
 @group(0) @binding(0) var<uniform> F: FrameU;
 @group(1) @binding(0) var<uniform> O: ObjU;
+@group(1) @binding(1) var<uniform> B: BonesU;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
 @group(2) @binding(1) var t_normal: texture_2d<f32>;
 @group(2) @binding(2) var t_aux: texture_2d<f32>;
@@ -143,16 +152,38 @@ fn has_flag(bits: u32, slot: u32) -> bool {
     return (bits & (1u << slot)) != 0u;
 }
 
+struct SkinIn {
+    @location(9) index: vec4<f32>,
+    @location(10) weight: vec4<f32>,
+};
+
 @vertex
 fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
+    return transform_vertex(in.position, in.normal, in, inst);
+}
+
+// Skinned meshes: three.js's skinning (bindMatrixInverse x weighted bone
+// matrices x bindMatrix) before the usual transform.
+@vertex
+fn vs_skinned(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
+    let w = skin.weight;
+    let i = vec4<u32>(min(vec4<u32>(skin.index), vec4<u32>(MAX_BONES - 1u)));
+    let bones = B.bones[i.x] * w.x + B.bones[i.y] * w.y + B.bones[i.z] * w.z + B.bones[i.w] * w.w;
+    let m = O.bind_matrix_inverse * bones * O.bind_matrix;
+    let p = (m * vec4<f32>(in.position, 1.0)).xyz;
+    let n = (m * vec4<f32>(in.normal, 0.0)).xyz;
+    return transform_vertex(p, n, in, inst);
+}
+
+fn transform_vertex(position: vec3<f32>, normal: vec3<f32>, in: VsIn, inst: InstanceIn) -> VsOut {
     var out: VsOut;
     let im = mat4x4<f32>(inst.m0, inst.m1, inst.m2, inst.m3);
-    let world = O.model * (im * vec4<f32>(in.position, 1.0));
+    let world = O.model * (im * vec4<f32>(position, 1.0));
     out.clip = F.view_proj * world;
     out.world = world.xyz;
     // three.js's instanced normal: undo the instance scale per axis.
     let im3 = mat3x3<f32>(im[0].xyz, im[1].xyz, im[2].xyz);
-    let n = im3 * (in.normal / vec3<f32>(dot(im3[0], im3[0]), dot(im3[1], im3[1]), dot(im3[2], im3[2])));
+    let n = im3 * (normal / vec3<f32>(dot(im3[0], im3[0]), dot(im3[1], im3[1]), dot(im3[2], im3[2])));
     out.normal = (O.normal_matrix * vec4<f32>(n, 0.0)).xyz;
     out.uv = in.uv * O.uv_xform.zw + O.uv_xform.xy;
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);

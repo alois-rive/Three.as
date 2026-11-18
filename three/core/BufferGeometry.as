@@ -41,6 +41,11 @@ export class BufferGeometry {
     attributes: Map<string, BufferAttribute> = new Map<string, BufferAttribute>();
     groups: Array<GeometryGroup> = [];
     drawRange: DrawRange = new DrawRange();
+    /// Morph targets per attribute ("position", "normal"), one attribute per
+    /// target (named by the target's name, when it has one).
+    morphAttributes: Map<string, Array<BufferAttribute>> = new Map<string, Array<BufferAttribute>>();
+    /// Morph targets hold offsets (true) or absolute values (false).
+    morphTargetsRelative: bool = false;
     /// Set by computeBoundingBox (null until then).
     boundingBox: Box3? = null;
     /// Set by computeBoundingSphere; the renderer computes it on first

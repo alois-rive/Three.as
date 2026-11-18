@@ -267,6 +267,20 @@
         </LinearAnimation>
     </Artboard>
 
+    <!-- Deform: GPU skinning and morph targets (examples/deform.as). -->
+    <Artboard defaultStateMachineId="0:907" clip="true" x="1800" y="2100" width="800" height="600" styleId="0:901" name="Deform" id="0:900">
+        <LayoutComponentStyle name="Artboard Style" id="0:901"/>
+        <LayoutComponent width="800" height="600" styleId="0:903" name="Root" id="0:902">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:903"/>
+            <ScriptedLayout scriptAssetId="0:197" name="Scene" id="0:904"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:907">
+            <StateMachineLayer name="Layer 1" id="0:908">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -274,4 +288,5 @@
     <ScriptAsset file="examples/primitives.as" name="primitives" id="0:194"/>
     <ScriptAsset file="examples/shapes.as" name="shapes" id="0:195"/>
     <ScriptAsset file="examples/interactive.as" name="interactive" id="0:196"/>
+    <ScriptAsset file="examples/deform.as" name="deform" id="0:197"/>
 </Rive>

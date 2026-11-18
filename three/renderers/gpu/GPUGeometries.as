@@ -19,6 +19,11 @@ export class GeometryGPU {
     uv: GPUBuffer? = null;
     /// RGBA per vertex (white when the geometry has no "color").
     color: GPUBuffer? = null;
+    /// Skinning: joint indices and weights as float4 (null without them).
+    skinIndex: GPUBuffer? = null;
+    skinWeight: GPUBuffer? = null;
+    skinIndexVersion: i32 = -1;
+    skinWeightVersion: i32 = -1;
     index: GPUBuffer? = null;
     indexFormat: IndexFormat = IndexFormat.none;
     /// Indices when indexed, else vertices.
@@ -52,6 +57,8 @@ export class GeometryGPU {
         releaseBuffer(this.normal); this.normal = null;
         releaseBuffer(this.uv); this.uv = null;
         releaseBuffer(this.color); this.color = null;
+        releaseBuffer(this.skinIndex); this.skinIndex = null;
+        releaseBuffer(this.skinWeight); this.skinWeight = null;
         releaseBuffer(this.index); this.index = null;
     }
 }
@@ -133,6 +140,20 @@ export class GPUGeometries {
             white.fill(1);
             g.color = upload(g.color, white);
             g.colorAttr = null;
+        }
+
+        const si = geometry.getAttribute("skinIndex");
+        const sw = geometry.getAttribute("skinWeight");
+        if (si != null && sw != null && si.itemSize == 4 && sw.itemSize == 4 && si.count == vertexCount
+                && sw.count == vertexCount) {
+            if (resized || g.skinIndex == null || g.skinIndexVersion != si.version) {
+                g.skinIndex = upload(g.skinIndex, si.array);
+                g.skinIndexVersion = si.version;
+            }
+            if (resized || g.skinWeight == null || g.skinWeightVersion != sw.version) {
+                g.skinWeight = upload(g.skinWeight, sw.array);
+                g.skinWeightVersion = sw.version;
+            }
         }
 
         const index = geometry.index;

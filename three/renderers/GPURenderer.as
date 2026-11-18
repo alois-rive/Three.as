@@ -43,12 +43,14 @@ import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 
 import { Object3D } from "../core/Object3D";
 import { BufferGeometry, disposedGeometries } from "../core/BufferGeometry";
+import { BufferAttribute } from "../core/BufferAttribute";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Scene } from "../scenes/Scene";
 import { Fog, FogExp2 } from "../scenes/Fog";
 import { Mesh } from "../objects/Mesh";
 import { InstancedMesh } from "../objects/InstancedMesh";
+import { SkinnedMesh } from "../objects/SkinnedMesh";
 import { Line, LineSegments, LineLoop } from "../objects/Line";
 import { Points } from "../objects/Points";
 import { Sprite } from "../objects/Sprite";
@@ -86,7 +88,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_STRIDE,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -103,6 +105,7 @@ const KEY_MIRRORED: i32 = 1 << 7;
 const KEY_COLOR_WRITE: i32 = 1 << 8;
 const KEY_PRIM_SHIFT: i32 = 9;          // 2 bits: PRIM_*
 const KEY_MSAA: i32 = 1 << 11;
+const KEY_SKINNED: i32 = 1 << 12;
 const KEY_BACKGROUND: i32 = 1 << 30;
 
 // The depth (and MSAA colour) attachments of one render destination.
@@ -127,6 +130,16 @@ const PRIM_TRIANGLES: i32 = 0;
 const PRIM_LINES: i32 = 1;
 const PRIM_POINTS: i32 = 2;
 const PRIM_SPRITE: i32 = 3;
+
+// A mesh's morphed positions and normals (CPU blended).
+class MorphGPU {
+    position: GPUBuffer? = null;
+    normal: GPUBuffer? = null;
+    positions: Float32Array = new Float32Array(0);
+    normals: Float32Array = new Float32Array(0);
+    influences: Array<f64> = [];
+    geometryVersion: i32 = -1;
+}
 
 // An InstancedMesh's packed instance buffer.
 class InstanceGPU {
@@ -165,6 +178,7 @@ export class RendererInfo {
 class DrawState {
     ubo: GPUBuffer;
     objGroup: GPUBindGroup? = null;
+    bones: GPUBuffer? = null;
     matGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     sampler: GPUSampler? = null;
@@ -190,6 +204,10 @@ class DrawItem {
     count: i32 = 0;
     instances: GPUBuffer;
     instanceCount: u32 = 1;
+    skinned: bool = false;
+    bones: GPUBuffer? = null;
+    positionOverride: GPUBuffer? = null;
+    normalOverride: GPUBuffer? = null;
 
     constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer) {
         this.object = object;
@@ -232,6 +250,11 @@ export class GPURenderer {
     private bgLayout: GPUBindGroupLayout? = null;
     private vertexBuffers: Array<GPUVertexBufferLayout> = [];
     private pointBuffers: Array<GPUVertexBufferLayout> = [];
+    private skinBuffers: Array<GPUVertexBufferLayout> = [];
+    private dummyBones: GPUBuffer? = null;
+    private boneBuffers: Map<i32, GPUBuffer> = new Map<i32, GPUBuffer>();
+    private morphs: Map<i32, MorphGPU> = new Map<i32, MorphGPU>();
+    private warnedBones: bool = false;
     private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
     private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private pipelineFormat: u32 = 0xFFFFFFFF;
@@ -533,6 +556,11 @@ export class GPURenderer {
             const pointColor = vertexLayout(16, VertexFormat.float4, 3);
             pointColor.stepMode = VertexStepMode.instance;
             this.pointBuffers = [pointPosition, pointColor];
+            this.skinBuffers = this.vertexBuffers.concat([
+                vertexLayout(16, VertexFormat.float4, 9),
+                vertexLayout(16, VertexFormat.float4, 10),
+            ]);
+            this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
             this.maxAnisotropy = features.anisotropicFiltering ? 16 : 1;
@@ -633,6 +661,9 @@ export class GPURenderer {
             } else if (prim == PRIM_SPRITE) {
                 d.vertexEntryPoint = "vs_sprite";
                 d.cullMode = CullMode.none;
+            } else if ((key & KEY_SKINNED) != 0) {
+                d.vertexEntryPoint = "vs_skinned";
+                d.vertexBuffers = this.skinBuffers;
             } else {
                 d.vertexEntryPoint = "vs_main";
                 d.vertexBuffers = this.vertexBuffers;
@@ -711,6 +742,13 @@ export class GPURenderer {
 
     private inFrustum(o: Object3D): bool {
         if (o instanceof Sprite) return intersectsSprite(o as Sprite);
+        if (o instanceof SkinnedMesh) {
+            // Posed bounds only when computed (computeBoundingSphere).
+            const sm = o as SkinnedMesh;
+            if (sm.boundingSphere == null) return true;
+            _sphere.copy(sm.boundingSphere!).applyMatrix4(sm.matrixWorld);
+            return _frustum.intersectsSphere(_sphere);
+        }
         if (o instanceof InstancedMesh) {
             const im = o as InstancedMesh;
             if (im.boundingSphere == null) im.computeBoundingSphere();
@@ -819,6 +857,79 @@ export class GPURenderer {
             item.index = g.index;
             item.indexFormat = <u32>g.indexFormat;
         }
+        this.deform(mesh, geometry, g, item, frame);
+    }
+
+    /// Morph targets (CPU) and skinning (GPU) for a mesh draw.
+    private deform(mesh: Mesh, geometry: BufferGeometry, g: GeometryGPU, item: DrawItem, frame: i32): void {
+        if (mesh.morphTargetInfluences.length > 0 && geometry.morphAttributes.has("position")) {
+            const m = this.morph(mesh, geometry);
+            if (m != null) {
+                item.positionOverride = m.position;
+                item.normalOverride = m.normal;
+            }
+        }
+        if (!(mesh instanceof SkinnedMesh)) return;
+        const sm = mesh as SkinnedMesh;
+        const skeleton = sm.skeleton;
+        if (skeleton == null || g.skinIndex == null || g.skinWeight == null) return;
+        if (skeleton.bones.length > MAX_BONES) {
+            if (!this.warnedBones) {
+                this.context.log("three: skeletons over " + MAX_BONES.toString() + " bones draw unskinned");
+                this.warnedBones = true;
+            }
+            return;
+        }
+        if (skeleton.frame != frame) {
+            skeleton.update();
+            skeleton.frame = frame;
+        }
+        let bones: GPUBuffer;
+        if (this.boneBuffers.has(sm.id)) bones = this.boneBuffers.get(sm.id);
+        else {
+            bones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
+            this.boneBuffers.set(sm.id, bones);
+        }
+        const data = skeleton.boneMatrices;
+        if (data.length > 0) bones.update(0, data.buffer, <u32>data.byteLength);
+        item.skinned = true;
+        item.bones = bones;
+        item.pipelineKey |= KEY_SKINNED;
+    }
+
+    /// Blends the morph targets into a per-mesh position (and normal)
+    /// buffer, when the influences changed.
+    private morph(mesh: Mesh, geometry: BufferGeometry): MorphGPU? {
+        const position = geometry.getAttribute("position");
+        if (position == null) return null;
+        const influences = mesh.morphTargetInfluences;
+        let active = false;
+        for (let i = 0; i < influences.length; i++) if (influences[i] != 0) active = true;
+        if (!active) return null;
+        let m: MorphGPU;
+        if (this.morphs.has(mesh.id)) m = this.morphs.get(mesh.id);
+        else {
+            m = new MorphGPU();
+            this.morphs.set(mesh.id, m);
+        }
+        let same = m.position != null && m.influences.length == influences.length && m.geometryVersion == position.version;
+        for (let i = 0; i < influences.length && same; i++) same = m.influences[i] == influences[i];
+        if (same) return m;
+        m.influences = influences.slice();
+        m.geometryVersion = position.version;
+        const relative = geometry.morphTargetsRelative;
+        m.positions = blend(position.array, geometry.morphAttributes.get("position"), influences, relative, m.positions);
+        m.position = uploadVertices(m.position, m.positions);
+        const normal = geometry.getAttribute("normal");
+        if (normal != null && normal.count == position.count) {
+            if (geometry.morphAttributes.has("normal")) {
+                m.normals = blend(normal.array, geometry.morphAttributes.get("normal"), influences, relative, m.normals);
+                m.normal = uploadVertices(m.normal, m.normals);
+            } else {
+                m.normal = null;
+            }
+        }
+        return m;
     }
 
     private addDraw(object: Object3D, material: Material, g: GeometryGPU?, part: i32, start: i32, end: i32,
@@ -1154,8 +1265,17 @@ export class GPURenderer {
             u[o] = premul; u[o + 1] = flags; u[o + 2] = 0; u[o + 3] = 0;
             state.ubo.update(0, buf);
 
-            if (state.objGroup == null) {
-                state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, state.ubo)]);
+            if (item.skinned) {
+                const sm = object as SkinnedMesh;
+                sm.bindMatrix.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX);
+                sm.bindMatrixInverse.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX_INVERSE);
+                state.ubo.update(0, buf);
+            }
+            const bones = item.bones != null ? item.bones! : this.dummyBones!;
+            if (state.objGroup == null || state.bones !== bones) {
+                state.objGroup = new GPUBindGroup(this.objLayout!,
+                    [new GPUBindGroupUBO(0, state.ubo), new GPUBindGroupUBO(1, bones)]);
+                state.bones = bones;
             }
             let changed = state.matGroup == null || state.sampler !== sampler;
             for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.views[s] !== views[s];
@@ -1204,11 +1324,17 @@ export class GPURenderer {
                 info.points += item.count;
                 continue;
             }
-            pass.setVertexBuffer(0, g.position!);
-            pass.setVertexBuffer(1, g.normal!);
+            const pos = item.positionOverride;
+            const nrm = item.normalOverride;
+            pass.setVertexBuffer(0, pos != null ? pos : g.position!);
+            pass.setVertexBuffer(1, nrm != null ? nrm : g.normal!);
             pass.setVertexBuffer(2, g.uv!);
             pass.setVertexBuffer(3, g.color!);
             pass.setVertexBuffer(4, item.instances);
+            if (item.skinned) {
+                pass.setVertexBuffer(5, g.skinIndex!);
+                pass.setVertexBuffer(6, g.skinWeight!);
+            }
             const index = item.index;
             if (index != null) {
                 pass.setIndexBuffer(index, item.indexFormat);
@@ -1221,6 +1347,33 @@ export class GPURenderer {
             else info.triangles += (item.count / 3) * <i32>item.instanceCount;
         }
     }
+}
+
+/// base + sum(w_i x target_i) (relative) or base + sum(w_i x (target_i - base)).
+function blend(base: Float32Array, targets: Array<BufferAttribute>, influences: Array<f64>, relative: bool,
+               out: Float32Array): Float32Array {
+    const n = base.length;
+    if (out.length != n) out = new Float32Array(n);
+    for (let k = 0; k < n; k++) out[k] = base[k];
+    for (let i = 0; i < influences.length && i < targets.length; i++) {
+        const w = <f32>influences[i];
+        if (w == 0) continue;
+        const t = targets[i].array;
+        if (t.length < n) continue;
+        if (relative) for (let k = 0; k < n; k++) out[k] += w * t[k];
+        else for (let k = 0; k < n; k++) out[k] += w * (t[k] - base[k]);
+    }
+    return out;
+}
+
+function uploadVertices(existing: GPUBuffer?, data: Float32Array): GPUBuffer {
+    const bytes = data.buffer;
+    if (existing != null && existing.size == <u32>bytes.byteLength) {
+        existing.update(0, bytes);
+        return existing;
+    }
+    if (existing != null) existing.release();
+    return new GPUBuffer(BufferUsage.vertex, <u32>bytes.byteLength, bytes);
 }
 
 function put4(f: Float32Array, byteOffset: i32, x: f64, y: f64, z: f64, w: f64): void {

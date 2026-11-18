@@ -39,6 +39,8 @@ export * from "./core/BufferGeometry";
 export * from "./objects/Group";
 export * from "./objects/Mesh";
 export * from "./objects/InstancedMesh";
+export * from "./objects/Skeleton";
+export * from "./objects/SkinnedMesh";
 export * from "./objects/Line";
 export * from "./objects/Points";
 export * from "./objects/Sprite";
