@@ -22,3 +22,9 @@ excludeFromRev:
 logs:
   file: build/rive.log
   problems: build/problems.log
+pages:
+  workspaceId: 40887
+  name: "threeas"
+push:
+  projectId: 44599
+  fileId: 38626

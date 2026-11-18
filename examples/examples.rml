@@ -3,8 +3,8 @@
          the artboard. Its `screen` input is the Screen artboard below, which
          the script draws onto the cube as a live texture. -->
     <Artboard isComponent="true" defaultStateMachineId="0:107" clip="true" width="800" height="600" styleId="0:101" name="FirstScene" id="0:100">
-        <Fill name="Background">
-            <SolidColor colorValue="FF0E1116" name="Color"/>
+        <Fill name="Background" id="0:2613">
+            <SolidColor colorValue="FF0E1116" name="Color" id="0:2614"/>
         </Fill>
         <LayoutComponentStyle name="Artboard Style" id="0:101"/>
         <LayoutComponent width="800" height="600" styleId="0:103" name="Root" id="0:102">
@@ -16,7 +16,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:107">
             <StateMachineLayer name="Layer 1" id="0:108">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2615"/>
+                <ExitState x="120" y="-120" id="0:2616"/>
+                <EntryState id="0:2617"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -25,58 +27,60 @@
          scene shows it on every face of the cube. -->
     <Artboard defaultStateMachineId="0:290" x="900" width="512" height="512" styleId="0:201" name="Screen" id="0:200">
         <LayoutComponentStyle name="Screen Style" id="0:201"/>
-        <Fill name="Background">
-            <SolidColor colorValue="FF1B1F3B" name="Color"/>
+        <Fill name="Background" id="0:2618">
+            <SolidColor colorValue="FF1B1F3B" name="Color" id="0:2619"/>
         </Fill>
         <Shape x="256" y="256" name="Frame" id="0:202">
-            <Rectangle width="464" height="464" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="56" cornerRadiusTR="56" cornerRadiusBL="56" cornerRadiusBR="56" name="Path"/>
-            <Stroke thickness="18" name="Stroke">
-                <SolidColor colorValue="FFF4F1EA" name="Color"/>
+            <Rectangle width="464" height="464" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="56" cornerRadiusTR="56" cornerRadiusBL="56" cornerRadiusBR="56" name="Path" id="0:2620"/>
+            <Stroke thickness="18" name="Stroke" id="0:2621">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2622"/>
             </Stroke>
         </Shape>
         <Node x="256" y="256" name="Spinner" id="0:210">
-            <Shape x="0" y="-150" name="Dot1"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFFF5A5F" name="Color"/></Fill></Shape>
-            <Shape x="129.9" y="-75" name="Dot2"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFFFB400" name="Color"/></Fill></Shape>
-            <Shape x="129.9" y="75" name="Dot3"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF7AE582" name="Color"/></Fill></Shape>
-            <Shape x="0" y="150" name="Dot4"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF2EC4B6" name="Color"/></Fill></Shape>
-            <Shape x="-129.9" y="75" name="Dot5"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF4D9DE0" name="Color"/></Fill></Shape>
-            <Shape x="-129.9" y="-75" name="Dot6"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFB388EB" name="Color"/></Fill></Shape>
+            <Shape x="0" y="-150" name="Dot1" id="0:2623"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2624"/><Fill name="Fill" id="0:2625"><SolidColor colorValue="FFFF5A5F" name="Color" id="0:2626"/></Fill></Shape>
+            <Shape x="129.9" y="-75" name="Dot2" id="0:2627"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2628"/><Fill name="Fill" id="0:2629"><SolidColor colorValue="FFFFB400" name="Color" id="0:2630"/></Fill></Shape>
+            <Shape x="129.9" y="75" name="Dot3" id="0:2631"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2632"/><Fill name="Fill" id="0:2633"><SolidColor colorValue="FF7AE582" name="Color" id="0:2634"/></Fill></Shape>
+            <Shape x="0" y="150" name="Dot4" id="0:2635"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2636"/><Fill name="Fill" id="0:2637"><SolidColor colorValue="FF2EC4B6" name="Color" id="0:2638"/></Fill></Shape>
+            <Shape x="-129.9" y="75" name="Dot5" id="0:2639"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2640"/><Fill name="Fill" id="0:2641"><SolidColor colorValue="FF4D9DE0" name="Color" id="0:2642"/></Fill></Shape>
+            <Shape x="-129.9" y="-75" name="Dot6" id="0:2643"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2644"/><Fill name="Fill" id="0:2645"><SolidColor colorValue="FFB388EB" name="Color" id="0:2646"/></Fill></Shape>
         </Node>
         <Shape x="256" y="256" name="Core" id="0:220">
-            <Triangle width="150" height="130" originX="0.5" originY="0.6" name="Path"/>
-            <Fill name="Fill">
-                <SolidColor colorValue="FFF4F1EA" name="Color"/>
+            <Triangle width="150" height="130" originX="0.5" originY="0.6" name="Path" id="0:2647"/>
+            <Fill name="Fill" id="0:2648">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2649"/>
             </Fill>
         </Shape>
         <StateMachine name="State Machine 1" id="0:290">
             <StateMachineLayer name="Layer 1" id="0:291">
-                <EntryState>
-                    <StateTransition stateToId="0:292"/>
+                <AnyState x="0" y="-120" id="0:2650"/>
+                <ExitState x="120" y="-120" id="0:2651"/>
+                <EntryState id="0:2652">
+                    <StateTransition stateToId="0:292" id="0:2653"/>
                 </EntryState>
                 <AnimationState x="200" animationId="0:280" id="0:292"/>
             </StateMachineLayer>
         </StateMachine>
         <LinearAnimation loopValue="loop" duration="240" name="Spin" id="0:280">
-            <KeyedObject objectId="0:210">
-                <KeyedProperty property="rotation">
-                    <KeyFrameDouble value="0" interpolationType="linear"/>
-                    <KeyFrameDouble value="6.2831855" interpolationType="linear" frame="240"/>
+            <KeyedObject objectId="0:210" id="0:2654">
+                <KeyedProperty property="rotation" id="0:2655">
+                    <KeyFrameDouble value="0" interpolationType="linear" id="0:2656"/>
+                    <KeyFrameDouble value="6.2831855" interpolationType="linear" frame="240" id="0:2657"/>
                 </KeyedProperty>
             </KeyedObject>
-            <KeyedObject objectId="0:220">
-                <KeyedProperty property="scaleX">
-                    <KeyFrameDouble value="1" interpolationType="linear"/>
-                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120"/>
-                    <KeyFrameDouble value="1" interpolationType="linear" frame="240"/>
+            <KeyedObject objectId="0:220" id="0:2658">
+                <KeyedProperty property="scaleX" id="0:2659">
+                    <KeyFrameDouble value="1" interpolationType="linear" id="0:2660"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120" id="0:2661"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240" id="0:2662"/>
                 </KeyedProperty>
-                <KeyedProperty property="scaleY">
-                    <KeyFrameDouble value="1" interpolationType="linear"/>
-                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120"/>
-                    <KeyFrameDouble value="1" interpolationType="linear" frame="240"/>
+                <KeyedProperty property="scaleY" id="0:2663">
+                    <KeyFrameDouble value="1" interpolationType="linear" id="0:2664"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120" id="0:2665"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240" id="0:2666"/>
                 </KeyedProperty>
-                <KeyedProperty property="rotation">
-                    <KeyFrameDouble value="0" interpolationType="linear"/>
-                    <KeyFrameDouble value="-6.2831855" interpolationType="linear" frame="240"/>
+                <KeyedProperty property="rotation" id="0:2667">
+                    <KeyFrameDouble value="0" interpolationType="linear" id="0:2668"/>
+                    <KeyFrameDouble value="-6.2831855" interpolationType="linear" frame="240" id="0:2669"/>
                 </KeyedProperty>
             </KeyedObject>
         </LinearAnimation>
@@ -92,7 +96,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:307">
             <StateMachineLayer name="Layer 1" id="0:308">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2670"/>
+                <ExitState x="120" y="-120" id="0:2671"/>
+                <EntryState id="0:2672"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -106,7 +112,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:407">
             <StateMachineLayer name="Layer 1" id="0:408">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2673"/>
+                <ExitState x="120" y="-120" id="0:2674"/>
+                <EntryState id="0:2675"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -121,7 +129,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:507">
             <StateMachineLayer name="Layer 1" id="0:508">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2676"/>
+                <ExitState x="120" y="-120" id="0:2677"/>
+                <EntryState id="0:2678"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -136,7 +146,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:607">
             <StateMachineLayer name="Layer 1" id="0:608">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2679"/>
+                <ExitState x="120" y="-120" id="0:2680"/>
+                <EntryState id="0:2681"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -154,7 +166,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:707">
             <StateMachineLayer name="Layer 1" id="0:708">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2682"/>
+                <ExitState x="120" y="-120" id="0:2683"/>
+                <EntryState id="0:2684"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -163,19 +177,19 @@
         <LayoutComponentStyle name="Emblem Style" id="0:751"/>
         <Shape x="100" y="100" name="Star" id="0:752">
             <PointsPath isClosed="true" name="StarPath" id="0:753">
-                <StraightVertex x="0.0" y="-90.0"/>
-                <StraightVertex x="22.34" y="-30.74"/>
-                <StraightVertex x="85.6" y="-27.81"/>
-                <StraightVertex x="36.14" y="11.74"/>
-                <StraightVertex x="52.9" y="72.81"/>
-                <StraightVertex x="0.0" y="38.0"/>
-                <StraightVertex x="-52.9" y="72.81"/>
-                <StraightVertex x="-36.14" y="11.74"/>
-                <StraightVertex x="-85.6" y="-27.81"/>
-                <StraightVertex x="-22.34" y="-30.74"/>
+                <StraightVertex x="0.0" y="-90.0" id="0:2685"/>
+                <StraightVertex x="22.34" y="-30.74" id="0:2686"/>
+                <StraightVertex x="85.6" y="-27.81" id="0:2687"/>
+                <StraightVertex x="36.14" y="11.74" id="0:2688"/>
+                <StraightVertex x="52.9" y="72.81" id="0:2689"/>
+                <StraightVertex x="0.0" y="38.0" id="0:2690"/>
+                <StraightVertex x="-52.9" y="72.81" id="0:2691"/>
+                <StraightVertex x="-36.14" y="11.74" id="0:2692"/>
+                <StraightVertex x="-85.6" y="-27.81" id="0:2693"/>
+                <StraightVertex x="-22.34" y="-30.74" id="0:2694"/>
             </PointsPath>
-            <Fill name="Fill">
-                <SolidColor colorValue="FFFFB400" name="Color"/>
+            <Fill name="Fill" id="0:2695">
+                <SolidColor colorValue="FFFFB400" name="Color" id="0:2696"/>
             </Fill>
         </Shape>
     </Artboard>
@@ -195,7 +209,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:807">
             <StateMachineLayer name="Layer 1" id="0:808">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2697"/>
+                <ExitState x="120" y="-120" id="0:2698"/>
+                <EntryState id="0:2699"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -204,64 +220,66 @@
          between the Off and On states. -->
     <Artboard defaultStateMachineId="0:870" x="900" y="2100" width="360" height="200" styleId="0:851" name="Toggle" id="0:850">
         <LayoutComponentStyle name="Toggle Style" id="0:851"/>
-        <Fill name="Background">
-            <SolidColor colorValue="FF1F2430" name="Color"/>
+        <Fill name="Background" id="0:2700">
+            <SolidColor colorValue="FF1F2430" name="Color" id="0:2701"/>
         </Fill>
         <!-- The first shape declared paints on top: the knob, then the track. -->
         <Shape x="125" y="100" name="Knob" id="0:854">
-            <Ellipse width="86" height="86" originX="0.5" originY="0.5" name="KnobPath"/>
-            <Fill name="Fill">
-                <SolidColor colorValue="FFF4F1EA" name="Color"/>
+            <Ellipse width="86" height="86" originX="0.5" originY="0.5" name="KnobPath" id="0:2702"/>
+            <Fill name="Fill" id="0:2703">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2704"/>
             </Fill>
         </Shape>
         <Shape x="180" y="100" name="Track" id="0:852">
-            <Rectangle width="240" height="110" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="55" cornerRadiusTR="55" cornerRadiusBL="55" cornerRadiusBR="55" name="TrackPath"/>
-            <Fill name="Fill">
+            <Rectangle width="240" height="110" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="55" cornerRadiusTR="55" cornerRadiusBL="55" cornerRadiusBR="55" name="TrackPath" id="0:2705"/>
+            <Fill name="Fill" id="0:2706">
                 <SolidColor colorValue="FF5C6370" name="TrackColor" id="0:853"/>
             </Fill>
         </Shape>
         <StateMachine name="State Machine 1" id="0:870">
             <StateMachineTrigger name="flip" id="0:871"/>
             <StateMachineLayer name="Layer 1" id="0:872">
-                <EntryState>
-                    <StateTransition stateToId="0:873"/>
+                <AnyState x="0" y="-120" id="0:2707"/>
+                <ExitState x="120" y="-120" id="0:2708"/>
+                <EntryState id="0:2709">
+                    <StateTransition stateToId="0:873" id="0:2710"/>
                 </EntryState>
                 <AnimationState x="200" animationId="0:860" id="0:873">
-                    <StateTransition stateToId="0:874" duration="200">
-                        <TransitionTriggerCondition inputId="0:871"/>
+                    <StateTransition stateToId="0:874" duration="200" id="0:2711">
+                        <TransitionTriggerCondition inputId="0:871" id="0:2712"/>
                     </StateTransition>
                 </AnimationState>
                 <AnimationState x="400" animationId="0:861" id="0:874">
-                    <StateTransition stateToId="0:873" duration="200">
-                        <TransitionTriggerCondition inputId="0:871"/>
+                    <StateTransition stateToId="0:873" duration="200" id="0:2713">
+                        <TransitionTriggerCondition inputId="0:871" id="0:2714"/>
                     </StateTransition>
                 </AnimationState>
             </StateMachineLayer>
-            <StateMachineListenerSingle targetId="0:852" listenerTypeValue="click" name="Flip">
-                <ListenerTriggerChange inputId="0:871"/>
+            <StateMachineListenerSingle targetId="0:852" listenerTypeValue="click" name="Flip" id="0:2715">
+                <ListenerTriggerChange inputId="0:871" id="0:2716"/>
             </StateMachineListenerSingle>
         </StateMachine>
         <LinearAnimation duration="1" name="Off" id="0:860">
-            <KeyedObject objectId="0:854">
-                <KeyedProperty property="x">
-                    <KeyFrameDouble value="125" interpolationType="hold"/>
+            <KeyedObject objectId="0:854" id="0:2717">
+                <KeyedProperty property="x" id="0:2718">
+                    <KeyFrameDouble value="125" interpolationType="hold" id="0:2719"/>
                 </KeyedProperty>
             </KeyedObject>
-            <KeyedObject objectId="0:853">
-                <KeyedProperty property="colorValue">
-                    <KeyFrameColor value="FF5C6370" interpolationType="hold"/>
+            <KeyedObject objectId="0:853" id="0:2720">
+                <KeyedProperty property="colorValue" id="0:2721">
+                    <KeyFrameColor value="FF5C6370" interpolationType="hold" id="0:2722"/>
                 </KeyedProperty>
             </KeyedObject>
         </LinearAnimation>
         <LinearAnimation duration="1" name="On" id="0:861">
-            <KeyedObject objectId="0:854">
-                <KeyedProperty property="x">
-                    <KeyFrameDouble value="235" interpolationType="hold"/>
+            <KeyedObject objectId="0:854" id="0:2723">
+                <KeyedProperty property="x" id="0:2724">
+                    <KeyFrameDouble value="235" interpolationType="hold" id="0:2725"/>
                 </KeyedProperty>
             </KeyedObject>
-            <KeyedObject objectId="0:853">
-                <KeyedProperty property="colorValue">
-                    <KeyFrameColor value="FF2EC4B6" interpolationType="hold"/>
+            <KeyedObject objectId="0:853" id="0:2726">
+                <KeyedProperty property="colorValue" id="0:2727">
+                    <KeyFrameColor value="FF2EC4B6" interpolationType="hold" id="0:2728"/>
                 </KeyedProperty>
             </KeyedObject>
         </LinearAnimation>
@@ -276,7 +294,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:907">
             <StateMachineLayer name="Layer 1" id="0:908">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2729"/>
+                <ExitState x="120" y="-120" id="0:2730"/>
+                <EntryState id="0:2731"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -290,7 +310,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1007">
             <StateMachineLayer name="Layer 1" id="0:1008">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2732"/>
+                <ExitState x="120" y="-120" id="0:2733"/>
+                <EntryState id="0:2734"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -308,7 +330,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1107">
             <StateMachineLayer name="Layer 1" id="0:1108">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2735"/>
+                <ExitState x="120" y="-120" id="0:2736"/>
+                <EntryState id="0:2737"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -322,7 +346,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1207">
             <StateMachineLayer name="Layer 1" id="0:1208">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2738"/>
+                <ExitState x="120" y="-120" id="0:2739"/>
+                <EntryState id="0:2740"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -337,7 +363,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1307">
             <StateMachineLayer name="Layer 1" id="0:1308">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2741"/>
+                <ExitState x="120" y="-120" id="0:2742"/>
+                <EntryState id="0:2743"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -352,7 +380,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1407">
             <StateMachineLayer name="Layer 1" id="0:1408">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2744"/>
+                <ExitState x="120" y="-120" id="0:2745"/>
+                <EntryState id="0:2746"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -367,7 +397,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1507">
             <StateMachineLayer name="Layer 1" id="0:1508">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2747"/>
+                <ExitState x="120" y="-120" id="0:2748"/>
+                <EntryState id="0:2749"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -382,7 +414,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1607">
             <StateMachineLayer name="Layer 1" id="0:1608">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2750"/>
+                <ExitState x="120" y="-120" id="0:2751"/>
+                <EntryState id="0:2752"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -397,7 +431,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1707">
             <StateMachineLayer name="Layer 1" id="0:1708">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2753"/>
+                <ExitState x="120" y="-120" id="0:2754"/>
+                <EntryState id="0:2755"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -413,7 +449,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1807">
             <StateMachineLayer name="Layer 1" id="0:1808">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2756"/>
+                <ExitState x="120" y="-120" id="0:2757"/>
+                <EntryState id="0:2758"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -428,7 +466,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:1907">
             <StateMachineLayer name="Layer 1" id="0:1908">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2759"/>
+                <ExitState x="120" y="-120" id="0:2760"/>
+                <EntryState id="0:2761"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -443,7 +483,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:2007">
             <StateMachineLayer name="Layer 1" id="0:2008">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2762"/>
+                <ExitState x="120" y="-120" id="0:2763"/>
+                <EntryState id="0:2764"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -457,7 +499,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:2107">
             <StateMachineLayer name="Layer 1" id="0:2108">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2765"/>
+                <ExitState x="120" y="-120" id="0:2766"/>
+                <EntryState id="0:2767"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -471,7 +515,9 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:2207">
             <StateMachineLayer name="Layer 1" id="0:2208">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2768"/>
+                <ExitState x="120" y="-120" id="0:2769"/>
+                <EntryState id="0:2770"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
@@ -485,28 +531,30 @@
         </LayoutComponent>
         <StateMachine name="State Machine 1" id="0:2307">
             <StateMachineLayer name="Layer 1" id="0:2308">
-                <EntryState/>
+                <AnyState x="0" y="-120" id="0:2771"/>
+                <ExitState x="120" y="-120" id="0:2772"/>
+                <EntryState id="0:2773"/>
             </StateMachineLayer>
         </StateMachine>
     </Artboard>
 
 
-    <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
-    <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
-    <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
-    <ScriptAsset file="examples/materials.as" name="materials" id="0:193"/>
-    <ScriptAsset file="examples/primitives.as" name="primitives" id="0:194"/>
-    <ScriptAsset file="examples/shapes.as" name="shapes" id="0:195"/>
-    <ScriptAsset file="examples/interactive.as" name="interactive" id="0:196"/>
-    <ScriptAsset file="examples/deform.as" name="deform" id="0:197"/>
-    <ScriptAsset file="examples/model.as" name="model" id="0:198"/>
+    <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190" codeFileId="0:4057"/>
+    <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191" codeFileId="0:8839"/>
+    <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192" codeFileId="0:10593"/>
+    <ScriptAsset file="examples/materials.as" name="materials" id="0:193" codeFileId="0:15549"/>
+    <ScriptAsset file="examples/primitives.as" name="primitives" id="0:194" codeFileId="0:24137"/>
+    <ScriptAsset file="examples/shapes.as" name="shapes" id="0:195" codeFileId="0:33011"/>
+    <ScriptAsset file="examples/interactive.as" name="interactive" id="0:196" codeFileId="0:38689"/>
+    <ScriptAsset file="examples/deform.as" name="deform" id="0:197" codeFileId="0:44722"/>
+    <ScriptAsset file="examples/model.as" name="model" id="0:198" codeFileId="0:50439"/>
     <BlobAsset file="examples/assets/sample.glb" name="sample" id="0:199"/>
-    <ScriptAsset file="examples/custom_shader.as" name="custom_shader" id="0:1190"/>
-    <ScriptAsset file="examples/environment.as" name="environment" id="0:1290"/>
-    <ScriptAsset file="examples/shadows.as" name="shadows" id="0:1390"/>
-    <ScriptAsset file="examples/postprocessing.as" name="postprocessing" id="0:1490"/>
-    <ScriptAsset file="examples/benchmark.as" name="benchmark" id="0:1590"/>
-    <ScriptAsset file="examples/environments.as" name="environments" id="0:1690"/>
+    <ScriptAsset file="examples/custom_shader.as" name="custom_shader" id="0:1190" codeFileId="0:52672"/>
+    <ScriptAsset file="examples/environment.as" name="environment" id="0:1290" codeFileId="0:56032"/>
+    <ScriptAsset file="examples/shadows.as" name="shadows" id="0:1390" codeFileId="0:59585"/>
+    <ScriptAsset file="examples/postprocessing.as" name="postprocessing" id="0:1490" codeFileId="0:64883"/>
+    <ScriptAsset file="examples/benchmark.as" name="benchmark" id="0:1590" codeFileId="0:68771"/>
+    <ScriptAsset file="examples/environments.as" name="environments" id="0:1690" codeFileId="0:71559"/>
     <ImageAsset file="examples/assets/studio_px.png" name="studio_px" id="0:1691"/>
     <ImageAsset file="examples/assets/studio_nx.png" name="studio_nx" id="0:1692"/>
     <ImageAsset file="examples/assets/studio_py.png" name="studio_py" id="0:1693"/>
@@ -515,15 +563,15 @@
     <ImageAsset file="examples/assets/studio_nz.png" name="studio_nz" id="0:1696"/>
     <BlobAsset file="examples/assets/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
     <BlobAsset file="examples/assets/studio_exr.exr" name="studio_exr" id="0:1698"/>
-    <ScriptAsset file="examples/textures.as" name="textures" id="0:1790"/>
-    <ScriptAsset file="examples/materials_plus.as" name="materials_plus" id="0:1890"/>
-    <ScriptAsset file="examples/clipping.as" name="clipping" id="0:1990"/>
-    <ScriptAsset file="examples/lights.as" name="lights" id="0:2090"/>
-    <ScriptAsset file="examples/editor.as" name="editor" id="0:2190"/>
-    <ScriptAsset file="examples/batched.as" name="batched" id="0:2290"/>
-    <ScriptAsset file="examples/models.as" name="models" id="0:2390"/>
-    <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
-    <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
+    <ScriptAsset file="examples/textures.as" name="textures" id="0:1790" codeFileId="0:75485"/>
+    <ScriptAsset file="examples/materials_plus.as" name="materials_plus" id="0:1890" codeFileId="0:80323"/>
+    <ScriptAsset file="examples/clipping.as" name="clipping" id="0:1990" codeFileId="0:90149"/>
+    <ScriptAsset file="examples/lights.as" name="lights" id="0:2090" codeFileId="0:96895"/>
+    <ScriptAsset file="examples/editor.as" name="editor" id="0:2190" codeFileId="0:103014"/>
+    <ScriptAsset file="examples/batched.as" name="batched" id="0:2290" codeFileId="0:111653"/>
+    <ScriptAsset file="examples/models.as" name="models" id="0:2390" codeFileId="0:115080"/>
+    <BlobAsset file="examples/assets/checker_bc1.bin" name="checker_bc1" id="0:1791"/>
+    <BlobAsset file="examples/assets/checker_astc.bin" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
     <BlobAsset file="examples/assets/pyramid_binary.stl" name="pyramid_binary" id="0:2305"/>
