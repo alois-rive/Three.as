@@ -30,23 +30,18 @@ composited into the artboard like any other drawing.
 ```
 three/            the library (no protocol classes; import "three/Three")
   Three.as        re-exports everything: import * as THREE from "../three/Three"
-  constants.as    sides, colour spaces, wrapping and filter constants
-  math/           Vector2/3/4, Quaternion, Euler, Matrix3/4, Color, MathUtils
-  core/           Object3D, BufferAttribute, BufferGeometry
-  objects/        Mesh, Group
-  scenes/         Scene
-  cameras/        Camera, PerspectiveCamera, OrthographicCamera
-  lights/         AmbientLight, DirectionalLight, PointLight
-  materials/      MeshBasic/Normal/Lambert/StandardMaterial
-  geometries/     Box, Plane, Sphere
-  textures/       Texture, DataTexture, CanvasTexture
-  loaders/        TextureLoader (Rive image assets)
-  renderers/      GPURenderer (+ gpu/ internals)
-  rive/           ArtboardTexture and other Rive integrations
-  shaders/        WGSL
+  constants.as    three.js's constants
+  math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
+  textures/ loaders/ animation/ extras/
+                  as three.js's src/
+  renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
+  rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
+  shaders/        WGSL (three.wgsl, mips, post/)
+  addons/         three.js's examples/jsm ports, imported by path:
+                  controls/, loaders/, postprocessing/, shaders/
 examples/         example artboards (examples.rml + one .as each)
 tests/            rive --test suites
-docs/             DEVIATIONS.md
+docs/             DEVIATIONS.md, screenshots
 ```
 
 ## Milestones
@@ -168,6 +163,186 @@ In steps, each committed with tests and a screenshot check:
   from `Blob`s (GPUBuffer.fromBlob) in the loaders; comparing against
   three.js in a browser; validating `--gpu-manifest` output with Rive's
   WebGPU validator (not installed here) before `--publish=web`.
+
+### Coming next
+
+Each milestone is split into steps committed one at a time, each with its
+tests, an example artboard (or an addition to one), a screenshot check and
+docs/DEVIATIONS.md updated. The Rive APIs each one relies on are named, so
+a step can start by checking them (`rive docs animascript/api/<module>`).
+
+### M7: textures and environments
+
+Goal: environments and textures as three.js has them, so glTF scenes and
+three.js lighting setups look the same.
+
+- **M7a, per-map sampling.** Every map its own sampler and UV transform
+  (`offset`, `repeat`, `rotation`, `center`, `wrapS/T`, filters) and
+  `channel` (uv, uv1, uv2), as three.js's `*MapTransform` uniforms; the
+  "one sampler per material" deviation goes away.
+- **M7b, cube textures.** CubeTexture, CubeTextureLoader (six image
+  assets), cube backgrounds and `envMap`s, `CubeReflectionMapping` /
+  `CubeRefractionMapping`; WebGLCubeRenderTarget and CubeCamera (six passes
+  into a cube texture: `TextureType.cube`).
+- **M7c, a real PMREM.** PMREMGenerator ported (cube-UV layout, GGX
+  importance-sampled blur passes): `fromEquirectangular`, `fromCubemap`,
+  `fromScene`; RoomEnvironment (addon). Rough reflections then match
+  three.js; the mip-chain approximation goes away.
+- **M7d, HDR and data textures.** Float/half-float DataTexture
+  (`rgba16float`, `rgba32float`), RGBELoader / HDRLoader (Radiance .hdr
+  from a BlobAsset) and EXRLoader (uncompressed and ZIP/PIZ later),
+  DataArrayTexture, Data3DTexture, DepthTexture on render targets.
+- **M7e, compressed textures.** CompressedTexture with BC, ETC2 and ASTC
+  (Rive's `bc` / `etc2` / `astc` features), KTX2Loader for KTX2 files that
+  hold those formats directly (Basis transcoding later, if feasible in a
+  job).
+- Example `Environments`: HDR equirect and cube environments side by side,
+  roughness sweep, CubeCamera reflections.
+
+### M8: materials completeness
+
+Goal: every three.js material option, so ported scenes and glTF assets
+render as authored.
+
+- **M8a, more maps.** `bumpMap`, `displacementMap` (vertex stage),
+  `lightMap`, `specularMap`, object-space normal maps (`normalMapType`),
+  the `tangent` attribute (and `computeTangents`), Lambert/Phong `envMap`
+  with `combine`, `reflectivity`, `refractionRatio`; clearcoat reflecting
+  the environment; the physical maps (clearcoat, sheen, specular,
+  iridescence).
+- **M8b, physical extensions.** MeshPhysicalMaterial `transmission`,
+  `thickness`, `attenuationColor/Distance` (the opaque scene rendered to a
+  mipmapped transmission target first, as three.js), `iridescence`,
+  `anisotropy`, `dispersion`.
+- **M8c, clipping and stencil.** `renderer.clippingPlanes`,
+  `localClippingEnabled`, `material.clippingPlanes`, `clipIntersection`,
+  `clipShadows`; material stencil state (`stencilWrite`, `stencilFunc`,
+  `stencilRef`, masks and ops) on Rive's stencil pipelines.
+- **M8d, shadow and alpha options.** ShadowMaterial, MeshDistanceMaterial,
+  alpha-tested shadows and `customDepthMaterial` /
+  `customDistanceMaterial`, `shadowSide`, `alphaHash`, `alphaToCoverage`.
+- **M8e, shader material reach.** A WGSL chunk library (three.js's
+  ShaderChunk counterpart: lights, fog, tone mapping, colour space
+  functions) ShaderMaterials can reuse, `lights: true` / `fog: true`
+  support, and `defines` as WGSL pipeline-overridable constants if Rive
+  exposes them.
+- Example `MaterialsPlus`: glass, iridescent and anisotropic spheres, a
+  clipped and capped model (stencil), bump and displacement.
+
+### M9: lighting at scale
+
+- **M9a, many lights.** Lift the 8-light cap (light data in a storage or
+  larger uniform buffer, per-object light lists or clustered lighting).
+- **M9b, area and probe lights.** RectAreaLight with three.js's LTC tables
+  shipped as a blob asset (RectAreaLightUniformsLib), LightProbe,
+  SphericalHarmonics3, LightProbeGenerator, HemisphereLightProbe.
+- **M9c, shadows at scale.** More than 12 shadow layers (atlas sizing per
+  light), CSM (cascaded shadow maps addon), real VSM, spot light `map`
+  (projected textures, three.js r162+).
+- Example `Lights`: a night street of point and area lights with cascaded
+  sun shadows.
+
+### M10: scene tools
+
+Goal: the helpers, utilities and controls that three.js examples lean on.
+
+- **M10a, helpers.** AxesHelper, GridHelper, PolarGridHelper, BoxHelper,
+  Box3Helper, PlaneHelper, ArrowHelper, CameraHelper,
+  Directional/Point/Spot/HemisphereLightHelper, SkeletonHelper,
+  VertexNormalsHelper (addon).
+- **M10b, object and geometry utilities.** Deep `Object3D.clone/copy`,
+  `BufferGeometry.clone/copy/toNonIndexed`, InterleavedBuffer and
+  InterleavedBufferAttribute, EventDispatcher with typed events (`change`
+  on controls, `added`/`removed`, `dispose`), BufferGeometryUtils
+  (`mergeGeometries`, `mergeVertices`, `computeMikkTSpaceTangents`),
+  SceneUtils, SkeletonUtils (`clone`, `retarget`).
+- **M10c, more geometries.** RoundedBoxGeometry, ParametricGeometry,
+  ConvexGeometry (ConvexHull), DecalGeometry, TeapotGeometry, and
+  TextGeometry: FontLoader's typeface JSON, plus Rive-only text from a Rive
+  `Font`'s glyph outlines (`rive/text`).
+- **M10d, wide lines.** Line2, LineSegments2, LineMaterial, LineGeometry
+  (screen-space quads with width in pixels or world units, dashes), so
+  lines need not be one pixel wide.
+- **M10e, more controls.** TrackballControls, ArcballControls,
+  FlyControls, FirstPersonControls, DragControls, TransformControls (with
+  its gizmo), on Rive pointer events (PointerLockControls has no Rive
+  counterpart).
+- **M10f, BatchedMesh.** Many geometries in one draw (per-instance
+  geometry ranges, visibility, matrices and colours), with its
+  `optimize` and sorting.
+- Example `Editor`: picking, TransformControls, helpers, wide-line
+  outlines, merged and batched geometry.
+
+### M11: loaders and formats
+
+- **M11a, glTF breadth.** KHR_texture_transform, KHR_materials_*
+  (transmission, volume, ior, specular, iridescence, anisotropy,
+  emissive_strength, dispersion, unlit), KHR_mesh_quantization, sparse
+  accessors, multiple UV sets, texture samplers per texture,
+  EXT_meshopt_compression (meshopt decoder ported to AnimaScript).
+  Draco and Basis later (decoder size and speed to be measured).
+- **M11b, loading off the main lane.** Parsing and decoding in Rive jobs
+  (`rive/jobs`), vertex and index buffers created from Blobs
+  (`GPUBuffer.fromBlob`), `loadAsync` returning a Rive `Promise`, so big
+  models stay within the init budget and never stall a frame.
+- **M11c, URLs.** `load(url)` through `rive/net` `fetch` where the host
+  allows it (LoadingManager, `setPath`, progress callbacks as a listener
+  interface).
+- **M11d, other formats.** STLLoader, PLYLoader, SVGLoader (to ShapePaths;
+  also usable straight as Rive paths), FontLoader, ObjectLoader and
+  `toJSON` (round trips of scenes, geometries, materials), FBXLoader
+  (binary and ASCII), GLTFExporter (to a Blob).
+- Example `Models`: a glTF with the extensions above, an STL and an SVG
+  extruded, loaded asynchronously with a progress bar artboard.
+
+### M12: rendering features and post-processing breadth
+
+- **M12a, views.** `setViewport`, `setScissor`, `setScissorTest` (split
+  screens, insets), ArrayCamera, StereoCamera, multiple scenes in one
+  canvas, `renderer.compile`, `info.memory`.
+- **M12b, render target features.** Multiple render targets (`count`,
+  textures array), depth textures, `readRenderTargetPixels`,
+  `copyFramebufferToTexture`, `copyTextureToTexture`, reversed or
+  logarithmic depth for large scenes.
+- **M12c, anti-aliasing and AO passes.** SMAAPass, SSAARenderPass,
+  TAARenderPass, SSAOPass, GTAOPass, SAOPass (normal and depth prepass
+  via MRT).
+- **M12d, effect passes.** OutlinePass, BokehPass, AfterimagePass,
+  FilmPass, GlitchPass, DotScreenPass, HalftonePass, LUTPass (+ LUT
+  loaders), RenderPixelatedPass, TexturePass, ClearPass,
+  MaskPass/ClearMaskPass (stencil), selective bloom with layers.
+- Example `Effects`: a pass picker artboard (Rive UI) over one scene.
+
+### M13: animation depth and Rive integration
+
+- **M13a, animation utilities.** AnimationUtils (`subclip`,
+  `makeClipAdditive`), additive blending, AnimationObjectGroup, morph
+  targets on the GPU (target texture, any number of targets),
+  InstancedMesh morphs (`setMorphAt`), skeletons above 256 bones (bone
+  texture).
+- **M13b, 2D overlays.** The CSS2DRenderer / CSS3DRenderer counterpart:
+  Rive artboards drawn in 2D at projected 3D positions (labels, tooltips,
+  HUD markers), occluded by depth on request, taking pointer events.
+- **M13c, data binding.** Helpers that bind scene properties (transforms,
+  material colours, light intensities, animation weights) to Rive view
+  model properties both ways, so a Rive state machine or the editor can
+  drive a three.js scene without script changes.
+- **M13d, Rive-driven animation.** Retarget Rive skeleton/bone animations
+  onto three.js Skeletons, and Rive timelines onto Object3D transforms
+  (beyond `copyNodeTransform`).
+- Not planned: audio (no Rive scripting audio API yet), XR, node materials
+  and TSL (WGSL is the shading language here).
+
+### M14: performance and shipping
+
+- Skip unchanged object blocks and uploads; per-frame allocation audit
+  (no garbage in steady state).
+- Skinning, morphs and culling of big scenes in parallel calls
+  (`rive/parallel`) or compute, where Rive exposes it.
+- Benchmarks with the ahead-of-time tier (`--aot`), against the same
+  scenes in three.js in a browser; a regression bench in CI.
+- WebGPU validation of every example's `--gpu-manifest`, then
+  `--publish=web` and publishing the library to the Rive community.
 
 ## Deviations from three.js
 

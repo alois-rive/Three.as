@@ -157,7 +157,6 @@ export class Demo extends Layout {
   renderer uploads 16-bit indices when they fit.
 - `Object3D.copy` / `clone()` are not ported yet; `copyTransform(source)`
   copies name, transform and flags (not children).
-- `castShadow` defaults to false and is ignored until shadows land (M5).
 - The polyhedron presets (`IcosahedronGeometry`, `OctahedronGeometry`,
   `TetrahedronGeometry`, `DodecahedronGeometry`) live in
   `geometries/PolyhedronGeometry.as` rather than a file each; through the
