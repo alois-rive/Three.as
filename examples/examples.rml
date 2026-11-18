@@ -1,0 +1,102 @@
+<Rive version="1" kind="fragment">
+    <!-- FirstScene: a ScriptedLayout running examples/first_scene.as, filling
+         the artboard. Its `screen` input is the Screen artboard below, which
+         the script draws onto the cube as a live texture. -->
+    <Artboard defaultStateMachineId="0:107" clip="true" width="800" height="600" styleId="0:101" name="FirstScene" id="0:100">
+        <Fill name="Background">
+            <SolidColor colorValue="FF0E1116" name="Color"/>
+        </Fill>
+        <LayoutComponentStyle name="Artboard Style" id="0:101"/>
+        <LayoutComponent width="800" height="600" styleId="0:103" name="Root" id="0:102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:103"/>
+            <ScriptedLayout scriptAssetId="0:190" name="Scene" id="0:104">
+                <ScriptInputArtboard artboardId="0:200" name="screen" id="0:105"/>
+                <ScriptInputNumber propertyValue="1" name="speed" id="0:106"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:107">
+            <StateMachineLayer name="Layer 1" id="0:108">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <!-- Screen: plain Rive content, animated by its own state machine. The
+         scene shows it on every face of the cube. -->
+    <Artboard defaultStateMachineId="0:290" x="900" width="512" height="512" styleId="0:201" name="Screen" id="0:200">
+        <LayoutComponentStyle name="Screen Style" id="0:201"/>
+        <Fill name="Background">
+            <SolidColor colorValue="FF1B1F3B" name="Color"/>
+        </Fill>
+        <Shape x="256" y="256" name="Frame" id="0:202">
+            <Rectangle width="464" height="464" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="56" cornerRadiusTR="56" cornerRadiusBL="56" cornerRadiusBR="56" name="Path"/>
+            <Stroke thickness="18" name="Stroke">
+                <SolidColor colorValue="FFF4F1EA" name="Color"/>
+            </Stroke>
+        </Shape>
+        <Node x="256" y="256" name="Spinner" id="0:210">
+            <Shape x="0" y="-150" name="Dot1"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFFF5A5F" name="Color"/></Fill></Shape>
+            <Shape x="129.9" y="-75" name="Dot2"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFFFB400" name="Color"/></Fill></Shape>
+            <Shape x="129.9" y="75" name="Dot3"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF7AE582" name="Color"/></Fill></Shape>
+            <Shape x="0" y="150" name="Dot4"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF2EC4B6" name="Color"/></Fill></Shape>
+            <Shape x="-129.9" y="75" name="Dot5"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FF4D9DE0" name="Color"/></Fill></Shape>
+            <Shape x="-129.9" y="-75" name="Dot6"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path"/><Fill name="Fill"><SolidColor colorValue="FFB388EB" name="Color"/></Fill></Shape>
+        </Node>
+        <Shape x="256" y="256" name="Core" id="0:220">
+            <Triangle width="150" height="130" originX="0.5" originY="0.6" name="Path"/>
+            <Fill name="Fill">
+                <SolidColor colorValue="FFF4F1EA" name="Color"/>
+            </Fill>
+        </Shape>
+        <StateMachine name="State Machine 1" id="0:290">
+            <StateMachineLayer name="Layer 1" id="0:291">
+                <EntryState>
+                    <StateTransition stateToId="0:292"/>
+                </EntryState>
+                <AnimationState x="200" animationId="0:280" id="0:292"/>
+            </StateMachineLayer>
+        </StateMachine>
+        <LinearAnimation loopValue="loop" duration="240" name="Spin" id="0:280">
+            <KeyedObject objectId="0:210">
+                <KeyedProperty property="rotation">
+                    <KeyFrameDouble value="0" interpolationType="linear"/>
+                    <KeyFrameDouble value="6.2831855" interpolationType="linear" frame="240"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:220">
+                <KeyedProperty property="scaleX">
+                    <KeyFrameDouble value="1" interpolationType="linear"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240"/>
+                </KeyedProperty>
+                <KeyedProperty property="scaleY">
+                    <KeyFrameDouble value="1" interpolationType="linear"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240"/>
+                </KeyedProperty>
+                <KeyedProperty property="rotation">
+                    <KeyFrameDouble value="0" interpolationType="linear"/>
+                    <KeyFrameDouble value="-6.2831855" interpolationType="linear" frame="240"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+    </Artboard>
+
+    <!-- HelloCube: three.js's "Creating a scene" tutorial, verbatim apart
+         from types (examples/hello_cube.as). -->
+    <Artboard defaultStateMachineId="0:307" clip="true" y="700" width="800" height="600" styleId="0:301" name="HelloCube" id="0:300">
+        <LayoutComponentStyle name="Artboard Style" id="0:301"/>
+        <LayoutComponent width="800" height="600" styleId="0:303" name="Root" id="0:302">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:303"/>
+            <ScriptedLayout scriptAssetId="0:191" name="Scene" id="0:304"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:307">
+            <StateMachineLayer name="Layer 1" id="0:308">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
+    <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
+</Rive>

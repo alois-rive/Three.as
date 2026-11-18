@@ -1,0 +1,19 @@
+# ThreeAS: three.js for Rive (AnimaScript + GPUCanvas). See README.md.
+name: three_as
+main: FirstScene
+scripting: wasm
+
+exclude:
+  - build
+  - docs
+  - "*.md"
+  - "**/*.md"
+
+# Test suites run with `rive . --test` and never ship.
+excludeFromRev:
+  scripts:
+    - "tests/*"
+
+logs:
+  file: build/rive.log
+  problems: build/problems.log
