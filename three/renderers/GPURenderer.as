@@ -51,6 +51,7 @@ import { Scene } from "../scenes/Scene";
 import { Fog, FogExp2 } from "../scenes/Fog";
 import { Mesh } from "../objects/Mesh";
 import { InstancedMesh } from "../objects/InstancedMesh";
+import { BatchedMesh } from "../objects/BatchedMesh";
 import { SkinnedMesh } from "../objects/SkinnedMesh";
 import { Line, LineSegments, LineLoop } from "../objects/Line";
 import { Points } from "../objects/Points";
@@ -237,6 +238,18 @@ class InstanceGPU {
     count: i32 = -1;
 }
 
+// A BatchedMesh's visible instances, packed by geometry: geometry k's
+// instances are `count[k]` from `first[k]`.
+class BatchedGPU {
+    matrices: GPUBuffer? = null;
+    colors: GPUBuffer? = null;
+    matrixData: Float32Array = new Float32Array(0);
+    colorData: Float32Array = new Float32Array(0);
+    first: Array<i32> = [];
+    count: Array<i32> = [];
+    version: i32 = -1;
+}
+
 // -----------------------------------------------------------------------------
 
 export class GPURendererParameters {
@@ -327,6 +340,8 @@ class DrawItem {
     instances: GPUBuffer;
     instanceColors: GPUBuffer;
     instanceCount: u32 = 1;
+    /// The first instance read from `instances` (BatchedMesh geometries).
+    instanceFirst: u32 = 0;
     skinned: bool = false;
     bones: GPUBuffer? = null;
     custom: CustomPipeline? = null;
@@ -397,6 +412,7 @@ export class GPURenderer {
     private warnedShaders: Map<string, bool> = new Map<string, bool>();
     private warnedBones: bool = false;
     private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
+    private batchedBuffers: Map<i32, BatchedGPU> = new Map<i32, BatchedGPU>();
     private pipelines: Map<i64, GPUPipeline> = new Map<i64, GPUPipeline>();
     // The colour format of the target being rendered (pipelines are cached
     // per format).
@@ -1251,6 +1267,13 @@ export class GPURenderer {
             _sphere.copy(im.boundingSphere!).applyMatrix4(im.matrixWorld);
             return _frustum.intersectsSphere(_sphere);
         }
+        if (o instanceof BatchedMesh) {
+            const bm = o as BatchedMesh;
+            if (bm.boundingSphere == null) bm.computeBoundingSphere();
+            if (bm.boundingSphere!.isEmpty()) return false;
+            _sphere.copy(bm.boundingSphere!).applyMatrix4(bm.matrixWorld);
+            return _frustum.intersectsSphere(_sphere);
+        }
         const geometry = geometryOf(o);
         if (geometry == null) return true;
         if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
@@ -1307,6 +1330,22 @@ export class GPURenderer {
         }
 
         const mesh = o as Mesh;
+        if (mesh instanceof BatchedMesh) {
+            // One instanced draw per geometry, from its slice of the instances.
+            const bm = mesh as BatchedMesh;
+            const bg = this.batchedBuffer(bm);
+            const material = override != null ? override! : bm.material;
+            const indexed = g.indexed;
+            for (let k = 0; k < bg.count.length; k++) {
+                if (bg.count[k] == 0) continue;
+                const info = bm.geometryInfo[k];
+                const start = indexed ? info.indexStart : info.vertexStart;
+                const end = start + (indexed ? info.indexCount : info.vertexCount);
+                this.addMeshDraw(mesh, material, geometry, g, 0, start, end, frame, bg.matrices!, bg.colors!,
+                    <u32>bg.count[k], <u32>bg.first[k]);
+            }
+            return;
+        }
         let instances = this.identityInstance!;
         let colors = this.identityColor!;
         let instanceCount: u32 = 1;
@@ -1337,7 +1376,7 @@ export class GPURenderer {
 
     private addMeshDraw(mesh: Mesh, material: Material, geometry: BufferGeometry, g: GeometryGPU, part: i32,
                         start: i32, end: i32, frame: i32, instances: GPUBuffer, colors: GPUBuffer,
-                        instanceCount: u32): void {
+                        instanceCount: u32, instanceFirst: u32 = 0): void {
         if (material.wireframe) {
             if (!this.geometries.lines(geometry, g, LINE_WIREFRAME)) return;
             // Each triangle's three edges: index range x2.
@@ -1348,6 +1387,7 @@ export class GPURenderer {
             item.instances = instances;
             item.instanceColors = colors;
             item.instanceCount = instanceCount;
+            item.instanceFirst = instanceFirst;
             return;
         }
         const item = this.addDraw(mesh, material, g, part, start, end, frame, PRIM_TRIANGLES);
@@ -1355,6 +1395,7 @@ export class GPURenderer {
         item.instances = instances;
         item.instanceColors = colors;
         item.instanceCount = instanceCount;
+        item.instanceFirst = instanceFirst;
         if (g.indexed) {
             item.index = g.index;
             item.indexFormat = <u32>g.indexFormat;
@@ -1573,6 +1614,44 @@ export class GPURenderer {
         }
         ig.count = capacity;
         return ig;
+    }
+
+    /// A BatchedMesh's active, visible instances packed by geometry,
+    /// re-packed when its instances change.
+    private batchedBuffer(bm: BatchedMesh): BatchedGPU {
+        let bg: BatchedGPU;
+        if (this.batchedBuffers.has(bm.id)) bg = this.batchedBuffers.get(bm.id);
+        else {
+            bg = new BatchedGPU();
+            this.batchedBuffers.set(bm.id, bg);
+        }
+        if (bg.version == bm.instancesVersion && bg.matrices != null) return bg;
+        const n = max<i32>(1, bm.maxInstanceCount);
+        if (bg.matrixData.length != n * 16) {
+            bg.matrixData = new Float32Array(n * 16);
+            bg.colorData = new Float32Array(n * 3);
+        }
+        const geometries = bm.geometryInfo.length;
+        bg.first.length = 0;
+        bg.count.length = 0;
+        let next = 0;
+        for (let k = 0; k < geometries; k++) {
+            bg.first.push(next);
+            if (bm.geometryInfo[k].active) {
+                for (let i = 0; i < bm.instanceInfo.length; i++) {
+                    const info = bm.instanceInfo[i];
+                    if (!info.active || !info.visible || info.geometryIndex != k) continue;
+                    for (let e = 0; e < 16; e++) bg.matrixData[next * 16 + e] = bm.matricesArray[i * 16 + e];
+                    for (let e = 0; e < 3; e++) bg.colorData[next * 3 + e] = bm.colorsArray[i * 3 + e];
+                    next++;
+                }
+            }
+            bg.count.push(next - bg.first[k]);
+        }
+        bg.matrices = uploadVertices(bg.matrices, bg.matrixData);
+        bg.colors = uploadVertices(bg.colors, bg.colorData);
+        bg.version = bm.instancesVersion;
+        return bg;
     }
 
     /// A white colour per instance for `count` instances (shared, grown).
@@ -1914,8 +1993,8 @@ export class GPURenderer {
                 pass.setVertexBuffer(1, g.normal!);
                 pass.setVertexBuffer(2, g.uv!);
                 pass.setVertexBuffer(3, g.color!);
-                pass.setVertexBuffer(4, item.instances);
-                pass.setVertexBuffer(5, item.instanceColors);
+                pass.setVertexBuffer(4, item.instances, item.instanceFirst * <u32>INSTANCE_MATRIX_STRIDE);
+                pass.setVertexBuffer(5, item.instanceColors, item.instanceFirst * <u32>INSTANCE_COLOR_STRIDE);
                 pass.setVertexBuffer(6, g.uv1!);
                 if (item.skinned) {
                     pass.setVertexBuffer(7, g.skin!);
@@ -1991,6 +2070,24 @@ export class GPURenderer {
         const clips = material.clipShadows && ((this.localClippingEnabled && material.clippingPlanes != null
             && material.clippingPlanes!.length > 0) || this.clippingPlanes.length > 0);
         if (clips) item.pipelineKey |= KEY_CLIP_SHADOW;
+        if (mesh instanceof BatchedMesh) {
+            const bm = mesh as BatchedMesh;
+            const bg = this.batchedBuffer(bm);
+            for (let k = 0; k < bg.count.length; k++) {
+                if (bg.count[k] == 0) continue;
+                const info = bm.geometryInfo[k];
+                const part = new DrawItem(mesh, material, g, state, bg.matrices!, bg.colors!);
+                part.pipelineKey = item.pipelineKey;
+                part.index = item.index;
+                part.indexFormat = item.indexFormat;
+                part.first = g.indexed ? info.indexStart : info.vertexStart;
+                part.count = g.indexed ? info.indexCount : info.vertexCount;
+                part.instanceCount = <u32>bg.count[k];
+                part.instanceFirst = <u32>bg.first[k];
+                out.push(part);
+            }
+            return;
+        }
         this.deform(mesh, geometry, g, item, frame);
         out.push(item);
     }
@@ -2663,6 +2760,7 @@ export class GPURenderer {
         let lastStencilRef: u32 = 0;
         let lastPos: GPUBuffer? = null, lastNrm: GPUBuffer? = null, lastUv: GPUBuffer? = null;
         let lastColor: GPUBuffer? = null, lastInst: GPUBuffer? = null, lastIndex: GPUBuffer? = null;
+        let lastInstFirst: u32 = 0;
         let lastSkin: GPUBuffer? = null;
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
@@ -2684,8 +2782,8 @@ export class GPURenderer {
                 pass.setVertexBuffer(1, g.normal!);
                 pass.setVertexBuffer(2, g.uv!);
                 pass.setVertexBuffer(3, g.color!);
-                pass.setVertexBuffer(4, item.instances);
-                pass.setVertexBuffer(5, item.instanceColors);
+                pass.setVertexBuffer(4, item.instances, item.instanceFirst * <u32>INSTANCE_MATRIX_STRIDE);
+                pass.setVertexBuffer(5, item.instanceColors, item.instanceFirst * <u32>INSTANCE_COLOR_STRIDE);
                 pass.setVertexBuffer(6, g.uv1!);
                 const index = item.index;
                 if (index != null) {
@@ -2753,10 +2851,11 @@ export class GPURenderer {
             const color = g.color!;
             if (color !== lastColor) { pass.setVertexBuffer(3, color); lastColor = color; }
             const inst = item.instances;
-            if (inst !== lastInst) {
-                pass.setVertexBuffer(4, inst);
-                pass.setVertexBuffer(5, item.instanceColors);
+            if (inst !== lastInst || item.instanceFirst != lastInstFirst) {
+                pass.setVertexBuffer(4, inst, item.instanceFirst * <u32>INSTANCE_MATRIX_STRIDE);
+                pass.setVertexBuffer(5, item.instanceColors, item.instanceFirst * <u32>INSTANCE_COLOR_STRIDE);
                 lastInst = inst;
+                lastInstFirst = item.instanceFirst;
             }
             if (item.skinned) {
                 const si = g.skin!;
@@ -2962,6 +3061,12 @@ function worldSphere(o: Object3D, out: Sphere): bool {
         const im = o as InstancedMesh;
         if (im.boundingSphere == null) im.computeBoundingSphere();
         out.copy(im.boundingSphere!).applyMatrix4(im.matrixWorld);
+        return true;
+    }
+    if (o instanceof BatchedMesh) {
+        const bm = o as BatchedMesh;
+        if (bm.boundingSphere == null) bm.computeBoundingSphere();
+        out.copy(bm.boundingSphere!).applyMatrix4(bm.matrixWorld);
         return true;
     }
     if (o instanceof Mesh && (o as Mesh).morphTargetInfluences.length > 0) return false;

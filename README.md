@@ -75,6 +75,7 @@ rive . --artboard=MaterialsPlus                   # extra maps, glass, iridescen
 rive . --artboard=Clipping                        # clipping planes, stencil caps, clipShadows
 rive . --artboard=Lights                          # area lights, lamps, a light probe, CSM moonlight
 rive . --artboard=Editor                          # helpers, controls, scene utilities
+rive . --artboard=Batched                         # BatchedMesh: 600 instances, four geometries
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed

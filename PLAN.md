@@ -271,11 +271,11 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   FlyControls, FirstPersonControls, DragControls, TransformControls (with
   its gizmo), on Rive pointer events (PointerLockControls has no Rive
   counterpart).
-- **M10f, BatchedMesh.** Many geometries in one draw (per-instance
+- **M10f, BatchedMesh (done).** Many geometries in one draw (per-instance
   geometry ranges, visibility, matrices and colours), with its
   `optimize` and sorting.
-- Example `Editor`: picking, TransformControls, helpers, wide-line
-  outlines, merged and batched geometry.
+- Examples `Editor` (TransformControls, helpers, wide lines, addon
+  geometry) and `Batched` (600 instances of four geometries).
 
 ### M11: loaders and formats
 

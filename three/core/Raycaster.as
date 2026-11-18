@@ -43,6 +43,8 @@ export class Intersection {
     barycoord: Vector3? = null;
     /// InstancedMesh: which instance.
     instanceId: i32 = -1;
+    /// BatchedMesh: the instance hit.
+    batchId: i32 = -1;
 
     constructor(distance: f64, point: Vector3, object: Object3D) {
         this.distance = distance;

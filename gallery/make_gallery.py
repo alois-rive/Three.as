@@ -62,6 +62,7 @@ EXAMPLES = [
     ("PostProcessing", "0:1400", "0:1407", "EffectComposer: bloom, ACES tone mapping and FXAA.", True),
     ("Lights", "0:2000", "0:2007", "Area lights, a street of lamps, a light probe and cascaded moonlight.", True),
     ("Editor", "0:2100", "0:2107", "Helpers for grids, axes, lights, cameras, boxes, planes and normals.", True),
+    ("Batched", "0:2200", "0:2207", "A BatchedMesh: four geometries, 600 instances, one draw each.", True),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
 ]
 DEFAULT = 0  # FirstScene plays on load

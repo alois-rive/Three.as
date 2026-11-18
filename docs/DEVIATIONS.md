@@ -332,6 +332,23 @@ export class Demo extends Layout {
 - `LineDashedMaterial` reads "lineDistance" through the uv slot, so a line
   with both "uv" and "lineDistance" dashes along u instead.
 
+## BatchedMesh
+
+- **One instanced draw per geometry** instead of three.js's multi-draw:
+  the visible instances are packed by geometry into an instance buffer
+  (re-packed when instances change) and each geometry draws its slice.
+  Draws are not sorted per instance (`sortObjects` and `setCustomSort` are
+  kept and ignored) and instances are not culled one by one
+  (`perObjectFrustumCulled` is ignored): the whole batch is culled by its
+  bounding sphere, which is recomputed after instances change (three.js
+  leaves it to `computeBoundingSphere`).
+- Geometries must share the first geometry's attributes and be all
+  indexed or all not; `addGeometry` returns -1 otherwise (three.js
+  throws). Shared attributes are stored as Float32. Morph targets are not
+  batched. `setInstanceCount` / `setGeometrySize` (growing the buffers)
+  are not ported: size the batch up front.
+- Hits from raycasting carry `batchId` (the instance), as three.js.
+
 ## Interaction, controls and time
 
 - **Raycaster**: as three.js (`setFromCamera`, `intersectObject(s)`,
@@ -623,5 +640,5 @@ export class Demo extends Layout {
 
 ## Not yet supported
 
-Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
+Missing so far, planned in [../PLAN.md](../PLAN.md):
 ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), 

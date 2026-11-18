@@ -462,6 +462,20 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Batched: a BatchedMesh (examples/batched.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2207" clip="true" x="0" y="4900" width="800" height="600" styleId="0:2201" name="Batched" id="0:2200">
+        <LayoutComponentStyle name="Artboard Style" id="0:2201"/>
+        <LayoutComponent width="800" height="600" styleId="0:2203" name="Root" id="0:2202">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2203"/>
+            <ScriptedLayout scriptAssetId="0:2290" name="Scene" id="0:2204"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2207">
+            <StateMachineLayer name="Layer 1" id="0:2208">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -491,6 +505,7 @@
     <ScriptAsset file="examples/clipping.as" name="clipping" id="0:1990"/>
     <ScriptAsset file="examples/lights.as" name="lights" id="0:2090"/>
     <ScriptAsset file="examples/editor.as" name="editor" id="0:2190"/>
+    <ScriptAsset file="examples/batched.as" name="batched" id="0:2290"/>
     <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
 </Rive>
