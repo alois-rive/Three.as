@@ -85,6 +85,19 @@ export * from "./geometries/CapsuleGeometry";
 export * from "./geometries/PolyhedronGeometry";
 export * from "./geometries/EdgesGeometry";
 export * from "./geometries/WireframeGeometry";
+export * from "./geometries/ShapeGeometry";
+export * from "./geometries/ExtrudeGeometry";
+export * from "./geometries/TubeGeometry";
+
+export * from "./extras/core/Interpolations";
+export * from "./extras/core/Curve";
+export * from "./extras/core/CurvePath";
+export * from "./extras/core/Path";
+export * from "./extras/core/Shape";
+export * from "./extras/core/ShapePath";
+export * from "./extras/curves/Curves";
+export * from "./extras/ShapeUtils";
+export * from "./extras/Earcut";
 
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";
@@ -95,3 +108,4 @@ export * from "./renderers/GPURenderer";
 
 // Rive integrations.
 export * from "./rive/ArtboardTexture";
+export * from "./rive/RivePaths";

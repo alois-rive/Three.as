@@ -98,10 +98,12 @@ In steps, each committed with tests and a screenshot check:
 - **M2d, other primitives (done).** Line, LineSegments, LineLoop, Points, Sprite,
   InstancedMesh, LOD; LineBasicMaterial, LineDashedMaterial,
   PointsMaterial, SpriteMaterial; `wireframe`.
-- **M2e, the rest.** Curves (CatmullRomCurve3, QuadraticBezierCurve3 ...),
-  Shape/ShapeGeometry/ExtrudeGeometry (also from Rive `Path`s),
-  MeshPhysicalMaterial subset (clearcoat, sheen), RectAreaLight (LTC), cube
-  texture backgrounds, per-draw uniform chunks with dynamic offsets.
+- **M2e, curves and shapes (done).** Curves (2D and 3D, CatmullRomCurve3,
+  Béziers, ellipses, splines), CurvePath/Path/Shape/ShapePath, Earcut,
+  ShapeGeometry, ExtrudeGeometry (bevels, path extrusion), TubeGeometry,
+  and Rive `Path`s as shapes. (MeshPhysicalMaterial came in M2c; cube
+  textures moved to M5, uniform chunks with dynamic offsets to M6;
+  RectAreaLight dropped: it needs three.js's LTC lookup tables.)
 
 ### M3: Rive integration
 

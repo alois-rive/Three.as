@@ -141,9 +141,49 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Shapes: curves, extrusion, tubes, and a Rive path extruded
+         (examples/shapes.as). The Emblem artboard's StarPath is read by the
+         script and extruded. -->
+    <Artboard defaultStateMachineId="0:707" clip="true" x="2700" y="1400" width="800" height="600" styleId="0:701" name="Shapes" id="0:700">
+        <LayoutComponentStyle name="Artboard Style" id="0:701"/>
+        <LayoutComponent width="800" height="600" styleId="0:703" name="Root" id="0:702">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:703"/>
+            <ScriptedLayout scriptAssetId="0:195" name="Scene" id="0:704">
+                <ScriptInputArtboard artboardId="0:750" name="emblem" id="0:705"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:707">
+            <StateMachineLayer name="Layer 1" id="0:708">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <Artboard x="3600" y="1400" width="200" height="200" styleId="0:751" name="Emblem" id="0:750">
+        <LayoutComponentStyle name="Emblem Style" id="0:751"/>
+        <Shape x="100" y="100" name="Star" id="0:752">
+            <PointsPath isClosed="true" name="StarPath" id="0:753">
+                <StraightVertex x="0.0" y="-90.0"/>
+                <StraightVertex x="22.34" y="-30.74"/>
+                <StraightVertex x="85.6" y="-27.81"/>
+                <StraightVertex x="36.14" y="11.74"/>
+                <StraightVertex x="52.9" y="72.81"/>
+                <StraightVertex x="0.0" y="38.0"/>
+                <StraightVertex x="-52.9" y="72.81"/>
+                <StraightVertex x="-36.14" y="11.74"/>
+                <StraightVertex x="-85.6" y="-27.81"/>
+                <StraightVertex x="-22.34" y="-30.74"/>
+            </PointsPath>
+            <Fill name="Fill">
+                <SolidColor colorValue="FFFFB400" name="Color"/>
+            </Fill>
+        </Shape>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
     <ScriptAsset file="examples/materials.as" name="materials" id="0:193"/>
     <ScriptAsset file="examples/primitives.as" name="primitives" id="0:194"/>
+    <ScriptAsset file="examples/shapes.as" name="shapes" id="0:195"/>
 </Rive>

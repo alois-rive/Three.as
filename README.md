@@ -44,6 +44,9 @@ Needs the Rive CLI (`rive --version` 1.9.2 or later).
 rive .                                            # live preview (FirstScene)
 rive . --artboard=HelloCube                       # three.js's first tutorial
 rive . --artboard=Geometries                      # every built-in geometry
+rive . --artboard=Materials                       # materials, lights, fog, sky
+rive . --artboard=Primitives                      # instancing, points, lines, sprites
+rive . --artboard=Shapes                          # curves, extrusion, a Rive path in 3D
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```

@@ -180,6 +180,28 @@ export class Demo extends Layout {
 - `envMap` / `envMapIntensity` exist but do nothing until environment maps
   land (M5).
 
+## Curves and shapes
+
+- **`Curve` is generic: `Curve<Vector2>` or `Curve<Vector3>`** (three.js's
+  untyped vectors). `CurvePath<V>` likewise; `Path`, `Shape` and the 2D
+  curves are `Vector2`, the `*Curve3` classes and `CatmullRomCurve3`
+  `Vector3`. On the base class `getPoint(t, target)` needs its target;
+  concrete curves default it as three.js.
+- `curve.computeFrenetFrames(segments, closed)` is the function
+  `computeFrenetFrames(curve, segments, closed)`, returning a
+  `FrenetFrames` (`tangents`, `normals`, `binormals`).
+- `closePath()` is on `Path` (2D) only.
+- **`ShapeGeometry` and `ExtrudeGeometry` take an array of shapes**
+  (`new ExtrudeGeometry([shape], options)`). Extrude options are an
+  `ExtrudeGeometryOptions` object set field by field (its `bevelSize`
+  defaults to NaN, meaning `bevelThickness - 0.1` as three.js);
+  `UVGenerator` is not supported (always the world UV generator).
+- `THREE.Path` is three.js's path; Rive's is `Path` from `rive/path`.
+  `shapesFromRivePath(path, scale, isCCW)` and `shapePathFromRivePath`
+  (Rive-only) convert a Rive path (y flipped). A node's path is empty until
+  its artboard instance has advanced once: call `instance.advance(0)` before
+  `node.asPath()`.
+
 ## Lines, points and sprites
 
 - **Lines are one pixel wide** (`linewidth`, `linecap`, `linejoin` are
@@ -243,8 +265,7 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
-SkinnedMesh, Shape/ShapeGeometry/ExtrudeGeometry/TubeGeometry,
-RectAreaLight, cube textures, shadows,
+SkinnedMesh, RectAreaLight (not planned: it needs three.js's LTC tables), cube textures, shadows,
 environment maps, ShaderMaterial, render targets,
 Raycaster, curves, loaders other
 than TextureLoader, animation (AnimationMixer), skinning, controls,
