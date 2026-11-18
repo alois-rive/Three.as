@@ -1,6 +1,6 @@
 # ThreeAS: three.js for Rive (AnimaScript + GPUCanvas). See README.md.
 name: three_as
-main: FirstScene
+main: Gallery
 scripting: wasm
 
 exclude:

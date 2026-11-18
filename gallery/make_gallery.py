@@ -83,6 +83,7 @@ EXAMPLES = [
     ("Lights", "0:2000", "0:2007", "Area lights, a street of lamps, a light probe and cascaded moonlight.", True),
     ("Editor", "0:2100", "0:2107", "Helpers for grids, axes, lights, cameras, boxes, planes and normals.", True),
     ("Batched", "0:2200", "0:2207", "A BatchedMesh: four geometries, 600 instances, one draw each.", True),
+    ("Models", "0:2300", "0:2307", "glTF extensions and meshopt, loaded in a job; a duck over the network.", True),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
 ]
 DEFAULT = 0  # FirstScene plays on load
