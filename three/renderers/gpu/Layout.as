@@ -19,9 +19,12 @@ export const FRAME_BG_ROTATION: i32 = 336;
 export const FRAME_BG_FLAGS: i32 = 400;
 export const FRAME_PROJ: i32 = 416;
 export const FRAME_VIEWPORT: i32 = 480;
-export const FRAME_LIGHTS: i32 = 496;
+export const FRAME_ENV: i32 = 496;
+export const FRAME_ENV_ROTATION: i32 = 512;
+export const FRAME_ENV_FLAGS: i32 = 576;
+export const FRAME_LIGHTS: i32 = 592;
 export const LIGHT_BYTES: i32 = 64;
-export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1008
+export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1104
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;

@@ -103,6 +103,7 @@ export * from "./extras/core/ShapePath";
 export * from "./extras/curves/Curves";
 export * from "./extras/ShapeUtils";
 export * from "./extras/Earcut";
+export * from "./extras/PMREMGenerator";
 
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";

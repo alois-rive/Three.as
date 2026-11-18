@@ -64,6 +64,7 @@ import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
 import { MaterialUniforms, TEXTURE_SLOTS } from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
+import { MeshStandardMaterial } from "../materials/MeshStandardMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
@@ -86,6 +87,7 @@ import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
     FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_PROJ, FRAME_VIEWPORT, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES, OBJ_SPRITE,
+    FRAME_ENV, FRAME_ENV_ROTATION, FRAME_ENV_FLAGS,
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
@@ -304,6 +306,11 @@ export class GPURenderer {
     private bgGroup: GPUBindGroup? = null;
     private bgView: GPUTextureView? = null;
     private bgTexture: Texture? = null;
+    private envTexture: Texture? = null;
+    private envCandidate: Texture? = null;
+    private envView: GPUTextureView? = null;
+    private envLevels: u32 = 1;
+    private frameGroupView: GPUTextureView? = null;
 
     private mainTargets: PassTargets = new PassTargets();
     private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
@@ -445,6 +452,7 @@ export class GPURenderer {
         this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
         this.collect(scene, camera, info.frame);
         const background = this.prepareBackground(scene, info.frame, canvas);
+        this.prepareEnvironment(scene, info.frame, canvas);
         this.writeFrame(scene, camera);
         if (this.sortObjects) {
             this.opaque.sort(compareOpaque);
@@ -601,7 +609,6 @@ export class GPURenderer {
 
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.frameUbo = ubo;
-            this.frameGroup = new GPUBindGroup(g0, [new GPUBindGroupUBO(0, ubo)]);
 
             const wd = new GPUTextureDesc();
             wd.width = 1; wd.height = 1;
@@ -1111,6 +1118,10 @@ export class GPURenderer {
             state = new DrawState();
             this.states.set(stateKey, state);
         }
+        if (this.envCandidate == null && material instanceof MeshStandardMaterial) {
+            const em = (material as MeshStandardMaterial).envMap;
+            if (em != null) this.envCandidate = em;
+        }
         // Textures draw and upload now, before any pass.
         const u = this.uniforms;
         material.fillUniforms(u);
@@ -1210,6 +1221,29 @@ export class GPURenderer {
             this.bgView = view;
         }
         return true;
+    }
+
+    /// The environment map (scene.environment, else the first material
+    /// envMap seen) and the frame bind group that samples it.
+    private prepareEnvironment(scene: Object3D, frame: i32, canvas: GPUCanvas): void {
+        let env: Texture? = scene instanceof Scene ? (scene as Scene).environment : null;
+        if (env == null) env = this.envCandidate;
+        this.envCandidate = null;
+        let view: GPUTextureView? = null;
+        if (env != null) {
+            env.generateMipmaps = true;
+            if (env.minFilter != LinearMipmapLinearFilter) env.minFilter = LinearMipmapLinearFilter;
+            this.textures.update(env, frame);
+            view = this.textures.view(env, canvas);
+        }
+        this.envTexture = view != null ? env : null;
+        this.envLevels = env != null && view != null ? this.textures.levels(env) : 1;
+        const bind = view != null ? view! : this.white!;
+        if (this.frameGroup == null || this.frameGroupView !== bind) {
+            this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
+                [new GPUBindGroupTexture(1, bind)], [new GPUBindGroupSampler(2, this.backgroundSampler(true))]);
+            this.frameGroupView = bind;
+        }
     }
 
     private backgroundSampler(mipmapped: bool): GPUSampler {
@@ -1355,6 +1389,28 @@ export class GPURenderer {
             u[b + 1] = bt.colorSpace == SRGBColorSpace ? 1 : 0;
             u[b + 2] = bt.flipY ? 1 : 0;
             u[b + 3] = bt.premultiplyAlpha ? 1 : 0;
+        }
+        // Environment.
+        o = FRAME_ENV >> 2;
+        const et = this.envTexture;
+        if (et != null) {
+            const intensity = scene instanceof Scene ? (scene as Scene).environmentIntensity : 1;
+            f[o] = 1; f[o + 1] = <f32>intensity; f[o + 2] = <f32>Math.max(0, <f64>this.envLevels - 2); f[o + 3] = 0;
+            if (scene instanceof Scene) {
+                const r = (scene as Scene).environmentRotation;
+                _euler.set(-r.x, -r.y, -r.z, r.order);
+            } else {
+                _euler.set(0, 0, 0);
+            }
+            _bgRotation.makeRotationFromEuler(_euler);
+            _bgRotation.mat4.writeToBuffer(buf, FRAME_ENV_ROTATION);
+            const b = FRAME_ENV_FLAGS >> 2;
+            u[b] = et.colorSpace == SRGBColorSpace ? 1 : 0;
+            u[b + 1] = et.flipY ? 1 : 0;
+            u[b + 2] = et.premultiplyAlpha ? 1 : 0;
+            u[b + 3] = 0;
+        } else {
+            f[o] = 0;
         }
         this.frameUbo!.update(0, buf);
     }

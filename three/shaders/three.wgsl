@@ -80,6 +80,9 @@ struct FrameU {
     bg_flags: vec4<u32>,     // x mapping, y srgb, z flipY, w premultiplied
     proj: mat4x4<f32>,
     viewport: vec4<f32>,     // width, height (pixels), pixel ratio
+    env: vec4<f32>,          // x 1 when there is an environment, y intensity, z max mip
+    env_rotation: mat4x4<f32>,
+    env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
     lights: array<Light, 8>,
 };
 
@@ -111,6 +114,8 @@ struct BonesU {
 };
 
 @group(0) @binding(0) var<uniform> F: FrameU;
+@group(0) @binding(1) var t_env: texture_2d<f32>;
+@group(0) @binding(2) var s_env: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
@@ -426,6 +431,31 @@ fn BRDF_Sheen(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, sheen_color: vec3<f32>, 
     return sheen_color * (D_Charlie(roughness, dotNH) * V_Neubelt(dotNV, dotNL));
 }
 
+// ---------------------------------------------------------------- environment
+
+/// The environment's colour along world direction `dir` (equirectangular),
+/// at mip `lod`.
+fn env_sample(dir: vec3<f32>, lod: f32) -> vec3<f32> {
+    let d = (F.env_rotation * vec4<f32>(dir, 0.0)).xyz;
+    var uv = vec2<f32>(atan2(d.z, d.x) * 0.5 * RECIPROCAL_PI + 0.5,
+                       asin(clamp(d.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);
+    if (F.env_flags.y != 0u) {
+        uv.y = 1.0 - uv.y;
+    }
+    let texel = textureSampleLevel(t_env, s_env, uv, lod);
+    return decode(texel, F.env_flags.z != 0u, F.env_flags.x != 0u).rgb;
+}
+
+/// three.js's DFGApprox.
+fn dfg_approx(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> vec2<f32> {
+    let dotNV = saturate(dot(N, V));
+    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let r = roughness * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * dotNV)) * r.x + r.y;
+    return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+}
+
 fn distance_attenuation(d: f32, cutoff: f32, decay: f32) -> f32 {
     var falloff = 1.0 / max(pow(d, decay), 0.01);
     if (cutoff > 0.0) {
@@ -633,6 +663,29 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             }
         }
         rgb = diffuse_light * (diffuse_color * RECIPROCAL_PI) + specular + emissive;
+        if (pbr && F.env.x > 0.5) {
+            // Image-based light (three.js's getIBLIrradiance / getIBLRadiance
+            // and multiscattering), from the environment's mip chain.
+            let intensity = F.env.y * O.extra.z;
+            let max_lod = F.env.z;
+            // Irradiance from a coarse level that still separates sky and
+            // ground (the last levels average them away).
+            let irradiance = PI * env_sample(N, max(0.0, max_lod - 1.0)) * intensity;
+            let r = normalize(mix(reflect(-V, N), N, roughness * roughness));
+            let radiance = env_sample(r, roughness * max_lod) * intensity;
+            let fab = dfg_approx(N, V, roughness);
+            let fss_ess = f0 * fab.x + vec3<f32>(f90 * fab.y);
+            let ess = fab.x + fab.y;
+            let ems = 1.0 - ess;
+            let f_avg = f0 + (vec3<f32>(1.0) - f0) * 0.047619;
+            let fms = fss_ess * f_avg / (vec3<f32>(1.0) - ems * f_avg);
+            let multi = fms * ems;
+            let total = fss_ess + multi;
+            let cosine_irradiance = irradiance * RECIPROCAL_PI;
+            let ibl_diffuse = diffuse_color * (1.0 - max(total.r, max(total.g, total.b))) * cosine_irradiance;
+            let ibl_specular = radiance * fss_ess + multi * cosine_irradiance;
+            rgb += (ibl_diffuse + ibl_specular) * ao;
+        }
         if (physical) {
             let sc = O.physical1.rgb;
             rgb = rgb * (1.0 - 0.157 * max(sc.r, max(sc.g, sc.b))) + sheen;
