@@ -63,6 +63,7 @@ import { PointLight } from "../lights/PointLight";
 import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
 import { MaterialUniforms, TEXTURE_SLOTS } from "../materials/MaterialUniforms";
+import { ShaderMaterial } from "../materials/ShaderMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
@@ -125,6 +126,31 @@ class PassTargets {
     }
 }
 
+// A ShaderMaterial's pipeline and the layouts its shader declares.
+class CustomPipeline {
+    pipeline: GPUPipeline;
+    layout0: GPUBindGroupLayout;
+    layout1: GPUBindGroupLayout;
+    layout2: GPUBindGroupLayout? = null;
+    frameGroup: GPUBindGroup;
+
+    constructor(pipeline: GPUPipeline, layout0: GPUBindGroupLayout, layout1: GPUBindGroupLayout, frameGroup: GPUBindGroup) {
+        this.pipeline = pipeline;
+        this.layout0 = layout0;
+        this.layout1 = layout1;
+        this.frameGroup = frameGroup;
+    }
+}
+
+// A ShaderMaterial's uniform block and bind group.
+class CustomUniforms {
+    buffer: GPUBuffer? = null;
+    staging: ArrayBuffer = new ArrayBuffer(16);
+    group: GPUBindGroup? = null;
+    views: Array<GPUTextureView> = [];
+    frame: i32 = -1;
+}
+
 // What a draw rasterizes.
 const PRIM_TRIANGLES: i32 = 0;
 const PRIM_LINES: i32 = 1;
@@ -179,6 +205,8 @@ class DrawState {
     ubo: GPUBuffer;
     objGroup: GPUBindGroup? = null;
     bones: GPUBuffer? = null;
+    customObjGroup: GPUBindGroup? = null;
+    customLayout: GPUBindGroupLayout? = null;
     matGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     sampler: GPUSampler? = null;
@@ -206,6 +234,8 @@ class DrawItem {
     instanceCount: u32 = 1;
     skinned: bool = false;
     bones: GPUBuffer? = null;
+    custom: CustomPipeline? = null;
+    customUniforms: CustomUniforms? = null;
     positionOverride: GPUBuffer? = null;
     normalOverride: GPUBuffer? = null;
 
@@ -254,6 +284,10 @@ export class GPURenderer {
     private dummyBones: GPUBuffer? = null;
     private boneBuffers: Map<i32, GPUBuffer> = new Map<i32, GPUBuffer>();
     private morphs: Map<i32, MorphGPU> = new Map<i32, MorphGPU>();
+    private customPipelines: Map<string, CustomPipeline> = new Map<string, CustomPipeline>();
+    private customModules: Map<string, GPUShaderModule> = new Map<string, GPUShaderModule>();
+    private customUniforms: Map<i32, CustomUniforms> = new Map<i32, CustomUniforms>();
+    private warnedShaders: Map<string, bool> = new Map<string, bool>();
     private warnedBones: bool = false;
     private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
     private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
@@ -678,6 +712,141 @@ export class GPURenderer {
         return p;
     }
 
+    /// The pipeline of a ShaderMaterial draw (null when its shader is
+    /// missing: the draw is skipped, with one log line).
+    private customPipeline(material: ShaderMaterial, key: i32): CustomPipeline? {
+        const name = material.shader + "|" + material.vertexEntryPoint + "|" + material.fragmentEntryPoint + "|"
+            + key.toString();
+        if (this.customPipelines.has(name)) return this.customPipelines.get(name);
+        let module: GPUShaderModule? = null;
+        if (this.customModules.has(material.shader)) module = this.customModules.get(material.shader);
+        else {
+            module = this.context.shader(material.shader);
+            const slash = material.shader.lastIndexOf("/");
+            if (module == null && slash >= 0) module = this.context.shader(material.shader.substring(slash + 1));
+            if (module != null) this.customModules.set(material.shader, module);
+        }
+        if (module == null) {
+            if (!this.warnedShaders.has(material.shader)) {
+                this.context.log("three: ShaderMaterial: no shader asset named '" + material.shader + "'");
+                this.warnedShaders.set(material.shader, true);
+            }
+            return null;
+        }
+        const g0 = GPUBindGroupLayout.fromShader(module, 0);
+        const g1 = GPUBindGroupLayout.fromShader(module, 1);
+        if (g0 == null || g1 == null) return null;
+        const hasUniforms = material.uniforms.size > 0;
+        const g2 = hasUniforms ? GPUBindGroupLayout.fromShader(module, 2) : null;
+        const target = new GPUColorTargetDesc();
+        target.format = <TextureFormat>this.pipelineFormat;
+        const ds = new GPUDepthStencilDesc();
+        ds.format = TextureFormat.depth32float;
+        const d = new GPUPipelineDesc();
+        d.vertexModule = module;
+        d.fragmentModule = module;
+        d.vertexEntryPoint = material.vertexEntryPoint;
+        d.fragmentEntryPoint = material.fragmentEntryPoint;
+        d.sampleCount = (key & KEY_MSAA) != 0 ? this.samples : 1;
+        d.depthStencil = ds;
+        this.applyState(d, target, ds, key);
+        d.vertexBuffers = this.vertexBuffers;
+        d.bindGroupLayouts = g2 != null ? [g0, g1, g2] : [g0, g1];
+        const p = new GPUPipeline(d);
+        const frameGroup = new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)]);
+        const cp = new CustomPipeline(p, g0, g1, frameGroup);
+        cp.layout2 = g2;
+        this.customPipelines.set(name, cp);
+        return cp;
+    }
+
+    /// Blending, write mask, depth and culling from a pipeline key.
+    private applyState(d: GPUPipelineDesc, target: GPUColorTargetDesc, ds: GPUDepthStencilDesc, key: i32): void {
+        const cull = key & KEY_CULL_MASK;
+        const blend = blendState((key >> KEY_BLEND_SHIFT) & 7);
+        if (blend != null) target.blend = blend;
+        if ((key & KEY_COLOR_WRITE) == 0) target.writeMask = <u32>ColorWriteMask.none;
+        ds.compare = (key & KEY_DEPTH_TEST) != 0 ? CompareFunction.lessEqual : CompareFunction.always;
+        ds.write = (key & KEY_DEPTH_WRITE) != 0;
+        d.colorTargets = [target];
+        d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
+        d.winding = (key & KEY_MIRRORED) != 0 ? FaceWinding.clockwise : FaceWinding.counterClockwise;
+        d.topology = PrimitiveTopology.triangleList;
+    }
+
+    /// Packs a ShaderMaterial's uniforms (WGSL alignment) and binds its
+    /// textures; once a frame per material.
+    private prepareCustomUniforms(material: ShaderMaterial, cp: CustomPipeline, frame: i32, canvas: GPUCanvas): CustomUniforms? {
+        const layout = cp.layout2;
+        if (layout == null) return null;
+        let cu: CustomUniforms;
+        if (this.customUniforms.has(material.id)) cu = this.customUniforms.get(material.id);
+        else {
+            cu = new CustomUniforms();
+            this.customUniforms.set(material.id, cu);
+        }
+        if (cu.frame == frame) return cu;
+        cu.frame = frame;
+        const names = material.uniforms.keys();
+        let size = 0;
+        for (let i = 0; i < names.length; i++) {
+            const u = material.uniforms.get(names[i]);
+            const s = u.size();
+            if (s == 0) continue;
+            const a = u.align();
+            size = (size + a - 1) / a * a + s;
+        }
+        size = max<i32>(16, (size + 15) & ~15);
+        if (cu.staging.byteLength != size) cu.staging = new ArrayBuffer(size);
+        const f = Float32Array.wrap(cu.staging);
+        let offset = 0;
+        const views: Array<GPUTextureView> = [];
+        let firstTexture: Texture? = null;
+        for (let i = 0; i < names.length; i++) {
+            const u = material.uniforms.get(names[i]);
+            const t = u.texture();
+            if (t != null) {
+                this.textures.update(t, frame);
+                const v = this.textures.view(t, canvas);
+                views.push(v != null ? v : this.white!);
+                if (firstTexture == null) firstTexture = t;
+                continue;
+            }
+            const s = u.size();
+            if (s == 0) continue;
+            const a = u.align();
+            offset = (offset + a - 1) / a * a;
+            u.write(f, offset);
+            offset += s;
+        }
+        const hasValues = offset > 0;
+        if (hasValues) {
+            let buffer = cu.buffer;
+            if (buffer == null || buffer.size != <u32>size) {
+                buffer = new GPUBuffer(BufferUsage.uniform, <u32>size);
+                cu.buffer = buffer;
+                cu.group = null;
+            }
+            buffer.update(0, cu.staging);
+        }
+        let changed = cu.group == null || cu.views.length != views.length;
+        for (let i = 0; i < views.length && !changed; i++) changed = cu.views[i] !== views[i];
+        if (changed) {
+            const ubos: Array<GPUBindGroupUBO> = [];
+            if (hasValues) ubos.push(new GPUBindGroupUBO(0, cu.buffer!));
+            const textures: Array<GPUBindGroupTexture> = [];
+            for (let i = 0; i < views.length; i++) textures.push(new GPUBindGroupTexture(<u32>(i + 1), views[i]));
+            const samplers: Array<GPUBindGroupSampler> = [];
+            if (views.length > 0) {
+                const t = firstTexture!;
+                samplers.push(new GPUBindGroupSampler(<u32>(views.length + 1), this.sampler(t, this.textures.levels(t) > 1)));
+            }
+            cu.group = new GPUBindGroup(layout, ubos, textures, samplers);
+            cu.views = views;
+        }
+        return cu;
+    }
+
     private sampler(t: Texture, mipmapped: bool): GPUSampler {
         const linearMin = !isNearest(t.minFilter);
         const linearMag = !isNearest(t.magFilter);
@@ -963,6 +1132,12 @@ export class GPURenderer {
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
             | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT)
             | (this.passSamples > 1 ? KEY_MSAA : 0);
+        if (material instanceof ShaderMaterial) {
+            if (prim != PRIM_TRIANGLES) return null;   // custom points/lines are not supported
+            const cp = this.customPipeline(material as ShaderMaterial, item.pipelineKey);
+            if (cp == null) return null;
+            item.custom = cp;
+        }
         const e = object.matrixWorld.elements;
         _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
         item.depth = _pos.z;
@@ -1271,6 +1446,15 @@ export class GPURenderer {
                 sm.bindMatrixInverse.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX_INVERSE);
                 state.ubo.update(0, buf);
             }
+            const cp = item.custom;
+            if (cp != null) {
+                if (state.customObjGroup == null || state.customLayout !== cp.layout1) {
+                    state.customObjGroup = new GPUBindGroup(cp.layout1, [new GPUBindGroupUBO(0, state.ubo)]);
+                    state.customLayout = cp.layout1;
+                }
+                item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
+                continue;
+            }
             const bones = item.bones != null ? item.bones! : this.dummyBones!;
             if (state.objGroup == null || state.bones !== bones) {
                 state.objGroup = new GPUBindGroup(this.objLayout!,
@@ -1300,6 +1484,31 @@ export class GPURenderer {
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             const state = item.state;
+            const cp = item.custom;
+            if (cp != null) {
+                const g = item.geometry!;
+                pass.setPipeline(cp.pipeline);
+                lastKey = -1;
+                pass.setBindGroup(0, cp.frameGroup);
+                pass.setBindGroup(1, state.customObjGroup!);
+                const cu = item.customUniforms;
+                if (cu != null && cu.group != null) pass.setBindGroup(2, cu.group!);
+                pass.setVertexBuffer(0, g.position!);
+                pass.setVertexBuffer(1, g.normal!);
+                pass.setVertexBuffer(2, g.uv!);
+                pass.setVertexBuffer(3, g.color!);
+                pass.setVertexBuffer(4, item.instances);
+                const index = item.index;
+                if (index != null) {
+                    pass.setIndexBuffer(index, item.indexFormat);
+                    pass.drawIndexed(<u32>item.count, item.instanceCount, <u32>item.first);
+                } else {
+                    pass.draw(<u32>item.count, item.instanceCount, <u32>item.first);
+                }
+                info.calls++;
+                info.triangles += (item.count / 3) * <i32>item.instanceCount;
+                continue;
+            }
             if (state.objGroup == null || state.matGroup == null) continue;
             if (item.pipelineKey != lastKey) {
                 pass.setPipeline(this.pipeline(item.pipelineKey));

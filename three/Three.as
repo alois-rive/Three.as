@@ -74,6 +74,7 @@ export * from "./materials/LineBasicMaterial";
 export * from "./materials/LineDashedMaterial";
 export * from "./materials/PointsMaterial";
 export * from "./materials/SpriteMaterial";
+export * from "./materials/ShaderMaterial";
 
 export * from "./geometries/BoxGeometry";
 export * from "./geometries/PlaneGeometry";

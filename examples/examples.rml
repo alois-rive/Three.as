@@ -295,6 +295,24 @@
         </StateMachine>
     </Artboard>
 
+    <!-- CustomShader: a ShaderMaterial with a WGSL shader asset
+         (examples/custom_shader.as, examples/shaders/wave.wgsl). -->
+    <Artboard defaultStateMachineId="0:1107" clip="true" y="2800" width="800" height="600" styleId="0:1101" name="CustomShader" id="0:1100">
+        <LayoutComponentStyle name="Artboard Style" id="0:1101"/>
+        <LayoutComponent width="800" height="600" styleId="0:1103" name="Root" id="0:1102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1103"/>
+            <ScriptedLayout scriptAssetId="0:1190" name="Scene" id="0:1104">
+                <ScriptInputArtboard artboardId="0:200" name="screen" id="0:1105"/>
+                <ScriptInputNumber propertyValue="0.18" name="amplitude" id="0:1106"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1107">
+            <StateMachineLayer name="Layer 1" id="0:1108">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -305,4 +323,5 @@
     <ScriptAsset file="examples/deform.as" name="deform" id="0:197"/>
     <ScriptAsset file="examples/model.as" name="model" id="0:198"/>
     <BlobAsset file="examples/assets/sample.glb" name="sample" id="0:199"/>
+    <ScriptAsset file="examples/custom_shader.as" name="custom_shader" id="0:1190"/>
 </Rive>
