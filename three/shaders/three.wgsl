@@ -18,7 +18,7 @@
 
 const PI: f32 = 3.141592653589793;
 const RECIPROCAL_PI: f32 = 0.3183098861837907;
-const MAX_LIGHTS: u32 = 8u;
+const MAX_LIGHTS: u32 = 32u;
 
 const KIND_BASIC: u32 = 0u;
 const KIND_NORMAL: u32 = 1u;
@@ -101,7 +101,7 @@ struct FrameU {
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
-    lights: array<Light, 8>,
+    lights: array<Light, 32>,
     shadow_tiles: array<ShadowTile, 12>,
 };
 
@@ -143,7 +143,18 @@ struct ObjU {
     clip: vec4<f32>,         // x union count, y total count
     misc0: vec4<f32>,        // MeshDistanceMaterial referencePosition xyz, nearDistance
     misc1: vec4<f32>,        // farDistance, y 1: alphaHash
+    light_list: vec4<u32>,   // bytes: the count, then frame light indices
 };
+
+/// The `k`th light reaching this draw (an index into F.lights).
+fn object_light(k: u32) -> u32 {
+    let b = k + 1u;
+    return (O.light_list[b / 4u] >> ((b % 4u) * 8u)) & 0xffu;
+}
+
+fn object_light_count() -> u32 {
+    return O.light_list.x & 0xffu;
+}
 
 const ROLE_LIGHT: u32 = 0u;
 const ROLE_BUMP: u32 = 1u;
@@ -1246,9 +1257,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             cc_n = normalize(T * (m.x * sc) + B * (m.y * sc) + cc_n * m.z);
         }
 
-        let count = min(u32(F.ambient.w), MAX_LIGHTS);
-        for (var i = 0u; i < count; i++) {
-            let light = F.lights[i];
+        // The lights reaching this draw (culled per object by the renderer).
+        let count = object_light_count();
+        for (var k = 0u; k < count; k++) {
+            let light = F.lights[object_light(k)];
             var L: vec3<f32>;
             var radiance = light.color.rgb;
             if (light.position.w == LIGHT_DIRECTIONAL) {

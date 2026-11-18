@@ -6,7 +6,7 @@
 
 const PI: f32 = 3.141592653589793;
 const RECIPROCAL_PI: f32 = 0.3183098861837907;
-const MAX_LIGHTS: u32 = 8u;
+const MAX_LIGHTS: u32 = 32u;
 const MAX_SHADOW_TILES: u32 = 12u;
 const FLAG_VERTEX_COLORS: u32 = 1u;
 const FLAG_FOG: u32 = 2u;
@@ -60,7 +60,7 @@ struct FrameU {
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
-    lights: array<Light, 8>,
+    lights: array<Light, 32>,
     shadow_tiles: array<ShadowTile, 12>,
 };
 
@@ -102,6 +102,7 @@ struct ObjU {
     clip: vec4<f32>,         // x union count, y total count
     misc0: vec4<f32>,        // MeshDistanceMaterial referencePosition xyz, nearDistance
     misc1: vec4<f32>,        // farDistance, y 1: alphaHash
+    light_list: vec4<u32>,   // bytes: the count, then frame light indices
 };
 
 @group(0) @binding(0) var<uniform> F: FrameU;

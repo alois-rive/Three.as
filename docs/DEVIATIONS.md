@@ -425,8 +425,11 @@ export class Demo extends Layout {
 - Intensities are three.js's physically based ones (r155+, no legacy
   lights): diffuse is `irradiance * albedo / PI`. Sources written for
   `useLegacyLights = true` need their intensities multiplied by PI.
-- At most **8** directional, point and spot lights reach the shader (the
-  rest are ignored, with one log line). Ambient lights are summed, without
+- At most **32** directional, point and spot lights per render (the rest
+  are ignored, with one log line), and **each draw is lit by at most 15**:
+  the lights whose `distance` reaches its bounding sphere (all directional
+  lights and lights with `distance` 0 do), the strongest and nearest
+  first. three.js lights every object with every light. Ambient lights are summed, without
   limit. Hemisphere lights are summed too, all along the first one's
   direction.
 - Without an environment map, metals reflect only direct lights and look

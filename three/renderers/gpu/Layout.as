@@ -1,7 +1,9 @@
 // Byte layouts of the uniform blocks in three/shaders/three.wgsl (FrameU,
 // ObjU, Light). Keep in sync with the shader.
 
-export const MAX_LIGHTS: i32 = 8;
+export const MAX_LIGHTS: i32 = 32;
+/// Lights one draw's fragments loop over (its nearest/strongest).
+export const MAX_OBJECT_LIGHTS: i32 = 15;
 
 export const FRAME_VIEW_PROJ: i32 = 0;
 export const FRAME_VIEW: i32 = 64;
@@ -25,10 +27,10 @@ export const FRAME_ENV_FLAGS: i32 = 576;
 export const FRAME_SHADOW_PARAMS: i32 = 592;
 export const FRAME_LIGHTS: i32 = 608;
 export const LIGHT_BYTES: i32 = 96;
-export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1376
+export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 3680
 export const SHADOW_TILE_BYTES: i32 = 80;
 export const MAX_SHADOW_TILES: i32 = 12;
-export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 2336
+export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 4640
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;
@@ -67,7 +69,8 @@ export const OBJ_CLIP: i32 = 1216;          // x union count, y total count
 export const MAX_CLIP_PLANES: i32 = 8;
 export const OBJ_MISC0: i32 = 1232;   // MeshDistanceMaterial referencePosition xyz, nearDistance
 export const OBJ_MISC1: i32 = 1248;   // farDistance, alphaHash
-export const OBJ_USED: i32 = 1264;
+export const OBJ_LIGHTS: i32 = 1264;  // u8s: count, then up to 15 frame light indices
+export const OBJ_USED: i32 = 1280;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384

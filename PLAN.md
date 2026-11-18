@@ -233,7 +233,7 @@ render as authored.
 
 ### M9: lighting at scale
 
-- **M9a, many lights.** Lift the 8-light cap (light data in a storage or
+- **M9a, many lights (done: 32 a render, 15 per draw, culled by range).** Lift the 8-light cap (light data in a storage or
   larger uniform buffer, per-object light lists or clustered lighting).
 - **M9b, area and probe lights.** RectAreaLight with three.js's LTC tables
   shipped as a blob asset (RectAreaLightUniformsLib), LightProbe,

@@ -104,7 +104,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -458,6 +458,11 @@ export class GPURenderer {
     private shadowPipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private shadowsWarned: bool = false;
     private warnedExtraMaps: bool = false;
+    // The frame's lights for per-object culling: x, y, z, reach, weight.
+    private frameLights: Float64Array = new Float64Array(MAX_LIGHTS * 5);
+    private frameLightCount: i32 = 0;
+    private lightScores: Float64Array = new Float64Array(MAX_LIGHTS);
+    private lightOrder: Int32Array = new Int32Array(MAX_LIGHTS);
     private passStates: Array<PassState> = [new PassState()];
     private passStateKeys: Map<string, i32> = new Map<string, i32>();
 
@@ -2016,6 +2021,14 @@ export class GPURenderer {
             const base = (FRAME_LIGHTS + count * LIGHT_BYTES) >> 2;
             this.writeLightShadow(f, base, light);
             light.getWorldPosition(_pos);
+            // For per-object culling: position, reach (-1: everywhere) and a
+            // brightness to rank by.
+            const fl = this.frameLights;
+            fl[count * 5] = _pos.x; fl[count * 5 + 1] = _pos.y; fl[count * 5 + 2] = _pos.z;
+            const reach = directional ? -1 : spot ? (light as SpotLight).distance : (light as PointLight).distance;
+            fl[count * 5 + 3] = reach > 0 ? reach : -1;
+            fl[count * 5 + 4] = k * Math.max(light.color.r, Math.max(light.color.g, light.color.b));
+            if (directional) fl[count * 5 + 4] = Infinity;
             f[base] = <f32>_pos.x; f[base + 1] = <f32>_pos.y; f[base + 2] = <f32>_pos.z;
             f[base + 8] = <f32>(light.color.r * k);
             f[base + 9] = <f32>(light.color.g * k);
@@ -2049,6 +2062,7 @@ export class GPURenderer {
         }
         o = FRAME_AMBIENT >> 2;
         f[o] = <f32>ar; f[o + 1] = <f32>ag; f[o + 2] = <f32>ab; f[o + 3] = <f32>count;
+        this.frameLightCount = count;
         o = FRAME_HEMI_SKY >> 2;
         f[o] = <f32>sr; f[o + 1] = <f32>sg; f[o + 2] = <f32>sb; f[o + 3] = 0;
         o = FRAME_HEMI_GROUND >> 2;
@@ -2330,6 +2344,52 @@ export class GPURenderer {
         put4(f, OBJ_CLIP, <f64>union, <f64>n, 0, 0);
     }
 
+    /// The lights reaching `object`: those whose range meets its world
+    /// bounding sphere (all when unknown), the strongest first, at most
+    /// MAX_OBJECT_LIGHTS.
+    private writeLightList(u: Uint32Array, object: Object3D): void {
+        const n = this.frameLightCount;
+        const fl = this.frameLights;
+        const known = worldSphere(object, _lightSphere);
+        const c = _lightSphere.center;
+        const r = _lightSphere.radius;
+        let found = 0;
+        for (let i = 0; i < n; i++) {
+            const reach = fl[i * 5 + 3];
+            let score = fl[i * 5 + 4];
+            if (known && score != Infinity) {
+                const dx = fl[i * 5] - c.x, dy = fl[i * 5 + 1] - c.y, dz = fl[i * 5 + 2] - c.z;
+                const d = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - r);
+                if (reach > 0 && d > reach) continue;
+                score = score / (1 + d * d);
+            }
+            this.lightScores[found] = score;
+            this.lightOrder[found] = i;
+            found++;
+        }
+        // Keep the strongest (insertion sort; at most 32).
+        if (found > MAX_OBJECT_LIGHTS) {
+            for (let i = 1; i < found; i++) {
+                const s = this.lightScores[i], o = this.lightOrder[i];
+                let j = i - 1;
+                while (j >= 0 && this.lightScores[j] < s) {
+                    this.lightScores[j + 1] = this.lightScores[j];
+                    this.lightOrder[j + 1] = this.lightOrder[j];
+                    j--;
+                }
+                this.lightScores[j + 1] = s;
+                this.lightOrder[j + 1] = o;
+            }
+            found = MAX_OBJECT_LIGHTS;
+        }
+        const o = OBJ_LIGHTS >> 2;
+        u[o] = <u32>found; u[o + 1] = 0; u[o + 2] = 0; u[o + 3] = 0;
+        for (let k = 0; k < found; k++) {
+            const b = k + 1;
+            u[o + b / 4] |= <u32>this.lightOrder[k] << <u32>((b % 4) * 8);
+        }
+    }
+
     private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
         const buf = this.objStaging;
         const f = Float32Array.wrap(buf);
@@ -2373,6 +2433,7 @@ export class GPURenderer {
                 mu.anisotropy);
             put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
             this.writeClipping(f, item.material);
+            this.writeLightList(u, object);
             put4(f, OBJ_MISC0, mu.referenceX, mu.referenceY, mu.referenceZ, mu.nearDistance);
             put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, 0, 0);
             if (object instanceof Sprite) {
@@ -2768,4 +2829,37 @@ function stencilOp(op: i32): StencilOp {
     if (op == DecrementWrapStencilOp) return StencilOp.decrementWrap;
     if (op == InvertStencilOp) return StencilOp.invert;
     return StencilOp.keep;
+}
+
+const _lightSphere: Sphere = new Sphere();
+
+/// `o`'s world bounding sphere into `out`; false when unknown (posed
+/// skins without bounds, morphed meshes, objects without geometry).
+function worldSphere(o: Object3D, out: Sphere): bool {
+    if (o instanceof Sprite) {
+        out.center.set(0, 0, 0);
+        out.radius = 0.75;
+        out.applyMatrix4(o.matrixWorld);
+        return true;
+    }
+    if (o instanceof SkinnedMesh) {
+        const sm = o as SkinnedMesh;
+        if (sm.boundingSphere == null) return false;
+        out.copy(sm.boundingSphere!).applyMatrix4(sm.matrixWorld);
+        return true;
+    }
+    if (o instanceof InstancedMesh) {
+        const im = o as InstancedMesh;
+        if (im.boundingSphere == null) im.computeBoundingSphere();
+        out.copy(im.boundingSphere!).applyMatrix4(im.matrixWorld);
+        return true;
+    }
+    if (o instanceof Mesh && (o as Mesh).morphTargetInfluences.length > 0) return false;
+    const geometry = geometryOf(o);
+    if (geometry == null) return false;
+    if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
+    const bounds = geometry.boundingSphere!;
+    if (bounds.isEmpty()) return false;
+    out.copy(bounds).applyMatrix4(o.matrixWorld);
+    return true;
 }
