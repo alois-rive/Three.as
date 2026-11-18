@@ -64,7 +64,7 @@ import { PointLight } from "../lights/PointLight";
 import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
 import {
-    MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT,
+    MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT, KIND_PHYSICAL,
 } from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
@@ -81,6 +81,7 @@ import {
     LinearMipmapLinearFilter, RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace, NoToneMapping,
     NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
     EquirectangularReflectionMapping, EquirectangularRefractionMapping, CubeRefractionMapping, BasicShadowMap, PCFShadowMap,
+    HalfFloatType,
 
 } from "../constants";
 import { LightShadow } from "../lights/LightShadow";
@@ -90,7 +91,7 @@ import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { interleaveNormalTangent } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
-import { RenderTarget } from "./RenderTarget";
+import { RenderTarget, RenderTargetOptions } from "./RenderTarget";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
@@ -100,7 +101,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -292,6 +293,8 @@ class DrawItem {
     custom: CustomPipeline? = null;
     customUniforms: CustomUniforms? = null;
     positionOverride: GPUBuffer? = null;
+    /// MeshPhysicalMaterial with transmission: left out of the transmission pass.
+    transmissive: bool = false;
     normalOverride: GPUBuffer? = null;
 
     constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer,
@@ -394,6 +397,15 @@ export class GPURenderer {
     private bgPrefiltered: bool = false;
     private frameGroupView: GPUTextureView? = null;
     private frameGroupShadow: GPUTextureView? = null;
+    private frameGroupTransmission: GPUTextureView? = null;
+    private frameEnvView: GPUTextureView? = null;
+    private frameShadowView: GPUTextureView? = null;
+    // Transmission.
+    private hasTransmission: bool = false;
+    private transmissionTarget: RenderTarget? = null;
+    private transmissionTargets: PassTargets = new PassTargets();
+    private transmissionUbo: GPUBuffer? = null;
+    private transmissionView: GPUTextureView? = null;
     // Shadows.
     private shadowTex: GPUTexture? = null;
     private shadowView: GPUTextureView? = null;
@@ -586,6 +598,7 @@ export class GPURenderer {
 
         // Collect lights and draws (textures draw and upload here).
         this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
+        this.hasTransmission = false;
         this.collect(scene, camera, info.frame);
         const background = this.prepareBackground(scene, info.frame, canvas);
         this.planShadows();
@@ -601,6 +614,10 @@ export class GPURenderer {
 
         // Shadow maps: one depth pass per light view, before the main pass.
         this.renderShadows(canvas, info.frame);
+
+        // Transmission: the opaque scene into a mipmapped HDR target first.
+        if (this.hasTransmission) this.renderTransmission(canvas, scene, background, pw, ph, info.frame);
+        this.ensureFrameGroup();
 
         // The pass.
         const color = this.colorAttachment;
@@ -1321,6 +1338,7 @@ export class GPURenderer {
             if (t != null) this.textures.update(t, frame);
         }
         const displaced = u.roles[ROLE_DISPLACEMENT] != null && prim == PRIM_TRIANGLES;
+        const transmissive = u.kind == KIND_PHYSICAL && u.transmission > 0;
 
         const item = new DrawItem(object, material, g, state, this.identityInstance!, this.identityColor!);
         item.prim = prim;
@@ -1341,6 +1359,8 @@ export class GPURenderer {
             if (cp == null) return null;
             item.custom = cp;
         }
+        item.transmissive = transmissive;
+        if (transmissive) this.hasTransmission = true;
         const e = object.matrixWorld.elements;
         _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
         item.depth = _pos.z;
@@ -1418,6 +1438,101 @@ export class GPURenderer {
         return true;
     }
 
+    /// The frame bind group: the frame block, the environment, the shadow
+    /// maps and the transmission texture (rebuilt when one changes).
+    private ensureFrameGroup(): void {
+        const env = this.frameEnvView != null ? this.frameEnvView! : this.white!;
+        const shadow = this.frameShadowView != null ? this.frameShadowView! : this.dummyShadowView!;
+        const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
+        if (this.frameGroup != null && this.frameGroupView === env && this.frameGroupShadow === shadow
+                && this.frameGroupTransmission === tr) return;
+        this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
+            [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
+            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+        this.frameGroupView = env;
+        this.frameGroupShadow = shadow;
+        this.frameGroupTransmission = tr;
+    }
+
+    /// three.js's transmission pass: the opaque, non-transmissive draws
+    /// (and the background) into a linear HDR target the size of the pass,
+    /// mipmapped, which transmissive materials then sample.
+    private renderTransmission(canvas: GPUCanvas, scene: Object3D, background: bool, pw: u32, ph: u32, frame: i32): void {
+        let rt = this.transmissionTarget;
+        if (rt == null) {
+            const o = new RenderTargetOptions();
+            o.type = HalfFloatType;
+            o.generateMipmaps = true;
+            rt = new RenderTarget(pw, ph, o);
+            rt.texture.minFilter = LinearMipmapLinearFilter;
+            this.transmissionTarget = rt;
+        }
+        rt.setSize(pw, ph);
+        const view = rt.ensureHDR();
+        if (view == null) return;
+        // Its frame block: the main one, written for linear output.
+        let ubo = this.transmissionUbo;
+        if (ubo == null) {
+            ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
+            this.transmissionUbo = ubo;
+        }
+        const f = Float32Array.wrap(this.frameStaging);
+        const flag = (FRAME_SHADOW_PARAMS >> 2) + 2;
+        const was = f[flag];
+        f[flag] = 1;
+        ubo.update(0, this.frameStaging);
+        f[flag] = was;
+        const env = this.frameEnvView != null ? this.frameEnvView! : this.white!;
+        const shadow = this.frameShadowView != null ? this.frameShadowView! : this.dummyShadowView!;
+        const group = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
+            [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, this.white!)],
+            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+        this.ensureTargets(this.transmissionTargets, <u32>TextureFormat.rgba16float, pw, ph, 1);
+        const depth = this.transmissionTargets.depthView;
+        if (depth == null) return;
+        const savedFormat = this.pipelineFormat;
+        this.pipelineFormat = <u32>TextureFormat.rgba16float;
+        const color = new GPUColorAttachment();
+        color.view = view;
+        color.loadOp = LoadOp.clear;
+        color.storeOp = StoreOp.store;
+        color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
+        if (scene instanceof Scene) {
+            const bg = (scene as Scene).background;
+            if (bg != null && bg instanceof Color) {
+                const k = (scene as Scene).backgroundIntensity;
+                const bc = bg as Color;
+                color.clearR = <f32>(bc.r * k); color.clearG = <f32>(bc.g * k); color.clearB = <f32>(bc.b * k);
+                color.clearA = 1;
+            }
+        }
+        const pd = new GPUPassDesc();
+        pd.label = "three transmission";
+        pd.color = [color];
+        pd.depthView = depth;
+        pd.depthLoadOp = LoadOp.clear;
+        pd.depthStoreOp = StoreOp.discard;
+        pd.depthClearValue = 1;
+        const pass = canvas.beginRenderPass(pd);
+        if (background) {
+            // The background module reads the frame block for linear output.
+            const bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, ubo)],
+                [new GPUBindGroupTexture(1, this.bgGroupView!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
+            pass.setPipeline(this.pipeline(KEY_BACKGROUND));
+            pass.setBindGroup(0, bgGroup);
+            pass.draw(3);
+        }
+        this.drawList(pass, this.opaque, group);
+        pass.finish();
+        this.pipelineFormat = savedFormat;
+        // Its mip chain (drawn now, before the main pass).
+        rt.texture.version++;
+        this.transmissionView = this.textures.view(rt.texture, canvas);
+    }
+
     /// The environment map (scene.environment, else the first material
     /// envMap seen) and the frame bind group that samples it.
     private prepareEnvironment(scene: Object3D, frame: i32, canvas: GPUCanvas): void {
@@ -1436,13 +1551,9 @@ export class GPURenderer {
             ? (this.envPrefiltered ? this.textures.pmremLevels(env) : this.textures.levels(env)) : 1;
         const bind = view != null ? view! : this.white!;
         const shadow = this.tileCount > 0 && this.shadowView != null ? this.shadowView! : this.dummyShadowView!;
-        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow) {
-            this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]);
-            this.frameGroupView = bind;
-            this.frameGroupShadow = shadow;
-        }
+        this.frameEnvView = bind;
+        this.frameShadowView = shadow;
+        this.ensureFrameGroup();
         // The background pass's own group: the frame block and the texture.
         const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
         if (this.bgGroup == null || this.bgGroupView !== bg || this.bgGroupMipmapped != this.bgMipmapped) {
@@ -1583,8 +1694,10 @@ export class GPURenderer {
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.tileUbos.push(ubo);
             this.tileGroups.push(new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
-                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]));
+                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
+                    new GPUBindGroupTexture(5, this.white!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]));
         }
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
@@ -2078,6 +2191,12 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
             put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.passHeight * 0.5);
             put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, 0);
+            put4(f, OBJ_PHYSICAL3, mu.transmission, mu.thickness,
+                isFinite(mu.attenuationDistance) ? mu.attenuationDistance : 0, mu.dispersion);
+            put4(f, OBJ_PHYSICAL4, mu.attenuationR, mu.attenuationG, mu.attenuationB, mu.iridescence);
+            put4(f, OBJ_PHYSICAL5, mu.iridescenceIOR, mu.iridescenceThicknessMin, mu.iridescenceThicknessMax,
+                mu.anisotropy);
+            put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
             if (object instanceof Sprite) {
                 const c = (object as Sprite).center;
                 put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);
@@ -2185,8 +2304,12 @@ export class GPURenderer {
 
     // ------------------------------------------------------------------ draw
 
-    private drawList(pass: GPURenderPass, list: Array<DrawItem>): void {
+    /// Draws `list`. With `transmissionGroup` (the transmission pass): no
+    /// MSAA, that frame group, and no transmissive or ShaderMaterial draws.
+    private drawList(pass: GPURenderPass, list: Array<DrawItem>, transmissionGroup: GPUBindGroup? = null): void {
         const info = this.info.render;
+        const transmissionPass = transmissionGroup != null;
+        const frameGroup = transmissionPass ? transmissionGroup! : this.frameGroup!;
         let lastKey = -1;
         // Bindings already set (draws sharing a geometry or material skip them).
         let lastMat: GPUBindGroup? = null, lastSamplers: GPUBindGroup? = null;
@@ -2197,6 +2320,7 @@ export class GPURenderer {
             const item = list[i];
             const state = item.state;
             const cp = item.custom;
+            if (transmissionPass && (cp != null || item.transmissive)) continue;
             if (cp != null) {
                 const g = item.geometry!;
                 pass.setPipeline(cp.pipeline);
@@ -2227,10 +2351,11 @@ export class GPURenderer {
                 continue;
             }
             if (state.matGroup == null) continue;
-            if (item.pipelineKey != lastKey) {
-                pass.setPipeline(this.pipeline(item.pipelineKey));
-                pass.setBindGroup(0, this.frameGroup!);
-                lastKey = item.pipelineKey;
+            const key = transmissionPass ? item.pipelineKey & ~KEY_MSAA : item.pipelineKey;
+            if (key != lastKey) {
+                pass.setPipeline(this.pipeline(key));
+                pass.setBindGroup(0, frameGroup);
+                lastKey = key;
             }
             this.dynamicOffset[0] = state.objOffset;
             pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);

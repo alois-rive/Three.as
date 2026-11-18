@@ -129,6 +129,10 @@ struct ObjU {
     x_params: vec4<f32>,     // bumpScale, displacementScale, displacementBias, lightMapIntensity
     x_params2: vec4<f32>,    // normalMapType, combine, reflectivity, refractionRatio
     x_params3: vec4<f32>,    // clearcoatNormalScale xy, z 1: refraction mapping
+    physical3: vec4<f32>,    // transmission, thickness, attenuationDistance, dispersion
+    physical4: vec4<f32>,    // attenuationColor rgb, iridescence
+    physical5: vec4<f32>,    // iridescenceIOR, thickness range min, max (nm), anisotropy
+    physical6: vec4<f32>,    // anisotropy direction (cos, sin of anisotropyRotation)
 };
 
 const ROLE_LIGHT: u32 = 0u;
@@ -159,6 +163,9 @@ struct BonesU {
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
 @group(0) @binding(4) var s_shadow: sampler_comparison;
+// The opaque scene (linear HDR, mipmapped) for transmissive materials.
+@group(0) @binding(5) var t_transmission: texture_2d<f32>;
+@group(0) @binding(6) var s_transmission: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
 @group(1) @binding(2) var t_x0: texture_2d<f32>;
@@ -166,7 +173,6 @@ struct BonesU {
 @group(1) @binding(4) var t_x2: texture_2d<f32>;
 @group(1) @binding(5) var t_x3: texture_2d<f32>;
 @group(1) @binding(6) var t_x4: texture_2d<f32>;
-@group(1) @binding(7) var t_x5: texture_2d<f32>;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
 @group(2) @binding(1) var t_normal: texture_2d<f32>;
 @group(2) @binding(2) var t_aux: texture_2d<f32>;
@@ -231,7 +237,7 @@ fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
 // displacementmap_vertex).
 fn displace(position: vec3<f32>, normal: vec3<f32>, in: VsIn) -> vec3<f32> {
     let slot = role_slot(ROLE_DISPLACEMENT);
-    if (slot >= 6u) {
+    if (slot >= 5u) {
         return position;
     }
     let h = x_sample_level(slot, x_slot_uv(slot, in.uv, in.uv1)).r;
@@ -401,7 +407,7 @@ fn role_slot(role: u32) -> u32 {
 
 /// An extra slot's uv (its texture.matrix and channel, then flipY).
 fn x_slot_uv(slot: u32, uv: vec2<f32>, uv1: vec2<f32>) -> vec2<f32> {
-    let s = min(slot, 5u);
+    let s = min(slot, 4u);
     let r0 = O.x_uv[s * 2u];
     let r1 = O.x_uv[s * 2u + 1u];
     let p = vec3<f32>(select(uv, uv1, r0.w > 0.5), 1.0);
@@ -418,8 +424,7 @@ fn x_sample_grad(slot: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4
         case 1u: { return textureSampleGrad(t_x1, s_normal, uv, dx, dy); }
         case 2u: { return textureSampleGrad(t_x2, s_aux, uv, dx, dy); }
         case 3u: { return textureSampleGrad(t_x3, s_metalness, uv, dx, dy); }
-        case 4u: { return textureSampleGrad(t_x4, s_ao, uv, dx, dy); }
-        default: { return textureSampleGrad(t_x5, s_emissive, uv, dx, dy); }
+        default: { return textureSampleGrad(t_x4, s_ao, uv, dx, dy); }
     }
 }
 
@@ -430,29 +435,28 @@ fn x_sample_level(slot: u32, uv: vec2<f32>) -> vec4<f32> {
         case 1u: { return textureSampleLevel(t_x1, s_normal, uv, 0.0); }
         case 2u: { return textureSampleLevel(t_x2, s_aux, uv, 0.0); }
         case 3u: { return textureSampleLevel(t_x3, s_metalness, uv, 0.0); }
-        case 4u: { return textureSampleLevel(t_x4, s_ao, uv, 0.0); }
-        default: { return textureSampleLevel(t_x5, s_emissive, uv, 0.0); }
+        default: { return textureSampleLevel(t_x4, s_ao, uv, 0.0); }
     }
 }
 
 /// The uvs of the six extra slots and their screen derivatives, taken in
 /// uniform control flow at the top of fs_main.
 struct ExtraUVs {
-    uv: array<vec2<f32>, 6>,
-    dx: array<vec2<f32>, 6>,
-    dy: array<vec2<f32>, 6>,
+    uv: array<vec2<f32>, 5>,
+    dx: array<vec2<f32>, 5>,
+    dy: array<vec2<f32>, 5>,
 };
 
 fn has_role(role: u32) -> bool {
     let slot = role_slot(role);
-    return slot < 6u && has_flag(O.x_flags.x, slot);
+    return slot < 5u && has_flag(O.x_flags.x, slot);
 }
 
 /// `role`'s texel as three.js sees it (straight alpha, linear colour), or
 /// `fallback` when the material has no such map.
 fn role_texel(role: u32, x: ExtraUVs, fallback: vec4<f32>) -> vec4<f32> {
     let slot = role_slot(role);
-    if (slot >= 6u || !has_flag(O.x_flags.x, slot)) {
+    if (slot >= 5u || !has_flag(O.x_flags.x, slot)) {
         return fallback;
     }
     let t = x_sample_grad(slot, x.uv[slot], x.dx[slot], x.dy[slot]);
@@ -585,6 +589,143 @@ fn BRDF_GGX(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, f0: vec3<f32>, f90: f32, r
     let dotNH = saturate(dot(N, H));
     let dotVH = saturate(dot(V, H));
     return F_Schlick(f0, f90, dotVH) * (V_GGX_SmithCorrelated(alpha, dotNL, dotNV) * D_GGX(alpha, dotNH));
+}
+
+// ---------------------------------------------------------------- physical extensions
+
+/// GGX with three.js's iridescence (the thin-film Fresnel mixed in) and
+/// anisotropy (alphaT along T, roughness^2 along B).
+fn BRDF_GGX_physical(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, f0: vec3<f32>, f90: f32, roughness: f32,
+                     iridescence: f32, irid_fresnel: vec3<f32>, anisotropy: f32, alpha_t: f32,
+                     T: vec3<f32>, B: vec3<f32>) -> vec3<f32> {
+    let alpha = roughness * roughness;
+    let H = normalize(L + V);
+    let dotNL = saturate(dot(N, L));
+    let dotNV = saturate(dot(N, V));
+    let dotNH = saturate(dot(N, H));
+    let dotVH = saturate(dot(V, H));
+    var F = F_Schlick(f0, f90, dotVH);
+    F = mix(F, irid_fresnel, iridescence);
+    if (anisotropy <= 0.0) {
+        return F * (V_GGX_SmithCorrelated(alpha, dotNL, dotNV) * D_GGX(alpha, dotNH));
+    }
+    let dotTL = dot(T, L);
+    let dotTV = dot(T, V);
+    let dotTH = dot(T, H);
+    let dotBL = dot(B, L);
+    let dotBV = dot(B, V);
+    let dotBH = dot(B, H);
+    let gv = dotNL * length(vec3<f32>(alpha_t * dotTV, alpha * dotBV, dotNV));
+    let gl = dotNV * length(vec3<f32>(alpha_t * dotTL, alpha * dotBL, dotNL));
+    let vis = saturate(0.5 / (gv + gl));
+    let a2 = alpha_t * alpha;
+    let v = vec3<f32>(alpha * dotTH, alpha_t * dotBH, a2 * dotNH);
+    let w2 = a2 / dot(v, v);
+    let D = RECIPROCAL_PI * a2 * w2 * w2;
+    return F * (vis * D);
+}
+
+const XYZ_TO_REC709 = mat3x3<f32>(
+    vec3<f32>(3.2404542, -0.9692660, 0.0556434),
+    vec3<f32>(-1.5371385, 1.8760108, -0.2040259),
+    vec3<f32>(-0.4985314, 0.0415560, 1.0572252));
+
+fn ior_to_fresnel0(transmitted: vec3<f32>, incident: f32) -> vec3<f32> {
+    let r = (transmitted - vec3<f32>(incident)) / (transmitted + vec3<f32>(incident));
+    return r * r;
+}
+
+fn eval_sensitivity(opd: f32, shift: vec3<f32>) -> vec3<f32> {
+    let phase = 2.0 * PI * opd * 1.0e-9;
+    let val = vec3<f32>(5.4856e-13, 4.4201e-13, 5.2481e-13);
+    let pos = vec3<f32>(1.6810e+06, 1.7953e+06, 2.2084e+06);
+    let vr = vec3<f32>(4.3278e+09, 9.3046e+09, 6.6121e+09);
+    var xyz = val * sqrt(2.0 * PI * vr) * cos(pos * phase + shift) * exp(-(phase * phase) * vr);
+    xyz.x += 9.7470e-14 * sqrt(2.0 * PI * 4.5282e+09) * cos(2.2399e+06 * phase + shift.x) * exp(-4.5282e+09 * phase * phase);
+    xyz /= 1.0685e-7;
+    return XYZ_TO_REC709 * xyz;
+}
+
+/// three.js's evalIridescence (Belcour and Barla's thin film).
+fn eval_iridescence(outside_ior: f32, eta2: f32, cos_theta1: f32, thickness: f32, base_f0: vec3<f32>) -> vec3<f32> {
+    let film_ior = mix(outside_ior, eta2, smoothstep(0.0, 0.03, thickness));
+    let sin_theta2_sq = (outside_ior / film_ior) * (outside_ior / film_ior) * (1.0 - cos_theta1 * cos_theta1);
+    let cos_theta2_sq = 1.0 - sin_theta2_sq;
+    if (cos_theta2_sq < 0.0) {
+        return vec3<f32>(1.0);
+    }
+    let cos_theta2 = sqrt(cos_theta2_sq);
+    let r0 = ((film_ior - outside_ior) / (film_ior + outside_ior)) * ((film_ior - outside_ior) / (film_ior + outside_ior));
+    let r12 = r0 + (1.0 - r0) * pow(1.0 - cos_theta1, 5.0);
+    let t121 = 1.0 - r12;
+    let phi12 = select(0.0, PI, film_ior < outside_ior);
+    let phi21 = PI - phi12;
+    let sf0 = sqrt(clamp(base_f0, vec3<f32>(0.0), vec3<f32>(0.9999)));
+    let base_ior = (vec3<f32>(1.0) + sf0) / (vec3<f32>(1.0) - sf0);
+    let r1 = ior_to_fresnel0(base_ior, film_ior);
+    let r23 = r1 + (vec3<f32>(1.0) - r1) * pow(1.0 - cos_theta2, 5.0);
+    let phi23 = select(vec3<f32>(0.0), vec3<f32>(PI), base_ior < vec3<f32>(film_ior));
+    let opd = 2.0 * film_ior * thickness * cos_theta2;
+    let phi = vec3<f32>(phi21) + phi23;
+    let r123 = clamp(r12 * r23, vec3<f32>(1e-5), vec3<f32>(0.9999));
+    let sr123 = sqrt(r123);
+    let rs = t121 * t121 * r23 / (vec3<f32>(1.0) - r123);
+    var I = vec3<f32>(r12) + rs;
+    var cm = rs - vec3<f32>(t121);
+    for (var m = 1; m <= 2; m++) {
+        cm *= sr123;
+        I += cm * 2.0 * eval_sensitivity(f32(m) * opd, f32(m) * phi);
+    }
+    return max(I, vec3<f32>(0.0));
+}
+
+/// three.js's Schlick_to_F0.
+fn schlick_to_f0(f: vec3<f32>, f90: f32, dot_vh: f32) -> vec3<f32> {
+    let x = clamp(1.0 - dot_vh, 0.0, 1.0);
+    let x2 = x * x;
+    let x5 = clamp(x * x2 * x2, 0.0, 0.9999);
+    return (f - vec3<f32>(f90) * x5) / (1.0 - x5);
+}
+
+/// Light through a transmissive volume (three.js's getIBLVolumeRefraction):
+/// the opaque scene along the refracted ray, blurred by roughness,
+/// attenuated (Beer's law) and tinted, per colour channel with dispersion.
+fn volume_refraction(n: vec3<f32>, v: vec3<f32>, roughness: f32, diffuse_color: vec3<f32>, f0: vec3<f32>,
+                     f90: f32, world: vec3<f32>, ior: f32, thickness: f32, dispersion: f32) -> vec4<f32> {
+    let scale = vec3<f32>(length(O.model[0].xyz), length(O.model[1].xyz), length(O.model[2].xyz));
+    let size = vec2<f32>(textureDimensions(t_transmission));
+    let lod = log2(max(size.x, 1.0)) * roughness * clamp(ior * 2.0 - 2.0, 0.0, 1.0);
+    let half_spread = (ior - 1.0) * 0.025 * dispersion;
+    let iors = vec3<f32>(ior - half_spread, ior, ior + half_spread);
+    var light = vec3<f32>(0.0);
+    var alpha = 0.0;
+    var ray_len = 0.0;
+    for (var i = 0; i < 3; i++) {
+        let ray = normalize(refract(-v, normalize(n), 1.0 / iors[i])) * thickness * scale;
+        ray_len = length(ray);
+        let clip = F.view_proj * vec4<f32>(world + ray, 1.0);
+        let ndc = clip.xy / clip.w;
+        let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+        let t = textureSampleLevel(t_transmission, s_transmission, uv, lod);
+        light[i] = t[i];
+        alpha += t.a / 3.0;
+        if (dispersion <= 0.0) {
+            light = t.rgb;
+            alpha = t.a;
+            break;
+        }
+    }
+    var att = vec3<f32>(1.0);
+    let dist = O.physical3.z;
+    if (dist > 0.0 && dist < 1e30) {
+        let coefficient = -log(max(O.physical4.rgb, vec3<f32>(1e-4))) / dist;
+        att = exp(-coefficient * ray_len);
+    }
+    let transmittance = diffuse_color * att;
+    let fab = dfg_approx(n, v, roughness);
+    let fr = f0 * fab.x + vec3<f32>(f90 * fab.y);
+    let tf = (transmittance.r + transmittance.g + transmittance.b) / 3.0;
+    return vec4<f32>((vec3<f32>(1.0) - fr) * transmittance * light, 1.0 - (1.0 - alpha) * tf);
 }
 
 fn BRDF_BlinnPhong(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, specular: vec3<f32>, shininess: f32) -> vec3<f32> {
@@ -745,8 +886,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let duvy = dpdy(uv_normal);
     let dnx = dpdx(in.normal);
     let dny = dpdy(in.normal);
+    let duv0x = dpdx(in.uv);
+    let duv0y = dpdy(in.uv);
     var x: ExtraUVs;
-    for (var s = 0u; s < 6u; s++) {
+    for (var s = 0u; s < 5u; s++) {
         let xuv = x_slot_uv(s, in.uv, in.uv1);
         x.uv[s] = xuv;
         x.dx[s] = dpdx(xuv);
@@ -907,6 +1050,54 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         }
         let diffuse_color = diffuse.rgb * (1.0 - metalness);
 
+        // Physical extensions: iridescence and anisotropy.
+        var iridescence = 0.0;
+        var irid_fresnel = vec3<f32>(0.0);
+        var anisotropy = 0.0;
+        var alpha_t = roughness * roughness;
+        var aniso_t = vec3<f32>(1.0, 0.0, 0.0);
+        var aniso_b = vec3<f32>(0.0, 1.0, 0.0);
+        if (physical) {
+            iridescence = O.physical4.w * role_texel(ROLE_IRIDESCENCE, x, vec4<f32>(1.0)).r;
+            if (iridescence > 0.0) {
+                var film = O.physical5.z;
+                if (has_role(ROLE_IRIDESCENCE_THICKNESS)) {
+                    film = mix(O.physical5.y, O.physical5.z, role_texel(ROLE_IRIDESCENCE_THICKNESS, x, vec4<f32>(1.0)).g);
+                }
+                irid_fresnel = eval_iridescence(1.0, O.physical5.x, saturate(dot(N, V)), film, f0);
+            }
+            var av = O.physical6.xy * O.physical5.w;
+            if (has_role(ROLE_ANISOTROPY)) {
+                let polar = role_texel(ROLE_ANISOTROPY, x, vec4<f32>(1.0, 0.5, 1.0, 1.0)).rgb;
+                let m = mat2x2<f32>(vec2<f32>(av.x, av.y), vec2<f32>(-av.y, av.x));
+                av = m * normalize(2.0 * polar.rg - vec2<f32>(1.0)) * polar.b;
+            }
+            let strength = length(av);
+            if (strength > 0.0) {
+                let dir = av / strength;
+                anisotropy = saturate(strength);
+                alpha_t = mix(roughness * roughness, 1.0, anisotropy * anisotropy);
+                // The surface's tangent frame: its tangents, else derivatives.
+                var T0: vec3<f32>;
+                var B0: vec3<f32>;
+                if (O.x_roles.z != 0u && dot(in.tangent.xyz, in.tangent.xyz) > 0.0) {
+                    T0 = normalize(in.tangent.xyz);
+                    B0 = cross(normalize(in.normal), T0) * in.tangent.w;
+                } else {
+                    let q1perp = cross(dpy, N);
+                    let q0perp = cross(N, dpx);
+                    T0 = q1perp * duv0x.x + q0perp * duv0y.x;
+                    B0 = q1perp * duv0x.y + q0perp * duv0y.y;
+                    let det = max(dot(T0, T0), dot(B0, B0));
+                    let sc = select(inverseSqrt(det), 0.0, det == 0.0);
+                    T0 *= sc;
+                    B0 *= sc;
+                }
+                aniso_t = T0 * dir.x + B0 * dir.y;
+                aniso_b = B0 * dir.x - T0 * dir.y;
+            }
+        }
+
         // Indirect: ambient, hemisphere and lightMap light, occluded by the aoMap.
         var indirect = F.ambient.rgb + light_map;
         if (F.hemi_dir.w > 0.5) {
@@ -977,16 +1168,18 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             diffuse_light += irradiance;
             if (kind == KIND_PHONG) {
                 specular += irradiance * BRDF_BlinnPhong(L, V, N, O.specular.rgb, O.specular.w) * specular_strength;
+            } else if (physical) {
+                specular += irradiance * BRDF_GGX_physical(L, V, N, f0, f90, roughness, iridescence, irid_fresnel,
+                    anisotropy, alpha_t, aniso_t, aniso_b);
+                sheen += irradiance * BRDF_Sheen(L, V, N, sheen_color, sheen_roughness);
+                let cc_irradiance = saturate(dot(cc_n, L)) * radiance;
+                clearcoat_spec += cc_irradiance * BRDF_GGX(L, V, cc_n, vec3<f32>(0.04), 1.0, clearcoat_roughness);
             } else if (pbr) {
                 specular += irradiance * BRDF_GGX(L, V, N, f0, f90, roughness);
-                if (physical) {
-                    sheen += irradiance * BRDF_Sheen(L, V, N, sheen_color, sheen_roughness);
-                    let cc_irradiance = saturate(dot(cc_n, L)) * radiance;
-                    clearcoat_spec += cc_irradiance * BRDF_GGX(L, V, cc_n, vec3<f32>(0.04), 1.0, clearcoat_roughness);
-                }
             }
         }
-        rgb = diffuse_light * (diffuse_color * RECIPROCAL_PI) + specular + emissive;
+        var total_diffuse = diffuse_light * (diffuse_color * RECIPROCAL_PI);
+        var total_specular = specular;
         let own_env = O.env.x > 0.5;
         if (pbr && (own_env || F.env.x > 0.5)) {
             // Image-based light (three.js's getIBLIrradiance / getIBLRadiance
@@ -999,20 +1192,30 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             // getIBLIrradiance); from a plain mip chain, a coarse level that
             // still separates sky and ground.
             let irradiance = PI * env_sample(N, select(max(0.0, max_lod - 1.0), max_lod, prefiltered)) * intensity;
-            let r = normalize(mix(reflect(-V, N), N, roughness * roughness));
+            // Anisotropy reflects about a bent normal (three.js's
+            // getIBLAnisotropyRadiance).
+            var ibl_n = N;
+            if (anisotropy > 0.0) {
+                let bent = normalize(cross(cross(aniso_b, V), aniso_b));
+                let k = 1.0 - anisotropy * (1.0 - roughness);
+                ibl_n = normalize(mix(bent, N, k * k * k * k));
+            }
+            let r = normalize(mix(reflect(-V, ibl_n), ibl_n, roughness * roughness));
             let radiance = env_sample(r, roughness * max_lod) * intensity;
             let fab = dfg_approx(N, V, roughness);
-            let fss_ess = f0 * fab.x + vec3<f32>(f90 * fab.y);
+            let f0_ibl = mix(f0, schlick_to_f0(irid_fresnel, 1.0, saturate(dot(N, V))), iridescence);
+            let fss_ess = f0_ibl * fab.x + vec3<f32>(f90 * fab.y);
             let ess = fab.x + fab.y;
             let ems = 1.0 - ess;
-            let f_avg = f0 + (vec3<f32>(1.0) - f0) * 0.047619;
+            let f_avg = f0_ibl + (vec3<f32>(1.0) - f0_ibl) * 0.047619;
             let fms = fss_ess * f_avg / (vec3<f32>(1.0) - ems * f_avg);
             let multi = fms * ems;
             let total = fss_ess + multi;
             let cosine_irradiance = irradiance * RECIPROCAL_PI;
             let ibl_diffuse = diffuse_color * (1.0 - max(total.r, max(total.g, total.b))) * cosine_irradiance;
             let ibl_specular = radiance * fss_ess + multi * cosine_irradiance;
-            rgb += (ibl_diffuse + ibl_specular) * ao;
+            total_diffuse += ibl_diffuse * ao;
+            total_specular += ibl_specular * ao;
             if (physical && clearcoat > 0.0) {
                 // The clearcoat reflects the environment too (three.js's
                 // clearcoatSpecularIndirect).
@@ -1023,6 +1226,16 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
                 clearcoat_spec += cc_radiance * (vec3<f32>(0.04) * cfab.x + vec3<f32>(cfab.y)) * ao;
             }
         }
+        if (physical && O.physical3.x > 0.0) {
+            // Transmission: the opaque scene through the volume replaces
+            // the diffuse light (three.js's transmission_fragment).
+            let transmission = O.physical3.x * role_texel(ROLE_TRANSMISSION, x, vec4<f32>(1.0)).r;
+            let thickness = O.physical3.y * role_texel(ROLE_THICKNESS, x, vec4<f32>(1.0)).g;
+            let tr = volume_refraction(N, V, roughness, diffuse_color, f0, f90, in.world, O.extra.w, thickness,
+                O.physical3.w);
+            total_diffuse = mix(total_diffuse, tr.rgb, transmission);
+        }
+        rgb = total_diffuse + total_specular + emissive;
         if (physical) {
             let sc = sheen_color;
             rgb = rgb * (1.0 - 0.157 * max(sc.r, max(sc.g, sc.b))) + sheen;

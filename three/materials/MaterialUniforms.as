@@ -50,7 +50,7 @@ export const ROLE_IRIDESCENCE: i32 = 13;
 export const ROLE_IRIDESCENCE_THICKNESS: i32 = 14;
 export const ROLE_ANISOTROPY: i32 = 15;
 export const ROLE_COUNT: i32 = 16;
-export const EXTRA_SLOTS: i32 = 6;
+export const EXTRA_SLOTS: i32 = 5;
 
 export class MaterialUniforms {
     kind: i32 = KIND_BASIC;
@@ -95,6 +95,18 @@ export class MaterialUniforms {
     reflectivity: f64 = 1;
     refractionRatio: f64 = 0.98;
     clearcoatNormalScaleX: f64 = 1; clearcoatNormalScaleY: f64 = 1;
+    // MeshPhysicalMaterial: transmission, volume, iridescence, anisotropy.
+    transmission: f64 = 0;
+    thickness: f64 = 0;
+    attenuationDistance: f64 = Infinity;
+    attenuationR: f64 = 1; attenuationG: f64 = 1; attenuationB: f64 = 1;
+    dispersion: f64 = 0;
+    iridescence: f64 = 0;
+    iridescenceIOR: f64 = 1.3;
+    iridescenceThicknessMin: f64 = 100;
+    iridescenceThicknessMax: f64 = 400;
+    anisotropy: f64 = 0;
+    anisotropyRotation: f64 = 0;
     textures: StaticArray<Texture?> = new StaticArray<Texture?>(TEXTURE_SLOTS);
     roles: StaticArray<Texture?> = new StaticArray<Texture?>(ROLE_COUNT);
 
@@ -123,6 +135,10 @@ export class MaterialUniforms {
         this.bumpScale = 1; this.displacementScale = 1; this.displacementBias = 0; this.lightMapIntensity = 1;
         this.normalMapType = 0; this.combine = 0; this.reflectivity = 1; this.refractionRatio = 0.98;
         this.clearcoatNormalScaleX = 1; this.clearcoatNormalScaleY = 1;
+        this.transmission = 0; this.thickness = 0; this.attenuationDistance = Infinity;
+        this.attenuationR = 1; this.attenuationG = 1; this.attenuationB = 1; this.dispersion = 0;
+        this.iridescence = 0; this.iridescenceIOR = 1.3; this.iridescenceThicknessMin = 100;
+        this.iridescenceThicknessMax = 400; this.anisotropy = 0; this.anisotropyRotation = 0;
         for (let i = 0; i < TEXTURE_SLOTS; i++) this.textures[i] = null;
         for (let i = 0; i < ROLE_COUNT; i++) this.roles[i] = null;
     }

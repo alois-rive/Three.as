@@ -6,7 +6,7 @@ import { Texture } from "../textures/Texture";
 import { Vector2 } from "../math/Vector2";
 import { MeshStandardMaterial, MeshStandardMaterialParameters } from "./MeshStandardMaterial";
 import {
-    MaterialUniforms, KIND_PHYSICAL, ROLE_CLEARCOAT, ROLE_CLEARCOAT_NORMAL, ROLE_CLEARCOAT_ROUGHNESS, ROLE_SHEEN_COLOR, ROLE_SHEEN_ROUGHNESS, ROLE_SPECULAR_COLOR, ROLE_SPECULAR_INTENSITY,
+    MaterialUniforms, KIND_PHYSICAL, ROLE_CLEARCOAT, ROLE_CLEARCOAT_NORMAL, ROLE_CLEARCOAT_ROUGHNESS, ROLE_SHEEN_COLOR, ROLE_SHEEN_ROUGHNESS, ROLE_SPECULAR_COLOR, ROLE_SPECULAR_INTENSITY, ROLE_TRANSMISSION, ROLE_THICKNESS, ROLE_IRIDESCENCE, ROLE_IRIDESCENCE_THICKNESS, ROLE_ANISOTROPY,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 
@@ -27,6 +27,21 @@ export class MeshPhysicalMaterialParameters extends MeshStandardMaterialParamete
     sheenRoughnessMap: Texture? = null;
     specularIntensityMap: Texture? = null;
     specularColorMap: Texture? = null;
+    transmission: f64 = 0;
+    transmissionMap: Texture? = null;
+    thickness: f64 = 0;
+    thicknessMap: Texture? = null;
+    attenuationDistance: f64 = Infinity;
+    attenuationColor: u32 = 0xFFFFFF;
+    dispersion: f64 = 0;
+    iridescence: f64 = 0;
+    iridescenceMap: Texture? = null;
+    iridescenceIOR: f64 = 1.3;
+    iridescenceThicknessRange: Array<f64> = [100, 400];
+    iridescenceThicknessMap: Texture? = null;
+    anisotropy: f64 = 0;
+    anisotropyRotation: f64 = 0;
+    anisotropyMap: Texture? = null;
 }
 
 export class MeshPhysicalMaterial extends MeshStandardMaterial {
@@ -49,11 +64,42 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
     specularIntensityMap: Texture? = null;
     specularColorMap: Texture? = null;
 
+    transmission: f64 = 0;
+    transmissionMap: Texture? = null;
+    thickness: f64 = 0;
+    thicknessMap: Texture? = null;
+    attenuationDistance: f64 = Infinity;
+    attenuationColor: Color = new Color(1, 1, 1);
+    dispersion: f64 = 0;
+    iridescence: f64 = 0;
+    iridescenceMap: Texture? = null;
+    iridescenceIOR: f64 = 1.3;
+    iridescenceThicknessRange: Array<f64> = [100, 400];
+    iridescenceThicknessMap: Texture? = null;
+    anisotropy: f64 = 0;
+    anisotropyRotation: f64 = 0;
+    anisotropyMap: Texture? = null;
+
     constructor(parameters: MeshPhysicalMaterialParameters? = null) {
         super(null);
         this.type = "MeshPhysicalMaterial";
         if (parameters != null) {
             this.setStandardValues(parameters);
+            this.transmission = parameters.transmission;
+            this.transmissionMap = parameters.transmissionMap;
+            this.thickness = parameters.thickness;
+            this.thicknessMap = parameters.thicknessMap;
+            this.attenuationDistance = parameters.attenuationDistance;
+            this.attenuationColor.setHex(parameters.attenuationColor);
+            this.dispersion = parameters.dispersion;
+            this.iridescence = parameters.iridescence;
+            this.iridescenceMap = parameters.iridescenceMap;
+            this.iridescenceIOR = parameters.iridescenceIOR;
+            this.iridescenceThicknessRange = parameters.iridescenceThicknessRange.slice();
+            this.iridescenceThicknessMap = parameters.iridescenceThicknessMap;
+            this.anisotropy = parameters.anisotropy;
+            this.anisotropyRotation = parameters.anisotropyRotation;
+            this.anisotropyMap = parameters.anisotropyMap;
             this.clearcoatMap = parameters.clearcoatMap;
             this.clearcoatRoughnessMap = parameters.clearcoatRoughnessMap;
             this.clearcoatNormalMap = parameters.clearcoatNormalMap;
@@ -104,5 +150,23 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
         u.roles[ROLE_SHEEN_ROUGHNESS] = this.sheenRoughnessMap;
         u.roles[ROLE_SPECULAR_INTENSITY] = this.specularIntensityMap;
         u.roles[ROLE_SPECULAR_COLOR] = this.specularColorMap;
+        u.transmission = this.transmission;
+        u.thickness = this.thickness;
+        u.attenuationDistance = this.attenuationDistance;
+        u.attenuationR = this.attenuationColor.r; u.attenuationG = this.attenuationColor.g;
+        u.attenuationB = this.attenuationColor.b;
+        u.dispersion = this.dispersion;
+        u.iridescence = this.iridescence;
+        u.iridescenceIOR = this.iridescenceIOR;
+        const range = this.iridescenceThicknessRange;
+        u.iridescenceThicknessMin = range.length > 0 ? range[0] : 100;
+        u.iridescenceThicknessMax = range.length > 1 ? range[1] : 400;
+        u.anisotropy = this.anisotropy;
+        u.anisotropyRotation = this.anisotropyRotation;
+        u.roles[ROLE_TRANSMISSION] = this.transmissionMap;
+        u.roles[ROLE_THICKNESS] = this.thicknessMap;
+        u.roles[ROLE_IRIDESCENCE] = this.iridescenceMap;
+        u.roles[ROLE_IRIDESCENCE_THICKNESS] = this.iridescenceThicknessMap;
+        u.roles[ROLE_ANISOTROPY] = this.anisotropyMap;
     }
 }

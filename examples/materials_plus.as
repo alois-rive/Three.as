@@ -3,7 +3,8 @@
 // tangent-space normal map with computeTangents, an object-space normal
 // map. Bottom row: Phong and Lambert envMaps with each `combine` mode and a
 // specularMap, a clearcoat with its own normal and roughness maps, sheen
-// from a sheenColorMap.
+// from a sheenColorMap. Front row: transmission (glass with dispersion,
+// frosted, tinted by attenuation), iridescence and anisotropy.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
@@ -117,7 +118,7 @@ export class MaterialsPlus extends THREE.ThreeLayout {
         scene.add(sun);
 
         const sphere = new THREE.SphereGeometry(0.42, 64, 32);
-        const top: f64 = 0.55, bottom: f64 = -0.55;
+        const top: f64 = 1.5, bottom: f64 = 0.0;
 
         // bumpMap
         this.add(new THREE.Mesh(sphere, new THREE.MeshStandardMaterial({
@@ -171,7 +172,32 @@ export class MaterialsPlus extends THREE.ThreeLayout {
             sheenColorMap: texture(128, new Fabric(), true),
         })), 2.2, bottom);
 
-        this.camera.position.set(0, 0.2, 5.2);
+        // Front row, over a striped backdrop the glass refracts.
+        const front: f64 = -1.5;
+        const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.9), new THREE.MeshBasicMaterial({
+            map: texture(64, new Stripes(), true),
+        }));
+        backdrop.position.set(0, front, -0.9);
+        this.scene.add(backdrop);
+        this.add(new THREE.Mesh(sphere, new THREE.MeshPhysicalMaterial({
+            color: 0xffffff, roughness: 0.02, transmission: 1, thickness: 0.8, ior: 1.5, dispersion: 2,
+        })), -2.2, front);
+        this.add(new THREE.Mesh(sphere, new THREE.MeshPhysicalMaterial({
+            color: 0xffffff, roughness: 0.35, transmission: 1, thickness: 0.5, ior: 1.5,
+        })), -1.1, front);
+        this.add(new THREE.Mesh(sphere, new THREE.MeshPhysicalMaterial({
+            color: 0xffffff, roughness: 0.05, transmission: 1, thickness: 0.9, ior: 1.45,
+            attenuationColor: 0x30c070, attenuationDistance: 0.35,
+        })), 0, front);
+        this.add(new THREE.Mesh(sphere, new THREE.MeshPhysicalMaterial({
+            color: 0x101010, roughness: 0.25, metalness: 1, iridescence: 1, iridescenceIOR: 1.6,
+            iridescenceThicknessRange: [200, 800],
+        })), 1.1, front);
+        this.add(new THREE.Mesh(tangentSphere, new THREE.MeshPhysicalMaterial({
+            color: 0xc8c8cc, roughness: 0.35, metalness: 1, anisotropy: 0.9, anisotropyRotation: Math.PI / 2,
+        })), 2.2, front);
+
+        this.camera.position.set(0, -0.3, 6.4);
         const controls = new OrbitControls(this.camera, renderer);
         controls.update();
         this.controls = controls;

@@ -170,13 +170,12 @@ export class Demo extends Layout {
   (vertex stage, in shadow passes too), `lightMap`, `specularMap`, and the
   physical maps (clearcoat, clearcoat roughness and normal, sheen colour and
   roughness, specular intensity and colour) work as three.js.
-- **At most six distinct "extra" maps per material** (light, bump,
+- **At most five distinct "extra" maps per material** (light, bump,
   displacement, specular, and the physical maps; maps sharing a texture
   count once, as glTF packs them), beyond the eight base slots (map,
   normal, roughness/specular/gradient/matcap, metalness, ao, emissive,
   alpha, envMap); further ones are ignored with a log line. **Extra map k
-  shares base slot k's sampler** (map, normal, roughness, metalness, ao,
-  emissive): the renderer prefers a slot whose base map is absent or has
+  shares base slot k's sampler** (map, normal, roughness, metalness, ao): the renderer prefers a slot whose base map is absent or has
   the same wrapping and filters, else the extra map is sampled with the
   base map's sampler. (Rive allows 8 bindings a group and the web 16
   textures a stage; one sampler per texture keeps the shader translatable
@@ -189,8 +188,16 @@ export class Demo extends Layout {
   recommends setting it); without one the two tones step sharply.
 - `MeshDepthMaterial` supports `BasicDepthPacking` only.
 - `MeshPhysicalMaterial` supports clearcoat, sheen, ior, specularIntensity
-  and specularColor with their maps; transmission, thickness, iridescence,
-  anisotropy and dispersion come in M8b.
+  and specularColor with their maps, transmission, thickness,
+  attenuationColor/Distance, dispersion, iridescence (thin film, IOR and
+  thickness range) and anisotropy (strength, rotation, map) with three.js's
+  maths. **Transmission** renders the opaque, non-transmissive draws and
+  the background into a linear HDR target the size of the pass, mipmapped,
+  once per render when a transmissive material is drawn (three.js's
+  transmission pass); ShaderMaterials are left out of it, transmissive
+  objects do not see each other, and there is no
+  `transmissionResolutionScale`. Sampling is bilinear between mips (three.js
+  filters bicubically).
 - `flatShading` is on the `Material` base (ignored by unlit materials).
 - Fog is mixed in linear space after tone mapping and before the sRGB
   encode, so a fully fogged surface matches a background of the fog colour.

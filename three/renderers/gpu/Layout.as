@@ -57,12 +57,17 @@ export const OBJ_X_ROLES: i32 = 960;     // u32: roles 0-7 and 8-15 as slot nibb
 export const OBJ_X_PARAMS: i32 = 976;    // bumpScale, displacementScale, displacementBias, lightMapIntensity
 export const OBJ_X_PARAMS2: i32 = 992;   // normalMapType, combine, reflectivity, refractionRatio
 export const OBJ_X_PARAMS3: i32 = 1008;  // clearcoatNormalScale xy, z 1: refraction mapping
-export const OBJ_USED: i32 = 1024;
+// MeshPhysicalMaterial: transmission, volume, iridescence, anisotropy.
+export const OBJ_PHYSICAL3: i32 = 1024;  // transmission, thickness, attenuationDistance, dispersion
+export const OBJ_PHYSICAL4: i32 = 1040;  // attenuationColor rgb, iridescence
+export const OBJ_PHYSICAL5: i32 = 1056;  // iridescenceIOR, thickness range min, max, anisotropy
+export const OBJ_PHYSICAL6: i32 = 1072;  // anisotropy direction (cos, sin of anisotropyRotation)
+export const OBJ_USED: i32 = 1088;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384
 /// The per-draw buffer size (room to grow).
-export const OBJ_BYTES: i32 = 1024;
+export const OBJ_BYTES: i32 = 1280;
 
 export const FLAG_VERTEX_COLORS: u32 = 1;
 export const FLAG_FOG: u32 = 2;

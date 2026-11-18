@@ -211,7 +211,7 @@ render as authored.
   with `combine`, `reflectivity`, `refractionRatio`; clearcoat reflecting
   the environment; the physical maps (clearcoat, sheen, specular,
   iridescence).
-- **M8b, physical extensions.** MeshPhysicalMaterial `transmission`,
+- **M8b, physical extensions (done).** MeshPhysicalMaterial `transmission`,
   `thickness`, `attenuationColor/Distance` (the opaque scene rendered to a
   mipmapped transmission target first, as three.js), `iridescence`,
   `anisotropy`, `dispersion`.
