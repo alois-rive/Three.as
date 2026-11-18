@@ -73,7 +73,8 @@ rive . --artboard=Environments                    # cube map, .hdr, .exr environ
 rive . --artboard=Textures                        # uv transforms, uv1, KTX2 compressed textures
 rive . --artboard=MaterialsPlus                   # extra maps, glass, iridescence, anisotropy
 rive . --artboard=Clipping                        # clipping planes, stencil caps, clipShadows
-rive . --artboard=Lights                          # area lights, 20 point lights, a light probe
+rive . --artboard=Lights                          # area lights, lamps, a light probe, CSM moonlight
+rive . --artboard=Editor                          # helpers, controls, scene utilities
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed

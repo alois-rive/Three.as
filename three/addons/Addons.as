@@ -21,3 +21,4 @@ export * from "./lights/LightProbeGenerator";
 export * from "./lights/RectAreaLightUniformsLib";
 export * from "./csm/CSM";
 export * from "./csm/CSMFrustum";
+export * from "./helpers/VertexNormalsHelper";

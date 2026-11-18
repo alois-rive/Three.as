@@ -7,6 +7,7 @@ import { Euler } from "./Euler";
 import { Camera } from "../cameras/Camera";
 import { Spherical } from "./Spherical";
 import { Cylindrical } from "./Cylindrical";
+import { BufferAttribute } from "../core/BufferAttribute";
 
 export class Vector3 {
     x: f64;
@@ -253,6 +254,12 @@ export class Vector3 {
     setFromEuler(e: Euler): Vector3 { this.x = e.x; this.y = e.y; this.z = e.z; return this; }
 
     equals(v: Vector3): bool { return this.x == v.x && this.y == v.y && this.z == v.z; }
+
+    /// The `index`th item of a 3-or-more component attribute.
+    fromBufferAttribute(attribute: BufferAttribute, index: i32): Vector3 {
+        const a = attribute.array, n = attribute.itemSize;
+        return this.set(<f64>a[index * n], <f64>a[index * n + 1], <f64>a[index * n + 2]);
+    }
 
     fromArray(array: Array<f64>, offset: i32 = 0): Vector3 {
         this.x = array[offset]; this.y = array[offset + 1]; this.z = array[offset + 2];

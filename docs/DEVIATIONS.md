@@ -546,6 +546,17 @@ export class Demo extends Layout {
 - `CubeCamera.update(renderer, scene)` renders the six faces; hide the
   reflecting object yourself (three.js examples do the same).
 
+## Helpers
+
+- AxesHelper, GridHelper, PolarGridHelper, BoxHelper, Box3Helper,
+  PlaneHelper, ArrowHelper, CameraHelper, DirectionalLightHelper,
+  PointLightHelper, SpotLightHelper, HemisphereLightHelper and
+  SkeletonHelper are in `Three.as`; VertexNormalsHelper is an addon. As
+  three.js, call `update()` after what they show changed (BoxHelper,
+  CameraHelper, light helpers, VertexNormalsHelper). Helper colour
+  arguments are hex numbers; the light helpers take `-1` for "the light's
+  colour" (three.js's undefined). Lines are one pixel wide.
+
 ## Rive-only additions
 
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a

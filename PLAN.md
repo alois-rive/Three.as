@@ -250,7 +250,7 @@ render as authored.
 
 Goal: the helpers, utilities and controls that three.js examples lean on.
 
-- **M10a, helpers.** AxesHelper, GridHelper, PolarGridHelper, BoxHelper,
+- **M10a, helpers (done).** AxesHelper, GridHelper, PolarGridHelper, BoxHelper,
   Box3Helper, PlaneHelper, ArrowHelper, CameraHelper,
   Directional/Point/Spot/HemisphereLightHelper, SkeletonHelper,
   VertexNormalsHelper (addon).
