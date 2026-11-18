@@ -1,7 +1,8 @@
 // Editor: three.js's scene tools. Helpers for the grid, axes, lights, a
 // second camera, a box, a plane, an arrow and vertex normals; addon
 // geometries (a rounded box, a Klein bottle, a convex hull with a decal)
-// and text extruded from the Rive file's Orbitron font.
+// and text extruded from the Rive file's Orbitron font; wide lines (a
+// rainbow helix and a dashed outline).
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
@@ -13,6 +14,10 @@ import { ConvexGeometry } from "../three/addons/geometries/ConvexGeometry";
 import { DecalGeometry } from "../three/addons/geometries/DecalGeometry";
 import { RiveFont } from "../three/addons/loaders/FontLoader";
 import { TextGeometry, TextGeometryParameters } from "../three/addons/geometries/TextGeometry";
+import { LineGeometry } from "../three/addons/lines/LineGeometry";
+import { LineSegmentsGeometry } from "../three/addons/lines/LineSegmentsGeometry";
+import { LineMaterial } from "../three/addons/lines/LineMaterial";
+import { Line2, LineSegments2 } from "../three/addons/lines/LineSegments2";
 import { Context } from "rive/host";
 
 export class Editor extends THREE.ThreeLayout {
@@ -116,6 +121,30 @@ export class Editor extends THREE.ThreeLayout {
             text.position.set(-(bb.max.x + bb.min.x) / 2, 2.4, -2.5);
             scene.add(text);
         }
+
+        // Wide lines: a vertex-coloured helix, and the rounded box's edges dashed.
+        const positions: Array<f64> = [];
+        const colors: Array<f64> = [];
+        const c = new THREE.Color();
+        for (let i = 0; i <= 120; i++) {
+            const t = <f64>i / 120;
+            positions.push(Math.cos(t * Math.PI * 6) * 0.6 + 3.2);
+            positions.push(t * 2.2);
+            positions.push(Math.sin(t * Math.PI * 6) * 0.6 - 0.5);
+            c.setHSL(t, 1, 0.5);
+            colors.push(c.r); colors.push(c.g); colors.push(c.b);
+        }
+        const helix = new LineGeometry();
+        helix.setPositions(positions);
+        helix.setColors(colors);
+        scene.add(new Line2(helix, new LineMaterial({ color: 0xffffff, linewidth: 5, vertexColors: true })));
+        const edges = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(new THREE.BoxGeometry(0.98, 0.98, 0.98)));
+        const outline = new LineSegments2(edges, new LineMaterial({
+            color: 0xffe066, linewidth: 3, dashed: true, dashSize: 0.08, gapSize: 0.05,
+        }));
+        outline.computeLineDistances();
+        outline.position.copy(rounded.position);
+        scene.add(outline);
 
         this.camera.position.set(5, 4, 7);
         const controls = new OrbitControls(this.camera, this.renderer);

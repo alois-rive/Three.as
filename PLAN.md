@@ -264,7 +264,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   ConvexGeometry (ConvexHull), DecalGeometry, TeapotGeometry, and
   TextGeometry: FontLoader's typeface JSON, plus Rive-only text from a Rive
   `Font`'s glyph outlines (`rive/text`).
-- **M10d, wide lines.** Line2, LineSegments2, LineMaterial, LineGeometry
+- **M10d, wide lines (done; no worldUnits).** Line2, LineSegments2, LineMaterial, LineGeometry
   (screen-space quads with width in pixels or world units, dashes), so
   lines need not be one pixel wide.
 - **M10e, more controls.** TrackballControls, ArcballControls,

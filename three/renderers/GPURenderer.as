@@ -64,7 +64,7 @@ import { PointLight } from "../lights/PointLight";
 import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
 import {
-    MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT, KIND_PHYSICAL,
+    MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT, KIND_PHYSICAL, KIND_WIDE_LINE,
 } from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
@@ -131,6 +131,7 @@ const KEY_SKINNED: i32 = 1 << 12;
 const KEY_DISPLACED: i32 = 1 << 13;      // displacementMap: the vs_*_displaced entry points
 const KEY_CLIP_SHADOW: i32 = 1 << 14;    // shadow passes: clip casters (clipShadows)
 const KEY_CUTOUT_SHADOW: i32 = 1 << 15;  // shadow passes: alphaTest / alphaHash cut-outs
+const KEY_WIDE_LINE: i32 = 1 << 16;      // LineMaterial: vs_wideline
 const KEY_STATE_SHIFT: i32 = 21;         // 9 bits: a depthFunc/stencil/polygonOffset state (0: default)
 const KEY_STATE_MASK: i32 = 511;
 // The colour passes' depth (and stencil) format.
@@ -215,6 +216,13 @@ class MorphGPU {
     normals: Float32Array = new Float32Array(0);
     influences: Array<f64> = [];
     geometryVersion: i32 = -1;
+}
+
+// A wide line geometry's packed segments.
+class WideLineGPU {
+    buffer: GPUBuffer? = null;
+    data: Float32Array = new Float32Array(0);
+    version: i32 = -1;
 }
 
 // An InstancedMesh's packed instance buffer.
@@ -389,7 +397,7 @@ export class GPURenderer {
     private warnedShaders: Map<string, bool> = new Map<string, bool>();
     private warnedBones: bool = false;
     private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
-    private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
+    private pipelines: Map<i64, GPUPipeline> = new Map<i64, GPUPipeline>();
     // The colour format of the target being rendered (pipelines are cached
     // per format).
     private pipelineFormat: u32 = 0xFFFFFFFF;
@@ -469,6 +477,7 @@ export class GPURenderer {
     private lightScores: Float64Array = new Float64Array(MAX_LIGHTS);
     private lightOrder: Int32Array = new Int32Array(MAX_LIGHTS);
     private passStates: Array<PassState> = [new PassState()];
+    private wideLines: Map<i32, WideLineGPU> = new Map<i32, WideLineGPU>();
     private passStateKeys: Map<string, i32> = new Map<string, i32>();
 
     private mainTargets: PassTargets = new PassTargets();
@@ -906,7 +915,7 @@ export class GPURenderer {
     }
 
     private pipeline(key: i32): GPUPipeline {
-        const cacheKey = key | (<i32>this.pipelineFormat << 16);
+        const cacheKey = (<i64>this.pipelineFormat << 32) | <i64><u32>key;
         if (this.pipelines.has(cacheKey)) return this.pipelines.get(cacheKey);
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
@@ -955,7 +964,8 @@ export class GPURenderer {
                 d.vertexEntryPoint = (key & KEY_DISPLACED) != 0 ? "vs_skinned_displaced" : "vs_skinned";
                 d.vertexBuffers = this.skinBuffers;
             } else {
-                d.vertexEntryPoint = (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
+                d.vertexEntryPoint = (key & KEY_WIDE_LINE) != 0 ? "vs_wideline"
+                    : (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
                 d.vertexBuffers = this.vertexBuffers;
                 if (prim == PRIM_LINES) {
                     d.topology = PrimitiveTopology.lineList;
@@ -1349,7 +1359,60 @@ export class GPURenderer {
             item.index = g.index;
             item.indexFormat = <u32>g.indexFormat;
         }
+        if (this.uniforms.kind == KIND_WIDE_LINE) {
+            // Wide lines: the base quad once per segment.
+            const segments = this.wideLineInstances(geometry, item);
+            if (segments == 0) {
+                item.instanceCount = 0;
+                return;
+            }
+            item.instanceCount = <u32>segments;
+            item.pipelineKey |= KEY_WIDE_LINE;
+            return;
+        }
         this.deform(mesh, geometry, g, item, frame);
+    }
+
+    /// Packs a LineSegmentsGeometry's segments as instances (start xyz +
+    /// distance, end xyz + distance, start colour, end colour), re-uploaded
+    /// when its attributes change. Returns the segment count.
+    private wideLineInstances(geometry: BufferGeometry, item: DrawItem): i32 {
+        const s = geometry.getAttribute("instanceStart");
+        const e = geometry.getAttribute("instanceEnd");
+        if (s == null || e == null || s.count == 0) return 0;
+        const n = s.count;
+        const cs = geometry.getAttribute("instanceColorStart");
+        const ce = geometry.getAttribute("instanceColorEnd");
+        const ds = geometry.getAttribute("instanceDistanceStart");
+        const de = geometry.getAttribute("instanceDistanceEnd");
+        const version = s.version * 31 + e.version * 17 + (cs != null ? cs.version * 7 : 0) + (ds != null ? ds.version : 0) + n * 1000003;
+        let w: WideLineGPU;
+        if (this.wideLines.has(geometry.id)) w = this.wideLines.get(geometry.id);
+        else {
+            w = new WideLineGPU();
+            this.wideLines.set(geometry.id, w);
+        }
+        if (w.buffer == null || w.version != version) {
+            if (w.data.length != n * 16) w.data = new Float32Array(n * 16);
+            const d = w.data;
+            for (let i = 0; i < n; i++) {
+                const o = i * 16;
+                d[o] = s.array[i * 3]; d[o + 1] = s.array[i * 3 + 1]; d[o + 2] = s.array[i * 3 + 2];
+                d[o + 3] = ds != null ? ds.array[i] : 0;
+                d[o + 4] = e.array[i * 3]; d[o + 5] = e.array[i * 3 + 1]; d[o + 6] = e.array[i * 3 + 2];
+                d[o + 7] = de != null ? de.array[i] : 0;
+                for (let k = 0; k < 3; k++) {
+                    d[o + 8 + k] = cs != null ? cs.array[i * 3 + k] : 1;
+                    d[o + 12 + k] = ce != null ? ce.array[i * 3 + k] : 1;
+                }
+                d[o + 11] = 1; d[o + 15] = 1;
+            }
+            w.buffer = uploadVertices(w.buffer, d);
+            w.version = version;
+        }
+        item.instances = w.buffer!;
+        item.instanceColors = this.white3(n);
+        return n;
     }
 
     /// Morph targets (CPU) and skinning (GPU) for a mesh draw.
@@ -2470,7 +2533,7 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
             put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
             put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.passHeight * 0.5);
-            put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, 0);
+            put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, mu.dashOffset);
             put4(f, OBJ_PHYSICAL3, mu.transmission, mu.thickness,
                 isFinite(mu.attenuationDistance) ? mu.attenuationDistance : 0, mu.dispersion);
             put4(f, OBJ_PHYSICAL4, mu.attenuationR, mu.attenuationG, mu.attenuationB, mu.iridescence);
@@ -2480,7 +2543,7 @@ export class GPURenderer {
             this.writeClipping(f, item.material);
             this.writeLightList(u, object);
             put4(f, OBJ_MISC0, mu.referenceX, mu.referenceY, mu.referenceZ, mu.nearDistance);
-            put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, 0, 0);
+            put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, mu.dashed ? 1 : 0, 0);
             if (object instanceof Sprite) {
                 const c = (object as Sprite).center;
                 put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);

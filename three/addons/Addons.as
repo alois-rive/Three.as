@@ -32,3 +32,7 @@ export * from "./geometries/DecalGeometry";
 export * from "./geometries/TextGeometry";
 export * from "./math/ConvexHull";
 export * from "./loaders/FontLoader";
+export * from "./lines/LineSegmentsGeometry";
+export * from "./lines/LineGeometry";
+export * from "./lines/LineMaterial";
+export * from "./lines/LineSegments2";

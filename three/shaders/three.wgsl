@@ -32,6 +32,7 @@ const KIND_PHYSICAL: u32 = 8u;
 const KIND_LINE_DASHED: u32 = 9u;
 const KIND_SHADOW: u32 = 10u;
 const KIND_DISTANCE: u32 = 11u;
+const KIND_WIDE_LINE: u32 = 12u;
 
 const SLOT_MAP: u32 = 0u;
 const SLOT_NORMAL: u32 = 1u;
@@ -320,6 +321,62 @@ fn transform_vertex(position: vec3<f32>, normal: vec3<f32>, in: VsIn, inst: Inst
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.color = vcolor * inst.color;
     out.view_depth = -(F.view * world).z;
+    return out;
+}
+
+// Wide lines (three.js's LineMaterial): the base quad (position.x: side,
+// position.y: < 0.5 start, > 0.5 end, beyond: caps) per segment instance
+// (m0: start + distance, m1: end + distance, m2 / m3: colours), widened in
+// screen space to `linewidth` pixels.
+@vertex
+fn vs_wideline(in: VsIn, inst: InstanceIn) -> VsOut {
+    var out: VsOut;
+    let mv = F.view * O.model;
+    var start = mv * vec4<f32>(inst.m0.xyz, 1.0);
+    var end = mv * vec4<f32>(inst.m1.xyz, 1.0);
+    // A segment ending behind the camera is trimmed to the near plane.
+    if (F.camera_pos.w < 0.5) {
+        let near_z = -F.proj[3][2] / F.proj[2][2];
+        if (start.z < 0.0 && end.z >= 0.0) {
+            end = vec4<f32>(mix(start.xyz, end.xyz, (near_z - start.z) / (end.z - start.z)), 1.0);
+        } else if (end.z < 0.0 && start.z >= 0.0) {
+            start = vec4<f32>(mix(end.xyz, start.xyz, (near_z - end.z) / (start.z - end.z)), 1.0);
+        }
+    }
+    let clip_start = F.proj * start;
+    let clip_end = F.proj * end;
+    let ndc_start = clip_start.xy / clip_start.w;
+    let ndc_end = clip_end.xy / clip_end.w;
+    let aspect = F.viewport.x / max(F.viewport.y, 1.0);
+    var dir = ndc_end - ndc_start;
+    dir.x *= aspect;
+    dir = normalize(dir);
+    var offset = vec2<f32>(dir.y, -dir.x);
+    dir.x /= aspect;
+    offset.x /= aspect;
+    if (in.position.x < 0.0) {
+        offset = -offset;
+    }
+    if (in.position.y < 0.0) {
+        offset -= dir;
+    } else if (in.position.y > 1.0) {
+        offset += dir;
+    }
+    offset *= O.points.x * F.viewport.z / max(F.viewport.y, 1.0);
+    let at_start = in.position.y < 0.5;
+    var clip = select(clip_end, clip_start, at_start);
+    clip = vec4<f32>(clip.xy + offset * clip.w, clip.zw);
+    out.clip = clip;
+    let world = O.model * vec4<f32>(select(inst.m1.xyz, inst.m0.xyz, at_start), 1.0);
+    out.world = world.xyz;
+    out.normal = -F.camera_dir.xyz;
+    out.uv = in.uv;
+    out.uv1 = vec2<f32>(select(inst.m1.w, inst.m0.w, at_start) * O.dash.z, 0.0);
+    let c = select(inst.m3, inst.m2, at_start);
+    out.color = select(vec4<f32>(1.0), vec4<f32>(c.rgb, 1.0), (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
+    out.tangent = vec4<f32>(0.0);
+    out.local = in.position;
+    out.view_depth = -select(end.z, start.z, at_start);
     return out;
 }
 
@@ -1170,6 +1227,24 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         let dist = saturate((length(in.world - O.misc0.xyz) - O.misc0.w) / (O.misc1.x - O.misc0.w));
         return vec4<f32>(vec3<f32>(dist) * diffuse.a, diffuse.a);
     }
+    if (kind == KIND_WIDE_LINE) {
+        // Round caps, and dashes along the line distance.
+        let u = in.uv;
+        if (O.misc1.z > 0.5) {
+            if (u.y < -1.0 || u.y > 1.0) {
+                discard;
+            }
+            if ((in.uv1.x + O.dash.w) % (O.dash.x + O.dash.y) > O.dash.x) {
+                discard;
+            }
+        }
+        if (abs(u.y) > 1.0) {
+            let b = select(u.y + 1.0, u.y - 1.0, u.y > 0.0);
+            if (u.x * u.x + b * b > 1.0) {
+                discard;
+            }
+        }
+    }
     if (kind == KIND_LINE_DASHED) {
         let total = O.dash.x + O.dash.y;
         if ((in.uv.x * O.dash.z) % total > O.dash.x) {
@@ -1239,7 +1314,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         specular_strength = c_aux.r;
     }
     let light_map = role_texel(ROLE_LIGHT, x, vec4<f32>(0.0)).rgb * O.x_params.w;
-    if (kind == KIND_BASIC || kind == KIND_LINE_DASHED) {
+    if (kind == KIND_BASIC || kind == KIND_LINE_DASHED || kind == KIND_WIDE_LINE) {
         // three.js: a lightMap replaces the unit indirect light.
         let indirect = select(vec3<f32>(1.0), light_map * RECIPROCAL_PI, has_role(ROLE_LIGHT));
         rgb = diffuse.rgb * indirect * ao;

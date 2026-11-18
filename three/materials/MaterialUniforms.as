@@ -17,6 +17,9 @@ export const KIND_PHYSICAL: i32 = 8;
 export const KIND_LINE_DASHED: i32 = 9;
 export const KIND_SHADOW: i32 = 10;
 export const KIND_DISTANCE: i32 = 11;
+/// LineMaterial (wide lines): the geometry's instanceStart / instanceEnd
+/// segments widened in screen space.
+export const KIND_WIDE_LINE: i32 = 12;
 
 // Texture slots (the material bind group's bindings 0..6).
 export const SLOT_MAP: i32 = 0;
@@ -85,6 +88,8 @@ export class MaterialUniforms {
     rotation: f64 = 0;
     // Dashed lines
     dashSize: f64 = 0;
+    dashOffset: f64 = 0;
+    dashed: bool = false;
     gapSize: f64 = 0;
     dashScale: f64 = 1;
     // Extra maps and their parameters.
@@ -138,7 +143,7 @@ export class MaterialUniforms {
         this.ior = 1.5; this.specularIntensity = 1;
         this.specularColorR = 1; this.specularColorG = 1; this.specularColorB = 1;
         this.size = 1; this.sizeAttenuation = true; this.rotation = 0;
-        this.dashSize = 0; this.gapSize = 0; this.dashScale = 1;
+        this.dashSize = 0; this.gapSize = 0; this.dashScale = 1; this.dashOffset = 0; this.dashed = false;
         this.bumpScale = 1; this.displacementScale = 1; this.displacementBias = 0; this.lightMapIntensity = 1;
         this.normalMapType = 0; this.combine = 0; this.reflectivity = 1; this.refractionRatio = 0.98;
         this.clearcoatNormalScaleX = 1; this.clearcoatNormalScaleY = 1;

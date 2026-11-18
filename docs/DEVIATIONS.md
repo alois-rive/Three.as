@@ -318,7 +318,12 @@ export class Demo extends Layout {
 ## Lines, points and sprites
 
 - **Lines are one pixel wide** (`linewidth`, `linecap`, `linejoin` are
-  kept and ignored, as three.js on almost every platform). Every line
+  kept and ignored, as three.js on almost every platform). Wide lines are
+  the addons, as three.js: `Line2` / `LineSegments2` with `LineGeometry` /
+  `LineSegmentsGeometry` and `LineMaterial` (`linewidth` in pixels, round
+  caps, dashes, vertex colours; `setPositions` / `setColors` take plain
+  number arrays). `worldUnits` and raycasting wide lines are not ported;
+  `resolution` is not needed (the renderer knows its viewport). Every line
   (Line, LineLoop, LineSegments, `wireframe`) is drawn as a line list from
   a generated index buffer.
 - **Points are instanced quads** (WebGPU has no point size): square,
