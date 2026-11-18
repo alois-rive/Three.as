@@ -151,7 +151,7 @@ export class GPUTextures {
 
     /// Mip levels of the view `view()` returned (1 when not mipmapped).
     levels(t: Texture): u32 {
-        if (!this.chains.has(t.id)) return 1;
+        if (!this.chains.has(t.id)) return t.mipLevelCount;
         return this.chains.get(t.id).texture.numMipmaps;
     }
 

@@ -387,6 +387,21 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Textures: uv transforms, uv channels, KTX2 compressed textures
+         (examples/textures.as). -->
+    <Artboard defaultStateMachineId="0:1707" clip="true" x="900" y="3500" width="800" height="600" styleId="0:1701" name="Textures" id="0:1700">
+        <LayoutComponentStyle name="Artboard Style" id="0:1701"/>
+        <LayoutComponent width="800" height="600" styleId="0:1703" name="Root" id="0:1702">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1703"/>
+            <ScriptedLayout scriptAssetId="0:1790" name="Scene" id="0:1704"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1707">
+            <StateMachineLayer name="Layer 1" id="0:1708">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -411,4 +426,7 @@
     <ImageAsset file="examples/assets/studio_nz.png" name="studio_nz" id="0:1696"/>
     <BlobAsset file="examples/assets/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
     <BlobAsset file="examples/assets/studio_exr.exr" name="studio_exr" id="0:1698"/>
+    <ScriptAsset file="examples/textures.as" name="textures" id="0:1790"/>
+    <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
+    <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
 </Rive>

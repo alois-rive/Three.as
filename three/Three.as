@@ -111,6 +111,7 @@ export * from "./textures/DataArrayTexture";
 export { toHalf, fromHalf } from "./textures/DataUpload";
 export * from "./textures/CanvasTexture";
 export * from "./textures/CubeTexture";
+export * from "./textures/CompressedTexture";
 export * from "./loaders/CubeTextureLoader";
 export * from "./renderers/WebGLCubeRenderTarget";
 export * from "./cameras/CubeCamera";

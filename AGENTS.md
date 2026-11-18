@@ -51,7 +51,9 @@ world matrices can be stale between frames.
 
 Rive GPU limits that shape the renderer: bindings 0-7 in each bind group
 (textures, samplers and buffers together), 4 bind groups, 8 vertex
-buffers a pipeline (`context.features()` has the rest).
+buffers a pipeline (`context.features()` has the rest). Texture uploads
+of block-compressed data: `bytesPerRow` is a row of blocks, but the data
+must be at least `bytesPerRow x texel rows` long (pad it).
 
 Gotchas: integer `/` truncates and `<f64>(a / b)` divides as floats (see
 DEVIATIONS.md); `Array.splice` cannot insert; arrays are invariant; Rive

@@ -393,6 +393,16 @@ export class Demo extends Layout {
   ZIP compression only (no PIZ, PXR24, B44, DWA; no tiled, deep or
   multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
   `decompressSync` (no compression).
+- `CompressedTexture(mipmaps, width, height, format)`: `mipmaps` are
+  `CompressedMipmap(data, width, height)`; BC1/BC3/BC7, ETC2 and ASTC
+  (4x4, 6x6, 8x8) when the device has the feature (`bc`, `etc2`, `astc`
+  in `context.features()`); no CPU fallback. Sizes must be block
+  multiples. sRGB variants decode in the shader (`colorSpace`).
+- `KTX2Loader(context).detectSupport(renderer).load(name)` reads KTX2
+  BlobAssets holding a GPU format directly (the formats above, RGBA8,
+  RGBA16F). **No Basis Universal transcoding and no Zstandard**: ship
+  files in a format the target devices have (BC for desktop, ASTC/ETC2
+  for mobile). `setTranscoderPath` is accepted and ignored.
 - Note for test suites: `rive --test` names blobs by file stem, so give
   blob files distinct stems (`studio_rgbe.hdr`, `studio_exr.exr`).
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),

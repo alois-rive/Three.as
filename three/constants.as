@@ -32,6 +32,16 @@ export const RGBAFormat: i32 = 1023;
 export const DepthFormat: i32 = 1026;
 export const RedFormat: i32 = 1028;
 export const RGFormat: i32 = 1030;
+// Compressed formats (CompressedTexture.format).
+export const RGB_S3TC_DXT1_Format: i32 = 33776;
+export const RGBA_S3TC_DXT1_Format: i32 = 33777;
+export const RGBA_S3TC_DXT5_Format: i32 = 33779;
+export const RGBA_BPTC_Format: i32 = 36492;
+export const RGB_ETC2_Format: i32 = 37492;
+export const RGBA_ETC2_EAC_Format: i32 = 37496;
+export const RGBA_ASTC_4x4_Format: i32 = 37808;
+export const RGBA_ASTC_6x6_Format: i32 = 37812;
+export const RGBA_ASTC_8x8_Format: i32 = 37818;
 
 // Texture.type / RenderTarget type
 export const UnsignedByteType: i32 = 1009;

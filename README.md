@@ -69,7 +69,8 @@ rive . --artboard=Deform                          # GPU skinning and morph targe
 rive . --artboard=Model                           # a glTF model, animated
 rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a live artboard
 rive . --artboard=Environment                     # image-based lighting
-rive . --artboard=Environments                    # cube maps and CubeCamera reflections
+rive . --artboard=Environments                    # cube map, .hdr, .exr environments; CubeCamera
+rive . --artboard=Textures                        # uv transforms, uv1, KTX2 compressed textures
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed

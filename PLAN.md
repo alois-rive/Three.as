@@ -193,12 +193,12 @@ three.js lighting setups look the same.
   (both upload as `rgba16float`), RGBELoader / HDRLoader (Radiance .hdr
   from a BlobAsset) and EXRLoader (NO/RLE/ZIPS/ZIP; PIZ later),
   DataArrayTexture, Data3DTexture. DepthTexture moved to M12b.
-- **M7e, compressed textures.** CompressedTexture with BC, ETC2 and ASTC
+- **M7e, compressed textures (done; no Basis transcoding).** CompressedTexture with BC, ETC2 and ASTC
   (Rive's `bc` / `etc2` / `astc` features), KTX2Loader for KTX2 files that
   hold those formats directly (Basis transcoding later, if feasible in a
   job).
-- Example `Environments`: HDR equirect and cube environments side by side,
-  roughness sweep, CubeCamera reflections.
+- Examples `Environments` (cube, .hdr and .exr environments, a roughness
+  sweep, CubeCamera reflections) and `Textures` (uv transforms, uv1, KTX2).
 
 ### M8: materials completeness
 

@@ -81,6 +81,9 @@ export class Texture extends ColorOrTexture {
     /// chains keep its format).
     get isHDRSource(): bool { return false; }
 
+    /// Mip levels getView() has of its own (compressed textures; 1 else).
+    get mipLevelCount(): u32 { return 1; }
+
     /// Rebuilds `matrix` from offset, repeat, rotation and center.
     updateMatrix(): void {
         this.matrix.setUvTransform(this.offset.x, this.offset.y, this.repeat.x, this.repeat.y, this.rotation,
