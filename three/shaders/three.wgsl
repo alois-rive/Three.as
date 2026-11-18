@@ -133,6 +133,8 @@ struct ObjU {
     physical4: vec4<f32>,    // attenuationColor rgb, iridescence
     physical5: vec4<f32>,    // iridescenceIOR, thickness range min, max (nm), anisotropy
     physical6: vec4<f32>,    // anisotropy direction (cos, sin of anisotropyRotation)
+    clip_planes: array<vec4<f32>, 8>,  // world: xyz normal, w constant (clipped where n.p + w < 0)
+    clip: vec4<f32>,         // x union count, y total count
 };
 
 const ROLE_LIGHT: u32 = 0u;
@@ -475,6 +477,36 @@ fn bump_dhdxy(x: ExtraUVs) -> vec2<f32> {
     let dbx = s * x_sample_grad(slot, uv + dx, dx, dy).x - hll;
     let dby = s * x_sample_grad(slot, uv + dy, dx, dy).x - hll;
     return vec2<f32>(dbx, dby);
+}
+
+/// three.js's clipping: outside any union plane, or outside every
+/// intersection plane (clipIntersection).
+fn clipped(world: vec3<f32>) -> bool {
+    let unions = u32(O.clip.x);
+    let total = u32(O.clip.y);
+    for (var i = 0u; i < unions; i++) {
+        let p = O.clip_planes[i];
+        if (dot(p.xyz, world) + p.w < 0.0) {
+            return true;
+        }
+    }
+    if (total > unions) {
+        var all = true;
+        for (var i = unions; i < total; i++) {
+            let p = O.clip_planes[i];
+            all = all && (dot(p.xyz, world) + p.w < 0.0);
+        }
+        return all;
+    }
+    return false;
+}
+
+/// Shadow passes of clipShadows casters.
+@fragment
+fn fs_clip(in: VsOut) {
+    if (clipped(in.world)) {
+        discard;
+    }
 }
 
 fn sample_slot(t: texture_2d<f32>, s: sampler, uv: vec2<f32>, slot: u32) -> vec4<f32> {
@@ -934,7 +966,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if (has_flag(present, SLOT_ALPHA)) {
         diffuse.a *= c_alpha.g;
     }
-    if (diffuse.a < O.emissive.w) {
+    if (diffuse.a < O.emissive.w || clipped(in.world)) {
         discard;
     }
     if (kind == KIND_LINE_DASHED) {

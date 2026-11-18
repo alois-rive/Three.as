@@ -103,3 +103,33 @@ export const InterpolateSmooth: i32 = 2302;
 export const MultiplyOperation: i32 = 0;
 export const MixOperation: i32 = 1;
 export const AddOperation: i32 = 2;
+
+// Material.depthFunc
+export const NeverDepth: i32 = 0;
+export const AlwaysDepth: i32 = 1;
+export const LessDepth: i32 = 2;
+export const LessEqualDepth: i32 = 3;
+export const EqualDepth: i32 = 4;
+export const GreaterEqualDepth: i32 = 5;
+export const GreaterDepth: i32 = 6;
+export const NotEqualDepth: i32 = 7;
+
+// Material.stencilFunc
+export const NeverStencilFunc: i32 = 512;
+export const LessStencilFunc: i32 = 513;
+export const EqualStencilFunc: i32 = 514;
+export const LessEqualStencilFunc: i32 = 515;
+export const GreaterStencilFunc: i32 = 516;
+export const NotEqualStencilFunc: i32 = 517;
+export const GreaterEqualStencilFunc: i32 = 518;
+export const AlwaysStencilFunc: i32 = 519;
+
+// Material.stencilFail / stencilZFail / stencilZPass
+export const ZeroStencilOp: i32 = 0;
+export const KeepStencilOp: i32 = 7680;
+export const ReplaceStencilOp: i32 = 7681;
+export const IncrementStencilOp: i32 = 7682;
+export const DecrementStencilOp: i32 = 7683;
+export const IncrementWrapStencilOp: i32 = 34055;
+export const DecrementWrapStencilOp: i32 = 34056;
+export const InvertStencilOp: i32 = 5386;

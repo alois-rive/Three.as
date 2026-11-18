@@ -215,7 +215,7 @@ render as authored.
   `thickness`, `attenuationColor/Distance` (the opaque scene rendered to a
   mipmapped transmission target first, as three.js), `iridescence`,
   `anisotropy`, `dispersion`.
-- **M8c, clipping and stencil.** `renderer.clippingPlanes`,
+- **M8c, clipping and stencil (done).** `renderer.clippingPlanes`,
   `localClippingEnabled`, `material.clippingPlanes`, `clipIntersection`,
   `clipShadows`; material stencil state (`stencilWrite`, `stencilFunc`,
   `stencilRef`, masks and ops) on Rive's stencil pipelines.

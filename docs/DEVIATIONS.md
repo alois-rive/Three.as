@@ -236,6 +236,25 @@ export class Demo extends Layout {
   `extensions`, `lights`, `fog`, `wireframe` and custom points/lines are not
   supported for shader materials.
 
+## Clipping, stencil and depth state
+
+- `renderer.clippingPlanes` (global, always a union),
+  `renderer.localClippingEnabled`, `material.clippingPlanes`,
+  `clipIntersection` and `clipShadows` as three.js; **at most 8 planes per
+  draw** (global first). Planes are world space, as three.js's API.
+  ShaderMaterials are not clipped.
+- Stencil: `stencilWrite` (turns the test and writes on), `stencilFunc`,
+  `stencilRef`, `stencilFuncMask`, `stencilWriteMask`, `stencilFail`,
+  `stencilZFail`, `stencilZPass`, with three.js's constants. Colour passes
+  use a `depth24plusStencil8` target (24-bit depth, was 32-bit float).
+  **Stencil starts at 0 in every pass and does not survive across
+  passes**, and there is no `renderer.clearStencil()` or `onAfterRender`
+  mid-pass: order stencil draws with `renderOrder` within one render.
+- `depthFunc` (NeverDepth ... NotEqualDepth) and `polygonOffset` /
+  `polygonOffsetFactor` / `polygonOffsetUnits` work (polygonOffset as the
+  pipeline's depth bias). At most 511 distinct depth/stencil/offset
+  combinations per renderer.
+
 ## Curves and shapes
 
 - **`Curve` is generic: `Curve<Vector2>` or `Curve<Vector3>`** (three.js's

@@ -33,12 +33,12 @@ import {
     GPUCanvas, GPUTexture, GPUTextureDesc, GPUTextureView, GPUBuffer, GPUPipeline, GPUPipelineDesc,
     GPUColorTargetDesc, GPUDepthStencilDesc, GPUVertexBufferLayout, GPUVertexAttribute, GPUBindGroup,
     GPUBindGroupLayout, GPUBindGroupUBO, GPUBindGroupTexture, GPUBindGroupSampler, GPUColorAttachment,
-    GPUPassDesc, GPUSampler, GPUShaderModule, GPUBlendState, GPURenderPass, GPUTextureViewDesc,
+    GPUPassDesc, GPUSampler, GPUShaderModule, GPUBlendState, GPURenderPass, GPUTextureViewDesc, GPUStencilFaceState,
 } from "rive/gpu";
 import {
     BufferUsage, TextureFormat, CompareFunction, CullMode, VertexFormat, VertexStepMode, LoadOp, StoreOp, Filter,
     WrapMode, BlendFactor, FaceWinding, PrimitiveTopology, ColorWriteMask, TextureType, TextureViewDimension,
-    TextureAspect,
+    TextureAspect, StencilOp,
 } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 
@@ -81,9 +81,12 @@ import {
     LinearMipmapLinearFilter, RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace, NoToneMapping,
     NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
     EquirectangularReflectionMapping, EquirectangularRefractionMapping, CubeRefractionMapping, BasicShadowMap, PCFShadowMap,
-    HalfFloatType,
-
+    HalfFloatType, LessEqualDepth, NeverDepth, AlwaysDepth, LessDepth, EqualDepth, GreaterEqualDepth, GreaterDepth,
+    NotEqualDepth, NeverStencilFunc, LessStencilFunc, EqualStencilFunc, LessEqualStencilFunc, GreaterStencilFunc,
+    NotEqualStencilFunc, GreaterEqualStencilFunc, ZeroStencilOp, ReplaceStencilOp, IncrementStencilOp,
+    DecrementStencilOp, IncrementWrapStencilOp, DecrementWrapStencilOp, InvertStencilOp,
 } from "../constants";
+import { Plane } from "../math/Plane";
 import { LightShadow } from "../lights/LightShadow";
 import { CubeTexture } from "../textures/CubeTexture";
 import { CubeCamera } from "../cameras/CubeCamera";
@@ -101,7 +104,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -123,6 +126,26 @@ const KEY_PRIM_SHIFT: i32 = 9;          // 2 bits: PRIM_*
 const KEY_MSAA: i32 = 1 << 11;
 const KEY_SKINNED: i32 = 1 << 12;
 const KEY_DISPLACED: i32 = 1 << 13;      // displacementMap: the vs_*_displaced entry points
+const KEY_CLIP_SHADOW: i32 = 1 << 14;    // shadow passes: clip casters (clipShadows)
+const KEY_STATE_SHIFT: i32 = 21;         // 9 bits: a depthFunc/stencil/polygonOffset state (0: default)
+const KEY_STATE_MASK: i32 = 511;
+// The colour passes' depth (and stencil) format.
+const DEPTH_FORMAT: TextureFormat = TextureFormat.depth24plusStencil8;
+
+/// Depth function, stencil and polygon offset of a material, beyond the
+/// defaults (pipeline state, interned by GPURenderer.stateIndex).
+class PassState {
+    depthFunc: i32 = 3;
+    stencil: bool = false;
+    stencilFunc: i32 = 519;
+    stencilFuncMask: i32 = 0xff;
+    stencilWriteMask: i32 = 0xff;
+    stencilFail: i32 = 7680;
+    stencilZFail: i32 = 7680;
+    stencilZPass: i32 = 7680;
+    polygonOffsetFactor: f64 = 0;
+    polygonOffsetUnits: f64 = 0;
+}
 const KEY_BACKGROUND: i32 = 1 << 30;
 
 // The depth (and MSAA colour) attachments of one render destination.
@@ -295,6 +318,7 @@ class DrawItem {
     positionOverride: GPUBuffer? = null;
     /// MeshPhysicalMaterial with transmission: left out of the transmission pass.
     transmissive: bool = false;
+    stencilRef: u32 = 0;
     normalOverride: GPUBuffer? = null;
 
     constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer,
@@ -323,6 +347,10 @@ export class GPURenderer {
     readonly outputColorSpace: string = SRGBColorSpace;
     readonly info: RendererInfo = new RendererInfo();
     readonly shadowMap: ShadowMapSettings = new ShadowMapSettings();
+    /// Global clipping planes (world space), for every material.
+    clippingPlanes: Array<Plane> = [];
+    /// Whether materials' own clippingPlanes apply.
+    localClippingEnabled: bool = false;
 
     private canvas: GPUCanvas? = null;
     private width: f64 = 0;
@@ -425,6 +453,8 @@ export class GPURenderer {
     private shadowPipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private shadowsWarned: bool = false;
     private warnedExtraMaps: bool = false;
+    private passStates: Array<PassState> = [new PassState()];
+    private passStateKeys: Map<string, i32> = new Map<string, i32>();
 
     private mainTargets: PassTargets = new PassTargets();
     private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
@@ -833,7 +863,7 @@ export class GPURenderer {
         t.release();
         const dd = new GPUTextureDesc();
         dd.width = w; dd.height = h;
-        dd.format = TextureFormat.depth32float;
+        dd.format = DEPTH_FORMAT;
         dd.renderTarget = true;
         dd.sampleCount = samples;
         const depth = new GPUTexture(dd);
@@ -861,7 +891,7 @@ export class GPURenderer {
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
         const ds = new GPUDepthStencilDesc();
-        ds.format = TextureFormat.depth32float;
+        ds.format = DEPTH_FORMAT;
         const d = new GPUPipelineDesc();
         d.vertexModule = this.module;
         d.fragmentModule = this.module;
@@ -883,6 +913,7 @@ export class GPURenderer {
             if (blend != null) target.blend = blend;
             if ((key & KEY_COLOR_WRITE) == 0) target.writeMask = <u32>ColorWriteMask.none;
             ds.compare = (key & KEY_DEPTH_TEST) != 0 ? CompareFunction.lessEqual : CompareFunction.always;
+            this.applyPassState(ds, key);
             ds.write = (key & KEY_DEPTH_WRITE) != 0;
             const prim = (key >> KEY_PRIM_SHIFT) & 3;
             d.fragmentEntryPoint = "fs_main";
@@ -946,7 +977,7 @@ export class GPURenderer {
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
         const ds = new GPUDepthStencilDesc();
-        ds.format = TextureFormat.depth32float;
+        ds.format = DEPTH_FORMAT;
         const d = new GPUPipelineDesc();
         d.vertexModule = module;
         d.fragmentModule = module;
@@ -965,6 +996,59 @@ export class GPURenderer {
         return cp;
     }
 
+    /// The interned depthFunc/stencil/polygonOffset state of a material
+    /// (0: three.js's defaults).
+    private stateIndex(m: Material): i32 {
+        if (m.depthFunc == LessEqualDepth && !m.stencilWrite && m.polygonOffset == false) return 0;
+        const key = m.depthFunc.toString() + "|" + (m.stencilWrite ? "s" : "-") + m.stencilFunc.toString() + ","
+            + m.stencilFuncMask.toString() + "," + m.stencilWriteMask.toString() + "," + m.stencilFail.toString() + ","
+            + m.stencilZFail.toString() + "," + m.stencilZPass.toString() + "|"
+            + (m.polygonOffset ? m.polygonOffsetFactor.toString() + "," + m.polygonOffsetUnits.toString() : "");
+        if (this.passStateKeys.has(key)) return this.passStateKeys.get(key);
+        const index = this.passStates.length;
+        if (index > KEY_STATE_MASK) return 0;
+        const st = new PassState();
+        st.depthFunc = m.depthFunc;
+        st.stencil = m.stencilWrite;
+        st.stencilFunc = m.stencilFunc;
+        st.stencilFuncMask = m.stencilFuncMask;
+        st.stencilWriteMask = m.stencilWriteMask;
+        st.stencilFail = m.stencilFail;
+        st.stencilZFail = m.stencilZFail;
+        st.stencilZPass = m.stencilZPass;
+        if (m.polygonOffset) {
+            st.polygonOffsetFactor = m.polygonOffsetFactor;
+            st.polygonOffsetUnits = m.polygonOffsetUnits;
+        }
+        this.passStates.push(st);
+        this.passStateKeys.set(key, index);
+        return index;
+    }
+
+    /// Applies a key's interned state to a pipeline's depth-stencil.
+    private applyPassState(ds: GPUDepthStencilDesc, key: i32): void {
+        const index = (key >> KEY_STATE_SHIFT) & KEY_STATE_MASK;
+        if (index == 0) return;
+        const st = this.passStates[index];
+        if ((key & KEY_DEPTH_TEST) != 0) ds.compare = depthCompare(st.depthFunc);
+        if (st.stencil) {
+            const faces: StaticArray<GPUStencilFaceState> = [ds.stencilFront, ds.stencilBack];
+            for (let i = 0; i < 2; i++) {
+                const f = faces[i];
+                f.compare = stencilCompare(st.stencilFunc);
+                f.failOp = stencilOp(st.stencilFail);
+                f.depthFailOp = stencilOp(st.stencilZFail);
+                f.passOp = stencilOp(st.stencilZPass);
+            }
+            ds.stencilReadMask = <u32>st.stencilFuncMask;
+            ds.stencilWriteMask = <u32>st.stencilWriteMask;
+        }
+        if (st.polygonOffsetFactor != 0 || st.polygonOffsetUnits != 0) {
+            ds.depthBias = <i32>st.polygonOffsetUnits;
+            ds.depthBiasSlopeScale = <f32>st.polygonOffsetFactor;
+        }
+    }
+
     /// Blending, write mask, depth and culling from a pipeline key.
     private applyState(d: GPUPipelineDesc, target: GPUColorTargetDesc, ds: GPUDepthStencilDesc, key: i32): void {
         const cull = key & KEY_CULL_MASK;
@@ -973,6 +1057,7 @@ export class GPURenderer {
         if ((key & KEY_COLOR_WRITE) == 0) target.writeMask = <u32>ColorWriteMask.none;
         ds.compare = (key & KEY_DEPTH_TEST) != 0 ? CompareFunction.lessEqual : CompareFunction.always;
         ds.write = (key & KEY_DEPTH_WRITE) != 0;
+        this.applyPassState(ds, key);
         d.colorTargets = [target];
         d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
         d.winding = (key & KEY_MIRRORED) != 0 ? FaceWinding.clockwise : FaceWinding.counterClockwise;
@@ -1352,7 +1437,9 @@ export class GPURenderer {
         item.pipelineKey = cull | (blending << KEY_BLEND_SHIFT)
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
             | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT)
-            | (this.passSamples > 1 ? KEY_MSAA : 0) | (displaced ? KEY_DISPLACED : 0);
+            | (this.passSamples > 1 ? KEY_MSAA : 0) | (displaced ? KEY_DISPLACED : 0)
+            | (this.stateIndex(material) << KEY_STATE_SHIFT);
+        item.stencilRef = material.stencilWrite ? <u32>material.stencilRef : 0;
         if (material instanceof ShaderMaterial) {
             if (prim != PRIM_TRIANGLES) return null;   // custom points/lines are not supported
             const cp = this.customPipeline(material as ShaderMaterial, item.pipelineKey);
@@ -1787,6 +1874,9 @@ export class GPURenderer {
         // three.js renders back faces of front-sided casters.
         const side = material.side;
         item.pipelineKey = side == DoubleSide ? 1 : side == BackSide ? 0 : 2;
+        const clips = material.clipShadows && ((this.localClippingEnabled && material.clippingPlanes != null
+            && material.clippingPlanes!.length > 0) || this.clippingPlanes.length > 0);
+        if (clips) item.pipelineKey |= KEY_CLIP_SHADOW;
         this.deform(mesh, geometry, g, item, frame);
         out.push(item);
     }
@@ -1805,6 +1895,10 @@ export class GPURenderer {
         const displaced = (key & KEY_DISPLACED) != 0;
         d.vertexEntryPoint = (skinned ? "vs_skinned" : "vs_main") + (displaced ? "_displaced" : "");
         d.colorTargets = [];
+        if ((key & KEY_CLIP_SHADOW) != 0) {
+            d.fragmentModule = this.module;
+            d.fragmentEntryPoint = "fs_clip";
+        }
         d.vertexBuffers = skinned ? this.skinBuffers : this.vertexBuffers;
         d.bindGroupLayouts = displaced ? [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout]
             : [this.frameLayout, this.objLayout];
@@ -2155,6 +2249,30 @@ export class GPURenderer {
         put4(f, OBJ_X_PARAMS3, mu.clearcoatNormalScaleX, mu.clearcoatNormalScaleY, refract ? 1 : 0, 0);
     }
 
+    /// Clipping planes: the renderer's, then the material's (when
+    /// localClippingEnabled); clipIntersection makes the material's an
+    /// intersection (three.js's clipping_planes_fragment).
+    private writeClipping(f: Float32Array, m: Material): void {
+        let n = 0;
+        const global = this.clippingPlanes;
+        for (let i = 0; i < global.length && n < MAX_CLIP_PLANES; i++) {
+            const p = global[i];
+            put4(f, OBJ_CLIP_PLANES + n * 16, p.normal.x, p.normal.y, p.normal.z, p.constant);
+            n++;
+        }
+        let union = n;
+        const local = this.localClippingEnabled && !(m instanceof ShaderMaterial) ? m.clippingPlanes : null;
+        if (local != null) {
+            for (let i = 0; i < local.length && n < MAX_CLIP_PLANES; i++) {
+                const p = local[i];
+                put4(f, OBJ_CLIP_PLANES + n * 16, p.normal.x, p.normal.y, p.normal.z, p.constant);
+                n++;
+            }
+            if (!m.clipIntersection) union = n;
+        }
+        put4(f, OBJ_CLIP, <f64>union, <f64>n, 0, 0);
+    }
+
     private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
         const buf = this.objStaging;
         const f = Float32Array.wrap(buf);
@@ -2197,6 +2315,7 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL5, mu.iridescenceIOR, mu.iridescenceThicknessMin, mu.iridescenceThicknessMax,
                 mu.anisotropy);
             put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
+            this.writeClipping(f, item.material);
             if (object instanceof Sprite) {
                 const c = (object as Sprite).center;
                 put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);
@@ -2313,6 +2432,7 @@ export class GPURenderer {
         let lastKey = -1;
         // Bindings already set (draws sharing a geometry or material skip them).
         let lastMat: GPUBindGroup? = null, lastSamplers: GPUBindGroup? = null;
+        let lastStencilRef: u32 = 0;
         let lastPos: GPUBuffer? = null, lastNrm: GPUBuffer? = null, lastUv: GPUBuffer? = null;
         let lastColor: GPUBuffer? = null, lastInst: GPUBuffer? = null, lastIndex: GPUBuffer? = null;
         let lastSkin: GPUBuffer? = null;
@@ -2356,6 +2476,10 @@ export class GPURenderer {
                 pass.setPipeline(this.pipeline(key));
                 pass.setBindGroup(0, frameGroup);
                 lastKey = key;
+            }
+            if (item.stencilRef != lastStencilRef) {
+                pass.setStencilReference(item.stencilRef);
+                lastStencilRef = item.stencilRef;
             }
             this.dynamicOffset[0] = state.objOffset;
             pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
@@ -2552,4 +2676,37 @@ function extraTextures(views: StaticArray<GPUTextureView?>?, white: GPUTextureVi
         out.push(new GPUBindGroupTexture(<u32>(2 + i), v != null ? v! : white));
     }
     return out;
+}
+
+function depthCompare(func: i32): CompareFunction {
+    if (func == NeverDepth) return CompareFunction.never;
+    if (func == AlwaysDepth) return CompareFunction.always;
+    if (func == LessDepth) return CompareFunction.less;
+    if (func == EqualDepth) return CompareFunction.equal;
+    if (func == GreaterEqualDepth) return CompareFunction.greaterEqual;
+    if (func == GreaterDepth) return CompareFunction.greater;
+    if (func == NotEqualDepth) return CompareFunction.notEqual;
+    return CompareFunction.lessEqual;
+}
+
+function stencilCompare(func: i32): CompareFunction {
+    if (func == NeverStencilFunc) return CompareFunction.never;
+    if (func == LessStencilFunc) return CompareFunction.less;
+    if (func == EqualStencilFunc) return CompareFunction.equal;
+    if (func == LessEqualStencilFunc) return CompareFunction.lessEqual;
+    if (func == GreaterStencilFunc) return CompareFunction.greater;
+    if (func == NotEqualStencilFunc) return CompareFunction.notEqual;
+    if (func == GreaterEqualStencilFunc) return CompareFunction.greaterEqual;
+    return CompareFunction.always;
+}
+
+function stencilOp(op: i32): StencilOp {
+    if (op == ZeroStencilOp) return StencilOp.zero;
+    if (op == ReplaceStencilOp) return StencilOp.replace;
+    if (op == IncrementStencilOp) return StencilOp.incrementClamp;
+    if (op == DecrementStencilOp) return StencilOp.decrementClamp;
+    if (op == IncrementWrapStencilOp) return StencilOp.incrementWrap;
+    if (op == DecrementWrapStencilOp) return StencilOp.decrementWrap;
+    if (op == InvertStencilOp) return StencilOp.invert;
+    return StencilOp.keep;
 }

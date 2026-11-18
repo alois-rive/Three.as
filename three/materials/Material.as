@@ -2,7 +2,10 @@
 // are typed classes filled by object literals:
 //     new MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 })
 
-import { FrontSide, NormalBlending } from "../constants";
+import {
+    FrontSide, NormalBlending, LessEqualDepth, AlwaysStencilFunc, KeepStencilOp,
+} from "../constants";
+import { Plane } from "../math/Plane";
 import { MaterialUniforms } from "./MaterialUniforms";
 
 let _materialId: i32 = 0;
@@ -26,6 +29,18 @@ export class MaterialParameters {
     polygonOffset: bool = false;
     polygonOffsetFactor: f64 = 0;
     polygonOffsetUnits: f64 = 0;
+    depthFunc: i32 = LessEqualDepth;
+    stencilWrite: bool = false;
+    stencilWriteMask: i32 = 0xff;
+    stencilFunc: i32 = AlwaysStencilFunc;
+    stencilRef: i32 = 0;
+    stencilFuncMask: i32 = 0xff;
+    stencilFail: i32 = KeepStencilOp;
+    stencilZFail: i32 = KeepStencilOp;
+    stencilZPass: i32 = KeepStencilOp;
+    clippingPlanes: Array<Plane>? = null;
+    clipIntersection: bool = false;
+    clipShadows: bool = false;
 }
 
 export class Material {
@@ -60,6 +75,21 @@ export class Material {
     polygonOffset: bool = false;
     polygonOffsetFactor: f64 = 0;
     polygonOffsetUnits: f64 = 0;
+    /// Depth comparison (NeverDepth ... NotEqualDepth).
+    depthFunc: i32 = LessEqualDepth;
+    /// Stencil: stencilWrite turns the test and the writes on, as three.js.
+    stencilWrite: bool = false;
+    stencilWriteMask: i32 = 0xff;
+    stencilFunc: i32 = AlwaysStencilFunc;
+    stencilRef: i32 = 0;
+    stencilFuncMask: i32 = 0xff;
+    stencilFail: i32 = KeepStencilOp;
+    stencilZFail: i32 = KeepStencilOp;
+    stencilZPass: i32 = KeepStencilOp;
+    /// World-space planes clipping this material (renderer.localClippingEnabled).
+    clippingPlanes: Array<Plane>? = null;
+    clipIntersection: bool = false;
+    clipShadows: bool = false;
     version: i32 = 0;
 
     constructor() {
@@ -89,6 +119,18 @@ export class Material {
         this.polygonOffset = p.polygonOffset;
         this.polygonOffsetFactor = p.polygonOffsetFactor;
         this.polygonOffsetUnits = p.polygonOffsetUnits;
+        this.depthFunc = p.depthFunc;
+        this.stencilWrite = p.stencilWrite;
+        this.stencilWriteMask = p.stencilWriteMask;
+        this.stencilFunc = p.stencilFunc;
+        this.stencilRef = p.stencilRef;
+        this.stencilFuncMask = p.stencilFuncMask;
+        this.stencilFail = p.stencilFail;
+        this.stencilZFail = p.stencilZFail;
+        this.stencilZPass = p.stencilZPass;
+        this.clippingPlanes = p.clippingPlanes;
+        this.clipIntersection = p.clipIntersection;
+        this.clipShadows = p.clipShadows;
     }
 
     /// Fills what the renderer needs (internal). Subclasses call super first.

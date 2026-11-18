@@ -62,7 +62,10 @@ export const OBJ_PHYSICAL3: i32 = 1024;  // transmission, thickness, attenuation
 export const OBJ_PHYSICAL4: i32 = 1040;  // attenuationColor rgb, iridescence
 export const OBJ_PHYSICAL5: i32 = 1056;  // iridescenceIOR, thickness range min, max, anisotropy
 export const OBJ_PHYSICAL6: i32 = 1072;  // anisotropy direction (cos, sin of anisotropyRotation)
-export const OBJ_USED: i32 = 1088;
+export const OBJ_CLIP_PLANES: i32 = 1088;   // 8 planes: xyz normal, w constant (world)
+export const OBJ_CLIP: i32 = 1216;          // x union count, y total count
+export const MAX_CLIP_PLANES: i32 = 8;
+export const OBJ_USED: i32 = 1232;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384
