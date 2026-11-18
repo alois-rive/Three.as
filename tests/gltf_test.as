@@ -4,7 +4,7 @@
 import { Tests } from "rive/test";
 import * as THREE from "../three/Three";
 import { GLTFLoader, GLTFData, decodeGLTF } from "../three/addons/loaders/GLTFLoader";
-import { MeshoptDecoder } from "../three/addons/libs/meshopt_decoder";
+import { MeshoptDecoder, MeshoptDecoderModule } from "../three/addons/libs/meshopt_decoder";
 
 function find(root: THREE.Object3D, name: string): THREE.Object3D? {
     return root.getObjectByName(name);
@@ -23,8 +23,9 @@ export class GLTFTests extends Tests {
                 for (let i = 0; i < 10; i++) src[2 + i] = ex[i];
                 // Streams 1-3: one zero header byte each; the tail is zeros.
                 const out = new Uint8Array(16 * 4);
-                const ok = MeshoptDecoder.decodeVertexBuffer(out, 16, 4, src);
-                expect.that(MeshoptDecoder.error).is("");
+                const decoder = new MeshoptDecoderModule();
+                const ok = decoder.decodeVertexBuffer(out, 16, 4, src);
+                expect.that(decoder.error).is("");
                 expect.that(ok).is(true);
                 const deltas: StaticArray<i32> = [-1, -4, -3, 26, -91, 0, -6, 6, -4, -4, 5, -5, 1, -1, 0, 0];
                 let v = 0;

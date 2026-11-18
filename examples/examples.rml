@@ -526,4 +526,8 @@
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
+    <BlobAsset file="examples/assets/pyramid_binary.stl" name="pyramid_binary" id="0:2305"/>
+    <BlobAsset file="examples/assets/pyramid_ascii.stl" name="pyramid_ascii" id="0:2306"/>
+    <BlobAsset file="examples/assets/cube_ascii.ply" name="cube_ascii" id="0:2309"/>
+    <BlobAsset file="examples/assets/quad_binary.ply" name="quad_binary" id="0:2310"/>
 </Rive>
