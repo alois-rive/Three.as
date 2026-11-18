@@ -1,7 +1,6 @@
 // Wide lines: rive . --test
 
 import { Tests } from "rive/test";
-import * as THREE from "../three/Three";
 import { LineGeometry } from "../three/addons/lines/LineGeometry";
 import { LineMaterial } from "../three/addons/lines/LineMaterial";
 import { Line2 } from "../three/addons/lines/LineSegments2";

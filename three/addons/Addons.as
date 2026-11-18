@@ -36,3 +36,8 @@ export * from "./lines/LineSegmentsGeometry";
 export * from "./lines/LineGeometry";
 export * from "./lines/LineMaterial";
 export * from "./lines/LineSegments2";
+export * from "./controls/TrackballControls";
+export * from "./controls/FlyControls";
+export * from "./controls/FirstPersonControls";
+export * from "./controls/DragControls";
+export * from "./controls/TransformControls";

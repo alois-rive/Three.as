@@ -267,7 +267,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M10d, wide lines (done; no worldUnits).** Line2, LineSegments2, LineMaterial, LineGeometry
   (screen-space quads with width in pixels or world units, dashes), so
   lines need not be one pixel wide.
-- **M10e, more controls.** TrackballControls, ArcballControls,
+- **M10e, more controls (done; ArcballControls left out).** TrackballControls, ArcballControls,
   FlyControls, FirstPersonControls, DragControls, TransformControls (with
   its gizmo), on Rive pointer events (PointerLockControls has no Rive
   counterpart).

@@ -21,7 +21,7 @@
 
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
-import { PointerEvent, ScrollEvent } from "rive/events";
+import { PointerEvent, ScrollEvent, KeyboardEvent } from "rive/events";
 import { GPURenderer } from "../renderers/GPURenderer";
 import { Scene } from "../scenes/Scene";
 import { Camera } from "../cameras/Camera";
@@ -44,6 +44,9 @@ export abstract class ThreeLayout extends Layout {
     camera: Camera = new PerspectiveCamera(50, 1, 0.1, 2000);
     /// Driven by the pointer and updated every frame when set.
     controls: Controls? = null;
+    /// Controls that get the pointer before `controls` (TransformControls,
+    /// DragControls): while one is capturing, `controls` does not see it.
+    tools: Array<Controls> = [];
     /// The last pointer position, normalized device coordinates (x right,
     /// y up, -1 to 1), as three.js examples keep it.
     pointer: Vector2 = new Vector2();
@@ -100,6 +103,7 @@ export abstract class ThreeLayout extends Layout {
         this.animate(seconds);
         const c = this.controls;
         if (c != null) c.update(seconds);
+        for (let i = 0; i < this.tools.length; i++) this.tools[i].update(seconds);
         return true;
     }
 
@@ -140,8 +144,13 @@ export abstract class ThreeLayout extends Layout {
             this.captured = t;
             event.hit();
         } else {
+            let claimed = false;
+            for (let i = 0; i < this.tools.length; i++) {
+                this.tools[i].pointerDown(event);
+                if (this.tools[i].capturing()) claimed = true;
+            }
             const c = this.controls;
-            if (c != null) c.pointerDown(event);
+            if (c != null && !claimed) c.pointerDown(event);
         }
         this.onPointerDown(event);
     }
@@ -161,8 +170,13 @@ export abstract class ThreeLayout extends Layout {
         if (t != null) t.pointerMove(this.hitUv, event.id);
         else if (captured != null) captured.pointerMove(this.hitUv, event.id);
         if (captured == null) {
+            let claimed = false;
+            for (let i = 0; i < this.tools.length; i++) {
+                this.tools[i].pointerMove(event);
+                if (this.tools[i].capturing()) claimed = true;
+            }
             const c = this.controls;
-            if (c != null) c.pointerMove(event);
+            if (c != null && !claimed) c.pointerMove(event);
         } else {
             event.hit();
         }
@@ -182,6 +196,7 @@ export abstract class ThreeLayout extends Layout {
         } else if (t != null) {
             t.pointerUp(this.hitUv, event.id);
         }
+        for (let i = 0; i < this.tools.length; i++) this.tools[i].pointerUp(event);
         const c = this.controls;
         if (c != null) c.pointerUp(event);
         this.onPointerUp(event);
@@ -194,6 +209,14 @@ export abstract class ThreeLayout extends Layout {
         this.hovered = null;
         const c = this.controls;
         if (c != null) c.pointerExit(event);
+    }
+
+    override keyboardEvent(event: KeyboardEvent): bool {
+        let handled = false;
+        for (let i = 0; i < this.tools.length; i++) if (this.tools[i].keyboardEvent(event)) handled = true;
+        const c = this.controls;
+        if (c != null && c.keyboardEvent(event)) handled = true;
+        return handled;
     }
 
     override pointerScroll(event: ScrollEvent): void {

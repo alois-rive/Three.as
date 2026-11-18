@@ -16,6 +16,10 @@ export class Event {
     target: EventDispatcher? = null;
     /// "childadded" / "childremoved": the child.
     child: EventDispatcher? = null;
+    /// DragControls' "dragstart", "drag", "hoveron"...: the object.
+    object: EventDispatcher? = null;
+    /// TransformControls' "dragging-changed": whether dragging.
+    value: bool = false;
 
     constructor(type: string) {
         this.type = type;

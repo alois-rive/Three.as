@@ -353,7 +353,20 @@ export class Demo extends Layout {
   base) and dispatch "change", "start" and "end". ThreeLayout's
   `controls` is a `Controls`. Rive hands a script every pointer event of
   its artboard: ThreeLayout ignores presses and scrolls outside its own
-  bounds (drags that started inside continue). Import controls from
+  bounds (drags that started inside continue).
+- More controls (addons): TrackballControls, FlyControls,
+  FirstPersonControls, DragControls and TransformControls. Pointer events
+  have no buttons: a press rotates (Trackball), moves forward (Fly,
+  FirstPerson; Fly's `dragToLook` looks instead). Keys come through
+  `keyboardEvent` with GLFW key codes (`KEY_W`... in `extras/Controls`);
+  the ScriptedLayout needs a `FocusData` child to receive them.
+  ThreeLayout's **`tools`** get the pointer before `controls`, which skip
+  it while a tool is `capturing()` (three.js examples disable OrbitControls
+  on "dragging-changed" instead; that works too). TransformControls is a
+  compact port: translate/rotate/scale handles, plane handles, uniform
+  scale, snapping, world/local space and its events, with a simpler gizmo
+  (no view-aligned "E"/"XYZE" rotation rings). Events carry `object` /
+  `value` fields. ArcballControls and PointerLockControls are not ported. Import controls from
   `three/addons/controls/OrbitControls` (or `three/addons/Addons`).
 - **Time comes from `advance(seconds)`.** `Clock` has `tick(seconds)` to
   feed it (call it each advance); `Timer.update(seconds)` takes the frame's

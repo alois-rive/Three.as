@@ -2,7 +2,8 @@
 // second camera, a box, a plane, an arrow and vertex normals; addon
 // geometries (a rounded box, a Klein bottle, a convex hull with a decal)
 // and text extruded from the Rive file's Orbitron font; wide lines (a
-// rainbow helix and a dashed outline).
+// rainbow helix and a dashed outline). TransformControls on the rounded
+// box: drag its arrows, planes or rings; orbit elsewhere.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
@@ -18,6 +19,7 @@ import { LineGeometry } from "../three/addons/lines/LineGeometry";
 import { LineSegmentsGeometry } from "../three/addons/lines/LineSegmentsGeometry";
 import { LineMaterial } from "../three/addons/lines/LineMaterial";
 import { Line2, LineSegments2 } from "../three/addons/lines/LineSegments2";
+import { TransformControls } from "../three/addons/controls/TransformControls";
 import { Context } from "rive/host";
 
 export class Editor extends THREE.ThreeLayout {
@@ -27,6 +29,9 @@ export class Editor extends THREE.ThreeLayout {
     spotHelper: THREE.SpotLightHelper? = null;
     spot: THREE.SpotLight = new THREE.SpotLight();
     time: f64 = 0;
+    transform: TransformControls? = null;
+    /// The gizmo: 0 translate, 1 rotate, 2 scale.
+    @input gizmoMode: i32 = 0;
 
     override setup(context: Context): bool {
         const scene = this.scene;
@@ -146,6 +151,12 @@ export class Editor extends THREE.ThreeLayout {
         outline.position.copy(rounded.position);
         scene.add(outline);
 
+        const transform = new TransformControls(this.camera, this.renderer);
+        transform.attach(rounded);
+        scene.add(transform.getHelper());
+        this.tools.push(transform);
+        this.transform = transform;
+
         this.camera.position.set(5, 4, 7);
         const controls = new OrbitControls(this.camera, this.renderer);
         controls.target.set(0, 0.8, 0);
@@ -155,6 +166,8 @@ export class Editor extends THREE.ThreeLayout {
     }
 
     override animate(seconds: f64): void {
+        const tc = this.transform;
+        if (tc != null) tc.mode = this.gizmoMode == 1 ? "rotate" : this.gizmoMode == 2 ? "scale" : "translate";
         const t = (this.time += seconds);
         this.knot.rotation.y = t * 0.5;
         this.knot.rotation.x = Math.sin(t * 0.3) * 0.5;
