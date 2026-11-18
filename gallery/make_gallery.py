@@ -60,6 +60,8 @@ EXAMPLES = [
     ("Clipping", "0:1900", "0:1907", "Clipping planes, stencil caps and clipped shadows.", True),
     ("Shadows", "0:1300", "0:1307", "Directional, spot and point light shadow maps, cut-outs included.", True),
     ("PostProcessing", "0:1400", "0:1407", "EffectComposer: bloom, ACES tone mapping and FXAA.", True),
+    ("Lights", "0:2000", "0:2007", "Area lights, a street of lamps, a light probe and cascaded moonlight.", True),
+    ("Editor", "0:2100", "0:2107", "Helpers for grids, axes, lights, cameras, boxes, planes and normals.", True),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
 ]
 DEFAULT = 0  # FirstScene plays on load
@@ -119,7 +121,7 @@ FEATURES = [
 
 # ------------------------------------------------------------------ layout
 
-W, H = 1920, 1480
+W = 1920
 M = 120                      # page margin
 LX, LW = M, 600              # left column
 RX, RW = 800, 1000           # right column
@@ -128,6 +130,9 @@ STAGE_H = 640
 ROW2 = 960
 CARD_W, THUMB_H, CARD_H, GAP = 155, 87, 117, 14
 COLS = 6
+# Tall enough for every row of cards, with the footer below them.
+_rows = (len(EXAMPLES) + COLS - 1) // COLS
+H = max(1480, ROW2 + 30 + _rows * (CARD_H + GAP) + 110)
 
 # Theme properties on the kit's global RiveTheme view model (2:1).
 BG, FG, SURFACE, MUTED, FAINT, ACCENT = "2:2", "2:3", "2:4", "2:5", "2:6", "2:7"

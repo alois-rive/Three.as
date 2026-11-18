@@ -435,7 +435,7 @@
 
     <!-- Lights: rect area lights, many point lights, a light probe
          (examples/lights.as). -->
-    <Artboard defaultStateMachineId="0:2007" clip="true" x="3600" y="3500" width="800" height="600" styleId="0:2001" name="Lights" id="0:2000">
+    <Artboard isComponent="true" defaultStateMachineId="0:2007" clip="true" x="3600" y="3500" width="800" height="600" styleId="0:2001" name="Lights" id="0:2000">
         <LayoutComponentStyle name="Artboard Style" id="0:2001"/>
         <LayoutComponent width="800" height="600" styleId="0:2003" name="Root" id="0:2002">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2003"/>
@@ -449,7 +449,7 @@
     </Artboard>
 
     <!-- Editor: helpers, controls, utilities (examples/editor.as). -->
-    <Artboard defaultStateMachineId="0:2107" clip="true" x="0" y="4200" width="800" height="600" styleId="0:2101" name="Editor" id="0:2100">
+    <Artboard isComponent="true" defaultStateMachineId="0:2107" clip="true" x="0" y="4200" width="800" height="600" styleId="0:2101" name="Editor" id="0:2100">
         <LayoutComponentStyle name="Artboard Style" id="0:2101"/>
         <LayoutComponent width="800" height="600" styleId="0:2103" name="Root" id="0:2102">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2103"/>
