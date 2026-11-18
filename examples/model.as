@@ -2,11 +2,13 @@
 // tools/make_sample_glb.py) loaded with GLTFLoader from a BlobAsset, its
 // two clips playing in an AnimationMixer: a node hierarchy (an arm with a
 // cubic-spline elbow), a skinned tail with a morph target, a stepped pane,
-// an embedded PNG texture and a glTF point light.
+// an embedded PNG texture and a glTF point light; lit by a RoomEnvironment
+// through PMREMGenerator.fromScene, as three.js's glTF examples.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
 import { GLTFLoader } from "../three/addons/loaders/GLTFLoader";
+import { RoomEnvironment } from "../three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
 
 export class Model extends THREE.ThreeLayout {
@@ -15,8 +17,10 @@ export class Model extends THREE.ThreeLayout {
     override setup(context: Context): bool {
         const scene = this.scene;
         scene.background = new THREE.Color(0x1a1d24);
-        scene.add(new THREE.HemisphereLight(0xe0e8ff, 0x302820, 1.4));
-        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        this.renderer!.toneMapping = THREE.ACESFilmicToneMapping;
+        const sun = new THREE.DirectionalLight(0xffffff, 1.0);
         sun.position.set(-2, 4, 3);
         scene.add(sun);
 

@@ -83,6 +83,7 @@ import {
 } from "../constants";
 import { LightShadow } from "../lights/LightShadow";
 import { CubeTexture } from "../textures/CubeTexture";
+import { CubeCamera } from "../cameras/CubeCamera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
@@ -215,6 +216,18 @@ export class ShadowMapSettings {
 // One shadow map layer: a light camera's view-projection.
 class ShadowTile {
     matrix: Matrix4 = new Matrix4();
+}
+
+/// A scene to render into a cube map at the start of the next render
+/// (PMREMGenerator.fromScene).
+export class SceneCapture {
+    scene: Object3D;
+    camera: CubeCamera;
+
+    constructor(scene: Object3D, camera: CubeCamera) {
+        this.scene = scene;
+        this.camera = camera;
+    }
 }
 
 export class RenderInfo {
@@ -360,6 +373,10 @@ export class GPURenderer {
     private envTexture: Texture? = null;
     private envView: GPUTextureView? = null;
     private envLevels: u32 = 1;
+    private captures: Array<SceneCapture> = [];
+    private capturing: bool = false;
+    private envPrefiltered: bool = false;
+    private bgPrefiltered: bool = false;
     private frameGroupView: GPUTextureView? = null;
     private frameGroupShadow: GPUTextureView? = null;
     // Shadows.
@@ -466,7 +483,26 @@ export class GPURenderer {
 
     /// Renders `scene` from `camera` into the canvas. Call it from the
     /// script's `draw()`, then `present`.
+    /// Renders `capture` before the next render (internal: PMREMGenerator).
+    queueSceneCapture(capture: SceneCapture): void {
+        this.captures.push(capture);
+    }
+
     render(scene: Object3D, camera: Camera): void {
+        if (this.captures.length > 0 && !this.capturing) {
+            this.capturing = true;
+            const captures = this.captures;
+            this.captures = [];
+            const autoClear = this.autoClear;
+            this.autoClear = true;
+            for (let i = 0; i < captures.length; i++) {
+                const c = captures[i];
+                c.camera.updateMatrixWorld();
+                c.camera.update(this, c.scene);
+            }
+            this.autoClear = autoClear;
+            this.capturing = false;
+        }
         const info = this.info.render;
         info.frame++;
         this.arenaUsed = 0;
@@ -1326,11 +1362,20 @@ export class GPURenderer {
         if (bg == null || !(bg instanceof Texture)) return false;
         const t = bg as Texture;
         this.textures.update(t, frame);
-        const view = this.textures.view(t, canvas);
+        // A blurred environment background reads the PMREM, as three.js.
+        let view: GPUTextureView? = null;
+        this.bgPrefiltered = false;
+        const surround = t instanceof CubeTexture || t.mapping == EquirectangularReflectionMapping
+            || t.mapping == EquirectangularRefractionMapping;
+        if (surround && (scene as Scene).backgroundBlurriness > 0) {
+            view = this.textures.pmrem(t, canvas);
+            this.bgPrefiltered = view != null;
+        }
+        if (view == null) view = this.textures.view(t, canvas);
         if (view == null) return false;
         this.bgTexture = t;
         this.bgView = view;
-        this.bgMipmapped = wantsMipmaps(t);
+        this.bgMipmapped = this.bgPrefiltered || wantsMipmaps(t);
         return true;
     }
 
@@ -1343,10 +1388,13 @@ export class GPURenderer {
             env.generateMipmaps = true;
             if (env.minFilter != LinearMipmapLinearFilter) env.minFilter = LinearMipmapLinearFilter;
             this.textures.update(env, frame);
-            view = this.textures.view(env, canvas);
+            view = this.textures.pmrem(env, canvas);
+            this.envPrefiltered = view != null;
+            if (view == null) view = this.textures.view(env, canvas);
         }
         this.envTexture = view != null ? env : null;
-        this.envLevels = env != null && view != null ? this.textures.levels(env) : 1;
+        this.envLevels = env != null && view != null
+            ? (this.envPrefiltered ? this.textures.pmremLevels(env) : this.textures.levels(env)) : 1;
         const bind = view != null ? view! : this.white!;
         const shadow = this.tileCount > 0 && this.shadowView != null ? this.shadowView! : this.dummyShadowView!;
         const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
@@ -1740,14 +1788,14 @@ export class GPURenderer {
         if (bt != null && scene instanceof Scene) {
             const s = scene as Scene;
             f[o + 2] = <f32>s.backgroundIntensity;
-            const levels = this.textures.levels(bt);
+            const levels = this.bgPrefiltered ? this.textures.pmremLevels(bt) : this.textures.levels(bt);
             f[o + 3] = <f32>(Math.max(0, Math.min(1, s.backgroundBlurriness)) * <f64>(levels - 1));
             _euler.set(-s.backgroundRotation.x, -s.backgroundRotation.y, -s.backgroundRotation.z,
                 s.backgroundRotation.order);
             _bgRotation.makeRotationFromEuler(_euler);
             _bgRotation.mat4.writeToBuffer(buf, FRAME_BG_ROTATION);
             const b = FRAME_BG_FLAGS >> 2;
-            const cube = bt instanceof CubeTexture;
+            const cube = bt instanceof CubeTexture || this.bgPrefiltered;
             const equirect = cube || bt.mapping == EquirectangularReflectionMapping
                 || bt.mapping == EquirectangularRefractionMapping;
             u[b] = equirect ? <u32>EquirectangularReflectionMapping : 0;
@@ -1771,7 +1819,9 @@ export class GPURenderer {
         const et = this.envTexture;
         if (et != null) {
             const intensity = scene instanceof Scene ? (scene as Scene).environmentIntensity : 1;
-            f[o] = 1; f[o + 1] = <f32>intensity; f[o + 2] = <f32>Math.max(0, <f64>this.envLevels - 2); f[o + 3] = 0;
+            f[o] = 1; f[o + 1] = <f32>intensity;
+            f[o + 2] = <f32>(this.envPrefiltered ? <f64>this.envLevels - 1 : Math.max(0, <f64>this.envLevels - 2));
+            f[o + 3] = this.envPrefiltered ? 1 : 0;
             if (scene instanceof Scene) {
                 const r = (scene as Scene).environmentRotation;
                 _euler.set(-r.x, -r.y, -r.z, r.order);
@@ -1781,7 +1831,7 @@ export class GPURenderer {
             _bgRotation.makeRotationFromEuler(_euler);
             _bgRotation.mat4.writeToBuffer(buf, FRAME_ENV_ROTATION);
             const b = FRAME_ENV_FLAGS >> 2;
-            const cube = et instanceof CubeTexture;
+            const cube = et instanceof CubeTexture || this.envPrefiltered;
             u[b] = !cube && et.colorSpace == SRGBColorSpace ? 1 : 0;
             u[b + 1] = cube || et.flipY ? 1 : 0;
             u[b + 2] = !cube && et.premultiplyAlpha ? 1 : 0;
@@ -1924,16 +1974,22 @@ export class GPURenderer {
                     if (t.minFilter != LinearMipmapLinearFilter) t.minFilter = LinearMipmapLinearFilter;
                     this.textures.update(t, frame);
                 }
-                const v = this.textures.view(t, canvas);
+                // envMap reads its PMREM (the plain chain if that fails).
+                let v: GPUTextureView? = envSlot ? this.textures.pmrem(t, canvas) : null;
+                const prefiltered = v != null;
+                if (v == null) v = this.textures.view(t, canvas);
                 if (v == null) continue;
                 views[s] = v;
-                const levels = this.textures.levels(t);
+                const levels = prefiltered ? this.textures.pmremLevels(t) : this.textures.levels(t);
                 samplers[s] = envSlot ? this.backgroundSampler(true) : this.sampler(t, levels > 1);
-                if (envSlot) put4(f, OBJ_ENV, 1, Math.max(0, <f64>levels - 2), 0, 0);
+                if (envSlot) {
+                    put4(f, OBJ_ENV, 1, prefiltered ? <f64>levels - 1 : Math.max(0, <f64>levels - 2),
+                        prefiltered ? 1 : 0, 0);
+                }
                 const bit: u32 = 1 << <u32>s;
                 present |= bit;
-                // Cube textures sample their conversion: linear, straight, top row first.
-                const cube = t instanceof CubeTexture;
+                // Cube textures and PMREMs are linear, straight, top row first.
+                const cube = t instanceof CubeTexture || prefiltered;
                 if (!cube && t.colorSpace == SRGBColorSpace) srgb |= bit;
                 if (cube || t.flipY) flip |= bit;
                 if (!cube && t.premultiplyAlpha) premul |= bit;

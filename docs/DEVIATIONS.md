@@ -178,11 +178,21 @@ export class Demo extends Layout {
   encode, so a fully fogged surface matches a background of the fog colour.
 - **Environment maps** light MeshStandard/Physical materials only
   (Lambert/Phong/Basic ignore `envMap`; no `reflectivity`/`combine`), with
-  three.js's IBL maths, but **reflections read the equirectangular map's own
-  mip chain by roughness, not a GGX-prefiltered PMREM**: rough reflections
-  are box-blurred. A material's `envMap` overrides `scene.environment` for
-  that material (`envMapIntensity` scales it; `envMapRotation` is not read).
-  Clearcoat ignores the environment.
+  three.js's IBL maths. The renderer prefilters every environment
+  (`scene.environment`, `envMap`, a blurred background) into a PMREM on its
+  own, as three.js does for `scene.environment`: **an equirectangular mip
+  chain** (128 to 1024 wide, down to 16 x 8) where level k is GGX-convolved
+  at roughness k / (levels - 1), sampled at `roughness x (levels - 1)`;
+  three.js uses a cube-UV atlas and a non-linear roughness-to-mip mapping,
+  so very rough reflections differ slightly. Irradiance reads the
+  roughness-1 level, as three.js. A material's `envMap` overrides
+  `scene.environment` for that material (`envMapIntensity` scales it;
+  `envMapRotation` is not read). Clearcoat ignores the environment.
+- `PMREMGenerator`: `fromEquirectangular` and `fromCubemap` return their
+  texture prepared (the renderer prefilters it); `fromScene(scene, sigma,
+  near, far)` renders the scene into a 256 cube map at the start of the
+  renderer's next `render` (scripts render only from `draw()`), and
+  ignores `sigma`. `RoomEnvironment` is in `three/addons/environments/`.
 - **Cube textures are converted to equirectangular maps** on the GPU (an
   rgba16float texture 4 x 2 faces wide, redone when a face or `version`
   changes) and sampled as those, for `background`, `environment` and

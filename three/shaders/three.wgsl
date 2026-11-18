@@ -121,7 +121,7 @@ struct ObjU {
     // Per texture slot: its uv transform (three.js's texture.matrix rows,
     // xyz) and, in the first row's w, its uv channel.
     uv_matrix: array<vec4<f32>, 16>,
-    env: vec4<f32>,          // x 1: the material's envMap, y its max lod
+    env: vec4<f32>,          // x 1: the material's envMap, y its max lod, z 1: prefiltered (PMREM)
 };
 
 const MAX_BONES: u32 = 256u;
@@ -773,9 +773,11 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             // envMap, else scene.environment (with environmentIntensity).
             let intensity = select(F.env.y, 1.0, own_env) * O.extra.z;
             let max_lod = select(F.env.z, O.env.y, own_env);
-            // Irradiance from a coarse level that still separates sky and
-            // ground (the last levels average them away).
-            let irradiance = PI * env_sample(N, max(0.0, max_lod - 1.0)) * intensity;
+            let prefiltered = select(F.env.w, O.env.z, own_env) > 0.5;
+            // Irradiance: the PMREM at roughness 1 (three.js's
+            // getIBLIrradiance); from a plain mip chain, a coarse level that
+            // still separates sky and ground.
+            let irradiance = PI * env_sample(N, select(max(0.0, max_lod - 1.0), max_lod, prefiltered)) * intensity;
             let r = normalize(mix(reflect(-V, N), N, roughness * roughness));
             let radiance = env_sample(r, roughness * max_lod) * intensity;
             let fab = dfg_approx(N, V, roughness);

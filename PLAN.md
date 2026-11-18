@@ -184,7 +184,8 @@ three.js lighting setups look the same.
   assets), cube backgrounds and `envMap`s, `CubeReflectionMapping` /
   `CubeRefractionMapping`; WebGLCubeRenderTarget and CubeCamera (six passes
   into a cube texture: `TextureType.cube`).
-- **M7c, a real PMREM.** PMREMGenerator ported (cube-UV layout, GGX
+- **M7c, a real PMREM (done; an equirectangular GGX mip chain rather
+  than three.js's cube-UV atlas).** PMREMGenerator ported (cube-UV layout, GGX
   importance-sampled blur passes): `fromEquirectangular`, `fromCubemap`,
   `fromScene`; RoomEnvironment (addon). Rough reflections then match
   three.js; the mip-chain approximation goes away.

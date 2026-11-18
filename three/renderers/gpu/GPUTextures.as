@@ -20,6 +20,26 @@ import {
 
 const MIP_SHADER_NAMES: Array<string> = ["three/shaders/three_mip", "shaders/three_mip", "three_mip"];
 const CUBE_SHADER_NAMES: Array<string> = ["three/shaders/three_cube", "shaders/three_cube", "three_cube"];
+const PMREM_SHADER_NAMES: Array<string> = ["three/shaders/three_pmrem", "shaders/three_pmrem", "three_pmrem"];
+
+// A texture's prefiltered environment chain.
+class PmremEntry {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    levelViews: Array<GPUTextureView> = [];
+    params: Array<GPUBuffer> = [];
+    source: GPUTextureView? = null;
+    version: i32 = -1;
+    width: u32;
+    levels: u32;
+
+    constructor(texture: GPUTexture, w: u32, levels: u32) {
+        this.texture = texture;
+        this.view = texture.view();
+        this.width = w;
+        this.levels = levels;
+    }
+}
 
 // A CubeTexture's equirectangular conversion.
 class CubeEquirect {
@@ -77,6 +97,12 @@ export class GPUTextures {
     private cubeBroken: bool = false;
     private cubes: Map<i32, CubeEquirect> = new Map<i32, CubeEquirect>();
     private cubeStaging: Float32Array = new Float32Array(4);
+    private pmremPipeline: GPUPipeline? = null;
+    private pmremLayout: GPUBindGroupLayout? = null;
+    private pmremSampler: GPUSampler? = null;
+    private pmremBroken: bool = false;
+    private pmrems: Map<i32, PmremEntry> = new Map<i32, PmremEntry>();
+    private pmremStaging: Float32Array = new Float32Array(8);
     private mipSampler: GPUSampler? = null;
     private mipBroken: bool = false;
     private colorAttachment: GPUColorAttachment = new GPUColorAttachment();
@@ -134,6 +160,10 @@ export class GPUTextures {
         if (this.cubes.has(id)) {
             this.cubes.get(id).texture.release();
             this.cubes.delete(id);
+        }
+        if (this.pmrems.has(id)) {
+            this.pmrems.get(id).texture.release();
+            this.pmrems.delete(id);
         }
         if (this.chains.has(id)) {
             this.chains.get(id).texture.release();
@@ -250,6 +280,115 @@ export class GPUTextures {
         pass.finish();
         ce.version = t.version;
         return ce;
+    }
+
+    /// The PMREM of an environment texture (equirectangular or cube): a
+    /// GGX-prefiltered mip chain, level k at roughness k / (levels - 1),
+    /// redone when the source changes. Null when the source cannot be
+    /// sampled yet or the shader is missing.
+    pmrem(t: Texture, target: GPUTarget): GPUTextureView? {
+        if (!this.ensurePmremPipeline()) return null;
+        const src = this.view(t, target);
+        if (src == null) return null;
+        const cube = t instanceof CubeTexture;
+        let sw: u32, sh: u32;
+        if (cube) {
+            const ce = this.cubes.get(t.id);
+            sw = ce.width; sh = ce.height;
+        } else {
+            sw = t.width; sh = t.height;
+        }
+        let w: u32 = 128;
+        while (w < sw && w < 1024) w <<= 1;
+        const h = w / 2;
+        const levels = mipLevels(w / 16, w / 16);   // the last level is 16 x 8
+        let e: PmremEntry? = this.pmrems.has(t.id) ? this.pmrems.get(t.id) : null;
+        if (e == null || e.width != w) {
+            if (e != null) e.texture.release();
+            const desc = new GPUTextureDesc();
+            desc.width = w;
+            desc.height = h;
+            desc.format = TextureFormat.rgba16float;
+            desc.renderTarget = true;
+            desc.numMipmaps = levels;
+            const tex = new GPUTexture(desc);
+            e = new PmremEntry(tex, w, levels);
+            for (let l: u32 = 0; l < levels; l++) {
+                const vd = new GPUTextureViewDesc();
+                vd.baseMipLevel = l;
+                vd.mipCount = 1;
+                e.levelViews.push(tex.view(vd));
+                e.params.push(new GPUBuffer(BufferUsage.uniform, 32));
+            }
+            this.pmrems.set(t.id, e);
+        }
+        if (e.source === src && e.version == t.version) return e.view;
+        const srcLevels = this.levels(t);
+        const p = this.pmremStaging;
+        for (let l: u32 = 0; l < levels; l++) {
+            p[0] = levels > 1 ? <f32>(<f64>l / <f64>(levels - 1)) : 0;
+            p[1] = <f32>(srcLevels - 1);
+            p[2] = <f32>(<f64>sw * <f64>sh);
+            p[3] = 0;
+            p[4] = !cube && t.colorSpace == "srgb" ? 1 : 0;
+            p[5] = !cube && t.premultiplyAlpha ? 1 : 0;
+            p[6] = cube || t.flipY ? 1 : 0;
+            p[7] = 0;
+            e.params[l].update(0, p.buffer);
+            const group = new GPUBindGroup(this.pmremLayout!, [new GPUBindGroupUBO(2, e.params[l])],
+                [new GPUBindGroupTexture(0, src)], [new GPUBindGroupSampler(1, this.pmremSampler!)]);
+            const color = this.colorAttachment;
+            color.view = e.levelViews[l];
+            color.loadOp = LoadOp.clear;
+            color.storeOp = StoreOp.store;
+            color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
+            const pd = this.passDesc;
+            pd.label = "three pmrem";
+            pd.color = [color];
+            pd.depthView = null;
+            const pass = target.beginRenderPass(pd);
+            pass.setPipeline(this.pmremPipeline!);
+            pass.setBindGroup(0, group);
+            pass.draw(3);
+            pass.finish();
+        }
+        e.source = src;
+        e.version = t.version;
+        return e.view;
+    }
+
+    /// Levels of `pmrem(t)`'s chain (0 before it exists).
+    pmremLevels(t: Texture): u32 {
+        return this.pmrems.has(t.id) ? this.pmrems.get(t.id).levels : 0;
+    }
+
+    private ensurePmremPipeline(): bool {
+        if (this.pmremPipeline != null) return true;
+        if (this.pmremBroken || !this.ensurePipeline()) return false;
+        let module: GPUShaderModule? = null;
+        for (let i = 0; i < PMREM_SHADER_NAMES.length && module == null; i++) {
+            module = this.context.shader(PMREM_SHADER_NAMES[i]);
+        }
+        const layout = module != null ? GPUBindGroupLayout.fromShader(module!, 0) : null;
+        if (module == null || layout == null) {
+            this.context.log("three: PMREM disabled: shader asset 'three/shaders/three_pmrem.wgsl' not found");
+            this.pmremBroken = true;
+            return false;
+        }
+        this.pmremLayout = layout;
+        const target = new GPUColorTargetDesc();
+        target.format = TextureFormat.rgba16float;
+        const d = new GPUPipelineDesc();
+        d.vertexModule = module;
+        d.vertexEntryPoint = "vs_blit";
+        d.fragmentModule = module;
+        d.fragmentEntryPoint = "fs_prefilter";
+        d.colorTargets = [target];
+        d.bindGroupLayouts = [layout];
+        this.pmremPipeline = new GPUPipeline(d);
+        this.pmremSampler = new GPUSampler(Filter.linear, Filter.linear, Filter.linear,
+            WrapMode.repeat, WrapMode.clampToEdge);
+        return true;
     }
 
     private ensureCubePipeline(): bool {
