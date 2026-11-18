@@ -2,24 +2,39 @@
 """Writes gallery/gallery.rml: the ThreeAS landing page, built in Rive.
 
     python3 gallery/make_gallery.py           # then: rive . --artboard=Gallery
-    python3 gallery/make_gallery.py --thumbs  # also re-render the card thumbnails
+    python3 gallery/make_gallery.py --thumbs  # also re-render the thumbnails and the hero image
 
 The page is built from Rive layouts, styled after rive.app: one `Gallery`
 artboard whose root is a vertical scroll view (a clipped viewport, a `hug`
 content column with a ScrollConstraint). Sections are centred columns capped
 at 1280pt; rows that should become columns on narrow screens are wrapping
-rows of `fill` boxes with a minimum width (the hero puts its stage first in
-a `rowReverse`, so it sits right when wide and on top when narrow), and the
-card grids wrap. The previewer's default `layout` fit resizes the artboard
-to the window, so the page reflows at any width.
+rows of `fill` boxes with a minimum width, and the card grids wrap. The
+previewer's default `layout` fit resizes the artboard to the window, so the
+page reflows at any width.
+
+The hero is text over a screenshot of the Lights example (gallery/hero.jpg),
+`cover`-fitted in an absolute box behind the nav and the hero, under
+rive.app's hero scrim (its gradient's end is bound to the box's height).
+
+The stage sits in the Examples section, above the cards, and is sticky: it
+pins to the top of the viewport while the grid scrolls under it, then leaves
+with the section. Rive has no sticky positioning, so the page measures
+itself: binds marked direction="true" write laid-out values (the stage
+slot's world y, the grid's height, the viewport's size) into the view
+model, and formula converters turn them into the band's `y` offset, the
+stage's height (half the viewport) and the hero's top padding. The cards sit
+in a clip window that the same offset slides down (and the grid back up), so
+the cards behind the band are clipped off, and Rive does not hit-test
+clipped-off content: they take no pointer through the band, while the band
+itself is no hit target, so the page still scrolls under it.
 
 The stage is a NestedArtboardLayout whose `artboardId` is bound to the
 `Gallery` view model's `demo` artboard property. A click on an example card
 writes it (and the caption), so the chosen example artboard from
 examples/examples.rml runs live in the stage, at the stage's size, with its
-own pointer input; the click also scrolls the page back to the stage. The
-nav and hero buttons scroll to their sections through the ScrollConstraint's
-`scrollIndex`, bound to the view model's `section`.
+own pointer input. Whenever a card is visible, so is the stage, so a click
+does not scroll. The nav and hero buttons scroll to their sections through
+the ScrollConstraint's `scrollIndex`, bound to the view model's `section`.
 
 Cards are one component, `ExampleCard`, placed as stateful nested artboards
 (name, blurb, number and thumbnail per placement), with its own hover and
@@ -32,7 +47,8 @@ page elements, 106:* fonts. rive.app's PragmataPro is commercial, so its
 mono labels and buttons use IoskeleyMono here.
 
 Thumbnails are screenshots of each example (rive --screenshot), centre-cropped
-to 16:9 and scaled with macOS `sips`.
+to 16:9 and scaled with macOS `sips`; the hero is Lights at 2560x1440 with
+its right side cropped off, as a JPEG.
 """
 
 import os
@@ -130,7 +146,7 @@ FEATURES = [
 ]
 
 # Section order inside the scroll content (their index is `scrollIndex`).
-SEC_NAV, SEC_HERO, SEC_EXAMPLES, SEC_START, SEC_FEATURES, SEC_FOOTER = range(6)
+SEC_TOP, SEC_EXAMPLES, SEC_START, SEC_FEATURES, SEC_FOOTER = range(5)
 
 # ------------------------------------------------------------------ styling
 # rive.app's language: black ground, white Orbitron 900 caps headlines with
@@ -151,10 +167,22 @@ LINE_SOFT = "14FFFFFF"   # nav rule, 8%
 LINE_HOVER = "4DFFFFFF"  # hover border, 30%
 AMBER = "FFFFA41C"       # Rive Amber, the one accent
 STAGE_BG = "FF0C0C0C"
+# rive.app's hero scrim, over its media: linear-gradient(#0000 11%,
+# #00000073 56%, #000000d9 76%, #000 100%), top to bottom.
+SCRIM = [("00000000", 0.11), ("73000000", 0.56), ("D9000000", 0.76), ("FF000000", 1.0)]
+
+INSET0 = {"left": 0, "right": 0, "top": 0, "bottom": 0}   # an overlay covering its parent
+PCT100 = ' widthUnitsValue="percent" heightUnitsValue="percent"'
+FADE_H = 24              # the sticky band's fade into the cards below it
+WIN_PAD = 8              # the cards' clip window overhangs the grid by this, for the hairlines
+WIN_MARGIN = "".join(f' margin{s}="-{WIN_PAD}" margin{s}UnitsValue="points"' for s in ("Top", "Right", "Bottom", "Left"))
+STICKY_GAP = 40        # the gap between the sticky stage and the card grid
+NAV_H = 64
 
 MAX_W = 1280             # content width cap
 PAD_X = 24               # page side padding
 ORBITRON, INTER, MONO = "106:1", "106:2", "106:3"
+HERO_IMAGE = "103:100"
 WGHT = "2003265652"      # 'wght'
 
 
@@ -190,9 +218,12 @@ def solid_id(kind, color, cid, extra=""):
 def box(name, children="", *, d="column", w="fill", h="hug", width=0, height=0,
         gap=0, gapx=None, gapy=None, pad=0, wrap=False, align=None, minw=None, maxw=None,
         aspect=None, fill=None, stroke=None, radius=0, clip=False, frac=None,
-        absolute=None, opacity=None, basis=None, pct=None, bid=None, style="", extra=""):
+        absolute=None, opacity=None, basis=None, pct=None, bid=None, style="", extra="",
+        binds="", style_binds=""):
     """A LayoutComponent and its style. `pad` is one number or (t, r, b, l);
-    `absolute` is a dict of insets (left/right/top/bottom) for an overlay."""
+    `absolute` is a dict of insets (left/right/top/bottom) for an overlay;
+    `binds` and `style_binds` are DataBindContexts (or other children) for
+    the component and for its style."""
     bid = bid or ids()
     sid = ids()
     t, r, b, l = (pad, pad, pad, pad) if isinstance(pad, (int, float)) else pad
@@ -229,8 +260,8 @@ def box(name, children="", *, d="column", w="fill", h="hug", width=0, height=0,
     if opacity is not None: attrs += f' opacity="{opacity}"'
     paints = (paint("Fill", fill) if fill else "") + (paint("Stroke", stroke, ' thickness="1"') if stroke else "")
     return (f'<LayoutComponent{attrs}{extra} styleId="{sid}" name={a(name)} id="{bid}">'
-            f'<LayoutComponentStyle {" ".join(st)}{style} name={a(name + " Style")} id="{sid}"/>'
-            f'{children}{paints}</LayoutComponent>')
+            f'<LayoutComponentStyle {" ".join(st)}{style} name={a(name + " Style")} id="{sid}">{style_binds}'
+            f'</LayoutComponentStyle>{binds}{children}{paints}</LayoutComponent>')
 
 
 def tstyle(font, size, color, weight=None, ls=0, lh=-1, name="Style", fill_id=None):
@@ -287,9 +318,9 @@ def button(name, label, primary, bid):
                fill=WHITE if primary else "00000000", stroke=None if primary else LINE_HOVER)
 
 
-def section(name, children, *, top=96, bottom=0, sid=None):
+def section(name, children, *, top=96, bottom=0, sid=None, gap=40):
     """A full-width band with a centred column capped at MAX_W."""
-    inner = box(name + "Inner", children, pct=100, maxw=MAX_W, gap=40)
+    inner = box(name + "Inner", children, pct=100, maxw=MAX_W, gap=gap)
     return box(name, inner, w="fill", pad=(top, PAD_X, bottom, PAD_X), align="topCenter", bid=sid)
 
 
@@ -319,6 +350,85 @@ def code_panel(name, tab, lines):
                  w="hug", pad=(16, 20, 18, 20))
     view = box("CodeView", scroll, d="row", w="fill", clip=True)
     return box(name, head + rule + view, w="fill", fill=PANEL, stroke=LINE, radius=4, clip=True)
+
+
+# ------------------------------------------------------- layout-driven data
+# Rive has no `position: sticky` and no viewport units, so the page reads
+# laid-out sizes back into the Gallery view model (binds marked
+# direction="true" on derived `computed*` properties) and derives the rest
+# with formula converters bound to ordinary properties.
+
+VM = "100:50"
+P_VH, P_VW, P_SLOT_Y, P_CARDS_H, P_HERO_H, P_STAGE_W = "100:58", "100:59", "100:60", "100:61", "100:62", "100:63"
+C_STICKY, C_STAGE_H, C_HERO_PAD, C_CLIP_DOWN, C_CLIP_UP = "100:80", "100:81", "100:82", "100:83", "100:84"
+K_Y, K_HEIGHT, K_PAD_TOP, K_END_Y = 14, 8, 514, 35
+K_WORLD_Y, K_WIDTH_OUT, K_HEIGHT_OUT = 809, 810, 811
+
+
+def bind_out(prop, key):
+    """Writes a component's derived property into the view model."""
+    return f'<DataBindContext sourcePathIds="{VM}-{prop}" propertyKey="{key}" direction="true"/>'
+
+
+def bind_in(prop, key, converter=None):
+    conv = f' converterId="{converter}"' if converter else ""
+    return f'<DataBindContext sourcePathIds="{VM}-{prop}" propertyKey="{key}"{conv}/>'
+
+
+def formula(fid, name, tokens):
+    """A DataConverterFormula from tokens: "in" (the bound value), a number,
+    ("vm", prop) for a view model number, "+ - * /", "min" / "max" (a
+    function, which opens its own bracket), "," and ")"."""
+    ops = {"+": 0, "-": 1, "*": 2, "/": 3}
+    fns = {"min": 0, "max": 1}
+    out = []
+    for t in tokens:
+        if t == "in":
+            out.append("<FormulaTokenInput/>")
+        elif isinstance(t, tuple):
+            out.append(f'<FormulaTokenValue>{bind_in(t[1], 777)}</FormulaTokenValue>')
+        elif isinstance(t, (int, float)):
+            out.append(f'<FormulaTokenValue operationValue="{t}"/>')
+        elif t in ops:
+            out.append(f'<FormulaTokenOperation operationType="{ops[t]}"/>')
+        elif t in fns:
+            out.append(f'<FormulaTokenFunction functionType="{fns[t]}"/>')
+        elif t == ",":
+            out.append("<FormulaTokenArgumentSeparator/>")
+        elif t == "(":
+            out.append("<FormulaTokenParenthesisOpen/>")
+        elif t == ")":
+            out.append("<FormulaTokenParenthesisClose/>")
+        else:
+            raise ValueError(t)
+    return f'<DataConverterFormula name={a(name)} id="{fid}">{"".join(out)}</DataConverterFormula>'
+
+
+CLIP_H = ["max", 0, ",", "min", 0, "-", "in", ",", ("vm", P_CARDS_H), "+", STICKY_GAP, ")", "-", STICKY_GAP - WIN_PAD, ")"]
+
+CONVERTERS = [
+    # The sticky stage's offset from its slot: how far the slot's top has
+    # scrolled above the viewport's, clamped to [0, the grid's height + the
+    # gap], so the stage's bottom never passes the grid's (CSS sticky inside
+    # the Examples body). Bound value: the slot's world y.
+    formula(C_STICKY, "Sticky offset",
+            ["min", "max", 0, "-", "in", ",", 0, ")", ",", ("vm", P_CARDS_H), "+", STICKY_GAP, ")"]),
+    # The cards' clip window: how far the band reaches into the grid. The
+    # window moves down by it and the grid back up by it, so the window clips
+    # off the cards behind the band, and a clipped card takes no pointer
+    # (Rive hit-tests through layout clips). Bound value: the slot's world y.
+    formula(C_CLIP_DOWN, "Clip window down", CLIP_H),
+    formula(C_CLIP_UP, "Clip window up", [0, "-"] + CLIP_H),
+    # The stage's height: half the viewport, and never taller than 1.6:1 (on
+    # narrow screens). Bound value: the stage's own (fill) width.
+    formula(C_STAGE_H, "Stage height",
+            ["max", 180, ",", "min", "in", "/", 1.6, ",", ("vm", P_VH), "*", 0.5, ")", ")"]),
+    # The hero's top padding, rive.app's hero spacer (37vh) less the nav,
+    # tightened on narrow screens so the copy is not pushed off a phone.
+    # Bound value: the viewport's height.
+    formula(C_HERO_PAD, "Hero spacer",
+            ["max", 140, ",", "min", "in", "*", 0.37, "-", NAV_H, ",", ("vm", P_VW), "*", 0.25, "+", 20, ")", ")"]),
+]
 
 
 # --------------------------------------------------------------- the page
@@ -359,27 +469,10 @@ def page():
     nav = box("Nav", box("NavBand", nav_row, w="fill", pad=(0, PAD_X, 0, PAD_X), align="topCenter")
               + box("NavRule", w="fill", h="fixed", height=1, fill=LINE_SOFT), w="fill")
 
-    # -- hero: the stage (first, so it tops the column when narrow) and the copy
-    player = (f'<NestedArtboardLayout artboardId="{first[1]}" instanceWidth="100" instanceWidthUnitsValue="percent" '
-              f'instanceHeight="100" instanceHeightUnitsValue="percent" name="Player" id="100:7">'
-              f'<DataBindContext sourcePathIds="100:50-100:51" propertyKey="197"/>'
-              f'<NestedStateMachine animationId="{first[2]}" name="SM"/></NestedArtboardLayout>')
-    stage = box("Stage", player, d="row", w="fill", aspect=1.6, clip=True, fill=STAGE_BG, stroke=LINE,
-                bid="100:5")
-    live = box("Live", box("LiveDot", w="fixed", h="fixed", width=6, height=6, fill=AMBER, radius=3)
-               + text("LiveLabel", [(T_mono(WHITE, 11), "LIVE")], w="hug", wrap=False),
-               d="row", w="hug", gap=8, align="centerLeft")
-    cap_left = box("CaptionText",
-                   box("CaptionTitleRow", live + text("DemoTitle", [(T_title(), first[0], "100:50-100:53")],
-                                                      w="hug", wrap=False),
-                       d="row", w="hug", gap=14, align="centerLeft")
-                   + text("DemoBlurb", [(T_small(), first[3], "100:50-100:54")]),
-                   w="fill", gap=6, minw=220, frac=1, basis=0)
-    caption = box("Caption", cap_left + text("DemoHint", [(T_mono(FAINT, 11), hint(first[0], first[4]),
-                                                            "100:50-100:55")], w="hug", wrap=False),
-                  d="row", w="fill", wrap=True, gap=12, align="spaceBetweenStart")
-    stage_col = box("StageCol", stage + caption, w="fill", frac=3, minw=340, gap=16, basis=0)
-
+    # -- hero: the copy over the Lights example's screenshot and rive.app's
+    # scrim. The image box is absolute, so it covers the nav and the hero
+    # whatever their height, and the image `cover`s it at every width. It is
+    # declared last so it paints under them.
     cta_ex, cta_qs = ids(), ids()
     listeners += [(cta_ex, scroll_to(SEC_EXAMPLES)), (cta_qs, scroll_to(SEC_START))]
     copy = box("Copy",
@@ -388,18 +481,64 @@ def page():
                + text("OneLiner", [(T_body(), ONE_LINER)])
                + box("Ctas", button("CtaExamples", "BROWSE THE EXAMPLES", True, cta_ex)
                      + button("CtaQuickstart", "QUICKSTART", False, cta_qs),
-                     d="row", w="fill", wrap=True, gap=12, align="topLeft", style=' ')
-               , w="fill", frac=2, minw=320, gap=22, basis=0)
-    hero_row = box("HeroRow", stage_col + copy, d="rowReverse", w="fill", wrap=True, gapx=56, gapy=40,
-                   align="centerLeft")
-    hero = box("Hero", box("HeroInner", hero_row, pct=100, maxw=MAX_W),
-               w="fill", pad=(56, PAD_X, 24, PAD_X), align="topCenter")
+                     d="row", w="fill", wrap=True, gap=12, align="topLeft"),
+               w="fill", maxw=640, gap=22)
+    hero = box("Hero", box("HeroInner", copy, pct=100, maxw=MAX_W),
+               w="fill", pad=(280, PAD_X, 64, PAD_X), align="topCenter",
+               style_binds=bind_in(P_VH, K_PAD_TOP, C_HERO_PAD))
+    stops = "".join(f'<GradientStop colorValue="{c}" position="{p}"/>' for c, p in SCRIM)
+    scrim_fill = (f'<Fill name="Fill"><LinearGradient startX="0" startY="0" endX="0" endY="700" name="Scrim">'
+                  f'{bind_in(P_HERO_H, K_END_Y)}{stops}</LinearGradient></Fill>')
+    # The image's clip stops 2pt short of the hero's bottom, under the scrim's
+    # black end, so no antialiased row of it shows along the edge.
+    scrim = box("Scrim", absolute=INSET0, w="hug", h="hug", binds=scrim_fill)
+    image = (f'<Image assetId="{HERO_IMAGE}" fit="cover" name="HeroImage">'
+             f'<LayoutParticipant layoutWidthScaleType="fill" layoutHeightScaleType="fill" name="Layout"/></Image>')
+    image_box = box("HeroImageBox", image, d="row", absolute={"left": 0, "right": 0, "top": 0, "bottom": 2},
+                    w="hug", h="hug", clip=True)
+    media = box("HeroMedia", scrim + image_box, absolute=INSET0, style=PCT100, width=100, height=100,
+                w="fixed", h="fixed", fill=BG, binds=bind_out(P_HERO_H, K_HEIGHT_OUT))
+    top = box("Top", nav + hero + media, w="fill")
 
-    # -- examples
+    # -- examples: the header, the sticky stage, the card grid
+    player = (f'<NestedArtboardLayout artboardId="{first[1]}" instanceWidth="100" instanceWidthUnitsValue="percent" '
+              f'instanceHeight="100" instanceHeightUnitsValue="percent" name="Player" id="100:7">'
+              f'<DataBindContext sourcePathIds="100:50-100:51" propertyKey="197"/>'
+              f'<NestedStateMachine animationId="{first[2]}" name="SM"/></NestedArtboardLayout>')
+    stage = box("Stage", player, d="row", w="fill", h="fixed", height=420, frac=3, minw=300, basis=0,
+                clip=True, fill=STAGE_BG, stroke=LINE, bid="100:5",
+                binds=bind_out(P_STAGE_W, K_WIDTH_OUT) + bind_in(P_STAGE_W, K_HEIGHT, C_STAGE_H))
+    live = box("Live", box("LiveDot", w="fixed", h="fixed", width=6, height=6, fill=AMBER, radius=3)
+               + text("LiveLabel", [(T_mono(WHITE, 11), "LIVE")], w="hug", wrap=False),
+               d="row", w="hug", gap=8, align="centerLeft")
+    caption = box("Caption",
+                  live
+                  + text("DemoTitle", [(T_title(), first[0], "100:50-100:53")])
+                  + text("DemoBlurb", [(T_small(), first[3], "100:50-100:54")])
+                  + text("DemoHint", [(T_mono(FAINT, 11), hint(first[0], first[4]), "100:50-100:55")]),
+                  w="fill", gap=10, frac=1, minw=220, basis=0)
+    # The sticky band: the stage and its caption on black. The black reaches
+    # past the column (the cards' hairlines sit on the column's edge) and
+    # fades out below it. It is declared before the grid, so it paints over
+    # the cards. It is no hit target: an opaque one would also stop the page
+    # scrolling under it; the cards' clip window keeps them from the pointer.
+    band_bg = box("BandBg", absolute={"left": -PAD_X, "right": -PAD_X, "top": 0, "bottom": 0}, w="hug", h="hug", fill=BG)
+    fade = box("BandFade", absolute={"left": -PAD_X, "right": -PAD_X, "bottom": -FADE_H}, w="hug", h="fixed", height=FADE_H,
+               binds=f'<Fill name="Fill"><LinearGradient startX="0" startY="0" endX="0" endY="{FADE_H}" name="Fade">'
+                     f'<GradientStop colorValue="FF000000" position="0"/>'
+                     f'<GradientStop colorValue="00000000" position="1"/></LinearGradient></Fill>')
+    band = box("StickyBand", box("StageRow", stage + caption, d="row", w="fill", wrap=True, gapx=32, gapy=16,
+                                 align="topLeft") + band_bg + fade,
+               w="fill", pad=(16, 0, 16, 0), bid="100:11",
+               binds=bind_in(P_SLOT_Y, K_Y, C_STICKY))
+    # The slot keeps the band's place in the flow and is what is measured: the
+    # band's own `y` moves it, the slot never moves.
+    slot = box("StickySlot", band, w="fill", bid="100:12", binds=bind_out(P_SLOT_Y, K_WORLD_Y))
+
     pid = Ids(102, 1)
     cards = []
     for k, (name, ab, smid, blurb, inter) in enumerate(EXAMPLES):
-        slot, nid, iid = pid(), pid(), pid()
+        slot_id, nid, iid = pid(), pid(), pid()
         inst = (f'<ViewModelInstance viewModelId="101:50" exports="true" name="{name} Card" id="{iid}">'
                 f'<ViewModelInstanceString propertyValue={a(name)} viewModelPropertyId="101:51"/>'
                 f'<ViewModelInstanceString propertyValue="{k + 1:02d}" viewModelPropertyId="101:52"/>'
@@ -414,18 +553,22 @@ def page():
                   f'instanceWidthUnitsValue="percent" instanceHeightScaleType="hug" name="Card" id="{nid}">'
                   f'{inst}<NestedStateMachine animationId="101:2" name="SM"/></NestedArtboardLayout>')
         # The slot is the click target (a listener cannot target the nested
-        # artboard itself); the card inside handles its own hover.
+        # artboard itself); the card inside handles its own hover. No scroll:
+        # whenever a card is visible, so is the sticky stage above it.
         cards.append(box(f"Card{name}", nested, w="fill", frac=1, minw=150, maxw=320, basis="18%", fill="00000000",
-                         bid=slot))
-        listeners.append((slot, [("Artboard", 823, "100:51", ab), ("Number", 636, "100:52", k),
-                                 ("String", 635, "100:53", name), ("String", 635, "100:54", blurb),
-                                 ("String", 635, "100:55", hint(name, inter))] + scroll_to(SEC_HERO)))
+                         bid=slot_id))
+        listeners.append((slot_id, [("Artboard", 823, "100:51", ab), ("Number", 636, "100:52", k),
+                                    ("String", 635, "100:53", name), ("String", 635, "100:54", blurb),
+                                    ("String", 635, "100:55", hint(name, inter))]))
     # Cards take 18% of the row (five a row from tablet to desktop, 4 rows
     # of 5) with a 150pt floor (two a row on a phone), then grow to fill it.
-    grid = box("Cards", "".join(cards), d="row", w="fill", wrap=True, gap=16, align="topCenter")
+    grid = box("Cards", "".join(cards), d="row", w="fill", wrap=True, gap=16, align="topCenter",
+               binds=bind_out(P_CARDS_H, K_HEIGHT_OUT) + bind_in(P_SLOT_Y, K_Y, C_CLIP_UP))
+    grid = box("CardsWindow", grid, w="fill", clip=True, pad=WIN_PAD, style=WIN_MARGIN, binds=bind_in(P_SLOT_Y, K_Y, C_CLIP_DOWN))
     examples = section("Examples", header("EXAMPLES", f"{len(EXAMPLES)} LIVE DEMOS",
-                                          "Click a card to run it in the stage above: every example is a Rive "
-                                          "artboard, and keeps its own pointer input.") + grid, top=72)
+                                          "Click a card to run it in the stage: every example is a Rive "
+                                          "artboard, and keeps its own pointer input.")
+                       + slot + grid, top=72, gap=STICKY_GAP)
 
     # -- get started: steps and the quickstart code
     steps = []
@@ -465,11 +608,12 @@ def page():
                  + box("FootBand", foot_row, w="fill", pad=(32, PAD_X, 48, PAD_X), align="topCenter"),
                  w="fill", pad=(96, 0, 0, 0))
 
-    content = box("Content", nav + hero + examples + start + features + footer
+    content = box("Content", top + examples + start + features + footer
                   + '<ScrollConstraint directionValue="vertical" physicsId="100:9" name="Scroll" id="100:8">'
                     '<DataBindContext sourcePathIds="100:50-100:57" propertyKey="763"/></ScrollConstraint>',
                   w="fill", h="hug", align="topCenter", bid="100:6")
-    viewport = box("Viewport", content, w="fill", h="fill", clip=True, bid="100:10")
+    viewport = box("Viewport", content, w="fill", h="fill", clip=True, bid="100:10",
+                   binds=bind_out(P_VH, K_HEIGHT_OUT) + bind_out(P_VW, K_WIDTH_OUT))
 
     # -- the state machine: clicks write the view model
     def write(kind, key, prop, value):
@@ -592,6 +736,7 @@ def roots():
     examples = "\n    ".join(
         f'<ComponentAsset artboardId="{ab}" name="{n}" id="104:{10 + k}"/>'
         for k, (n, ab, *_rest) in enumerate(EXAMPLES))
+    converters = "\n    ".join(CONVERTERS)
     return f'''<ViewModel defaultInstanceId="100:56" name="Gallery" id="100:50">
         <ViewModelPropertyArtboard name="demo" id="100:51"/>
         <ViewModelPropertyNumber name="selected" id="100:52"/>
@@ -599,6 +744,12 @@ def roots():
         <ViewModelPropertyString name="blurb" id="100:54"/>
         <ViewModelPropertyString name="hint" id="100:55"/>
         <ViewModelPropertyNumber name="section" id="100:57"/>
+        <ViewModelPropertyNumber name="viewportHeight" id="{P_VH}"/>
+        <ViewModelPropertyNumber name="viewportWidth" id="{P_VW}"/>
+        <ViewModelPropertyNumber name="stageSlotY" id="{P_SLOT_Y}"/>
+        <ViewModelPropertyNumber name="cardsHeight" id="{P_CARDS_H}"/>
+        <ViewModelPropertyNumber name="heroHeight" id="{P_HERO_H}"/>
+        <ViewModelPropertyNumber name="stageWidth" id="{P_STAGE_W}"/>
         <ViewModelInstance exports="true" name="Default" id="100:56">
             <ViewModelInstanceArtboard propertyValue="{first[1]}" viewModelPropertyId="100:51"/>
             <ViewModelInstanceNumber propertyValue="{DEFAULT}" viewModelPropertyId="100:52"/>
@@ -606,8 +757,17 @@ def roots():
             <ViewModelInstanceString propertyValue={a(first[3])} viewModelPropertyId="100:54"/>
             <ViewModelInstanceString propertyValue={a(hint(first[0], first[4]))} viewModelPropertyId="100:55"/>
             <ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="100:57"/>
+            <ViewModelInstanceNumber propertyValue="900" viewModelPropertyId="{P_VH}"/>
+            <ViewModelInstanceNumber propertyValue="1440" viewModelPropertyId="{P_VW}"/>
+            <ViewModelInstanceNumber propertyValue="1000" viewModelPropertyId="{P_SLOT_Y}"/>
+            <ViewModelInstanceNumber propertyValue="1000" viewModelPropertyId="{P_CARDS_H}"/>
+            <ViewModelInstanceNumber propertyValue="700" viewModelPropertyId="{P_HERO_H}"/>
+            <ViewModelInstanceNumber propertyValue="930" viewModelPropertyId="{P_STAGE_W}"/>
         </ViewModelInstance>
     </ViewModel>
+
+    <!-- Formula converters for the sticky stage, its height and the hero. -->
+    {converters}
 
     <ViewModel defaultInstanceId="101:57" name="ExampleCard" id="101:50">
         <ViewModelPropertyString componentProps="1" name="name" id="101:51"/>
@@ -637,6 +797,8 @@ def roots():
     <FontAsset file="gallery/fonts/Orbitron.ttf" name="Orbitron" id="{ORBITRON}"/>
     <FontAsset file="gallery/fonts/Inter.ttf" name="Inter" id="{INTER}"/>
     <FontAsset file="gallery/fonts/IoskeleyMono-Regular.ttf" name="IoskeleyMono" id="{MONO}"/>
+    <!-- The hero: the Lights example at 2560x1440, cropped (make_gallery.py --thumbs). -->
+    <ImageAsset file="gallery/hero.jpg" name="hero" id="{HERO_IMAGE}"/>
     {thumbs}'''
 
 
@@ -648,7 +810,9 @@ HEADER = """<Rive version="1" kind="fragment">
          NestedArtboardLayout has its artboardId bound to the Gallery view
          model's `demo` artboard property; clicking an ExampleCard writes that
          property, so the example artboard from examples/examples.rml runs
-         live and takes pointer input in place. -->
+         live and takes pointer input in place. The stage is sticky over the
+         card grid: its offset is derived from laid-out values the page binds
+         back into the view model (see make_gallery.py's docstring). -->
 """
 
 
@@ -665,6 +829,17 @@ def thumbs():
         subprocess.run(["sips", "-z", "270", "480", crop, "--out", os.path.join(HERE, "thumbs", name + ".png")],
                        check=True, stdout=subprocess.DEVNULL)
         print("thumb", name)
+    # The hero: Lights at 2560x1440, its right 320px cropped off so the knot
+    # and the sphere sit right of the copy, as a JPEG.
+    shot = os.path.join(shots, "hero.png")
+    crop = os.path.join(shots, "hero_crop.png")
+    subprocess.run(["rive", root, "--artboard=Lights", "--viewport=2560x1440", f"--screenshot={shot}",
+                    "--advance=2s"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["sips", "-c", "1440", "2240", "--cropOffset", "0", "0", shot, "--out", crop],
+                   check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "82", crop,
+                    "--out", os.path.join(HERE, "hero.jpg")], check=True, stdout=subprocess.DEVNULL)
+    print("hero")
 
 
 def main():

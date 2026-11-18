@@ -86,21 +86,28 @@ rive . --screenshot=build/s.png --advance=1s      # headless render
 ## Gallery
 
 `gallery/` is the project's landing page, built in Rive (RML, no HTML) in
-rive.app's style: install, quickstart, features, and a card per example.
-It is made of Rive layouts, so it reflows to the window (two columns when
-wide, one on a phone) and scrolls. Clicking a card plays that example
-artboard live on the page's stage, at the stage's size, with its pointer
-input (orbit, zoom, clicks).
+rive.app's style: a hero over a screenshot of the Lights example, a card
+per example, install, quickstart and features. It is made of Rive layouts,
+so it reflows to the window (two columns when wide, one on a phone) and
+scrolls. Clicking a card plays that example artboard live on the page's
+stage, at the stage's size, with its pointer input (orbit, zoom, clicks).
+The stage sits above the cards and sticks to the top of the window while
+they scroll under it, then leaves with the Examples section.
 
 ```bash
 rive . --artboard=Gallery                         # the landing page
 python3 gallery/make_gallery.py                   # regenerate gallery/gallery.rml
-python3 gallery/make_gallery.py --thumbs          # ... and the card thumbnails (macOS)
+python3 gallery/make_gallery.py --thumbs          # ... and the thumbnails and hero image (macOS)
 ```
 
 The stage is a nested artboard whose artboard is bound to a view model
 property that the cards' listeners write, so the example artboards are
-marked `isComponent="true"` in `examples/examples.rml`.
+marked `isComponent="true"` in `examples/examples.rml`. Rive has no sticky
+positioning: the page binds laid-out values (the stage slot's position, the
+grid's height, the window's size) back into its view model, and formula
+converters derive the stage's offset and height from them. The cards that
+pass behind the stage are clipped off, which also keeps them from the
+pointer.
 
 ## What is there
 
