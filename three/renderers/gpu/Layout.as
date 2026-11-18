@@ -69,4 +69,5 @@ export const FOG_LINEAR: f32 = 1;
 export const FOG_EXP2: f32 = 2;
 
 /// Instance buffer stride: a mat4 then an RGBA colour.
-export const INSTANCE_STRIDE: u32 = 80;
+export const INSTANCE_MATRIX_STRIDE: u32 = 64;   // slot 4: a mat4 per instance
+export const INSTANCE_COLOR_STRIDE: u32 = 12;    // slot 5: rgb per instance

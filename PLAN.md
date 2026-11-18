@@ -153,15 +153,21 @@ In steps, each committed with tests and a screenshot check:
 - Later: cube textures and cube environment maps, a real PMREM (GGX
   prefiltering pass), alpha-tested shadows.
 
-### M6: post-processing and performance
+### M6: post-processing and performance (done)
 
 - (M6a, done) EffectComposer with RenderPass, ShaderPass, UnrealBloomPass,
   OutputPass, FXAAPass over HalfFloat (rgba16float) render targets. Later:
   SMAA, SSAO, bokeh.
-- Batching and sorting by pipeline/material, instancing paths, uploads
-  from `Blob`s off the main lane.
-- Benchmarks against equivalent three.js scenes; the published-web check
-  (`--publish=web`) for WebGPU validity.
+- (M6b, done) Per-object blocks in one uniform buffer bound at dynamic
+  offsets (one upload per draw list), redundant vertex/index/material binds
+  skipped, InstancedMesh matrices uploaded as is (colours in their own
+  buffer). The Benchmark artboard (1000 meshes, 10000 moving instances,
+  interpreter tier) went from 6.1 ms to 4.2 ms of render script time:
+  `rive . --artboard=Benchmark --bench=300`.
+- Later: BatchedMesh; skipping unchanged object blocks; geometry uploads
+  from `Blob`s (GPUBuffer.fromBlob) in the loaders; comparing against
+  three.js in a browser; validating `--gpu-manifest` output with Rive's
+  WebGPU validator (not installed here) before `--publish=web`.
 
 ## Deviations from three.js
 

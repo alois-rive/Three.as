@@ -357,6 +357,21 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Benchmark: 1000 meshes and 10000 instances, moving
+         (examples/benchmark.as; rive . --artboard=Benchmark --bench=300). -->
+    <Artboard defaultStateMachineId="0:1507" clip="true" x="3600" y="2800" width="800" height="600" styleId="0:1501" name="Benchmark" id="0:1500">
+        <LayoutComponentStyle name="Artboard Style" id="0:1501"/>
+        <LayoutComponent width="800" height="600" styleId="0:1503" name="Root" id="0:1502">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1503"/>
+            <ScriptedLayout scriptAssetId="0:1590" name="Scene" id="0:1504"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1507">
+            <StateMachineLayer name="Layer 1" id="0:1508">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -371,4 +386,5 @@
     <ScriptAsset file="examples/environment.as" name="environment" id="0:1290"/>
     <ScriptAsset file="examples/shadows.as" name="shadows" id="0:1390"/>
     <ScriptAsset file="examples/postprocessing.as" name="postprocessing" id="0:1490"/>
+    <ScriptAsset file="examples/benchmark.as" name="benchmark" id="0:1590"/>
 </Rive>

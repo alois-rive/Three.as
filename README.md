@@ -71,6 +71,7 @@ rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a l
 rive . --artboard=Environment                     # image-based lighting
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
+rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```

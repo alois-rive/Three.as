@@ -69,6 +69,7 @@ export class Demo extends Layout {
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
+| custom vertex layouts | fixed slots: 0 position, 1 normal, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6-7 skin index/weight |
 | `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
 
 ## Language (AnimaScript is typed and compiled)

@@ -96,7 +96,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -140,6 +140,9 @@ class CustomPipeline {
     layout1: GPUBindGroupLayout;
     layout2: GPUBindGroupLayout? = null;
     frameGroup: GPUBindGroup;
+    // Its group 1 over the object arena (rebuilt when the arena grows).
+    objGroup: GPUBindGroup? = null;
+    objArena: GPUBuffer? = null;
 
     constructor(pipeline: GPUPipeline, layout0: GPUBindGroupLayout, layout1: GPUBindGroupLayout, frameGroup: GPUBindGroup) {
         this.pipeline = pipeline;
@@ -176,11 +179,14 @@ class MorphGPU {
 
 // An InstancedMesh's packed instance buffer.
 class InstanceGPU {
-    buffer: GPUBuffer? = null;
+    /// instanceMatrix, uploaded as is (64 bytes an instance).
+    matrices: GPUBuffer? = null;
+    /// instanceColor (12 bytes an instance), or the shared white buffer.
+    colors: GPUBuffer? = null;
+    ownColors: bool = false;
     matrixVersion: i32 = -1;
     colorVersion: i32 = -1;
     count: i32 = -1;
-    staging: Float32Array = new Float32Array(0);
 }
 
 // -----------------------------------------------------------------------------
@@ -227,19 +233,17 @@ export class RendererInfo {
 
 // One draw's state, kept across frames.
 class DrawState {
-    ubo: GPUBuffer;
+    /// Byte offset of its object block in the renderer's object arena
+    /// (bound with a dynamic offset), valid for the render it was written in.
+    objOffset: u32 = 0;
+    /// Skinned draws: a group 1 of their own (arena + their bones).
     objGroup: GPUBindGroup? = null;
+    arena: GPUBuffer? = null;
     bones: GPUBuffer? = null;
-    customObjGroup: GPUBindGroup? = null;
-    customLayout: GPUBindGroupLayout? = null;
     matGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     sampler: GPUSampler? = null;
     frame: i32 = -1;
-
-    constructor() {
-        this.ubo = new GPUBuffer(BufferUsage.uniform, <u32>OBJ_BYTES);
-    }
 }
 
 // One draw of this frame.
@@ -256,6 +260,7 @@ class DrawItem {
     first: i32 = 0;
     count: i32 = 0;
     instances: GPUBuffer;
+    instanceColors: GPUBuffer;
     instanceCount: u32 = 1;
     skinned: bool = false;
     bones: GPUBuffer? = null;
@@ -264,12 +269,14 @@ class DrawItem {
     positionOverride: GPUBuffer? = null;
     normalOverride: GPUBuffer? = null;
 
-    constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer) {
+    constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer,
+                instanceColors: GPUBuffer) {
         this.object = object;
         this.material = material;
         this.geometry = geometry;
         this.state = state;
         this.instances = instances;
+        this.instanceColors = instanceColors;
     }
 }
 
@@ -327,8 +334,21 @@ export class GPURenderer {
     private frameGroup: GPUBindGroup? = null;
     private frameStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
     private objStaging: ArrayBuffer = new ArrayBuffer(OBJ_BYTES);
+    // Every draw's object block, in one uniform buffer bound at a dynamic
+    // offset per draw (one upload per list instead of one per draw).
+    private arena: GPUBuffer? = null;
+    private arenaStaging: ArrayBuffer = new ArrayBuffer(0);
+    private arenaBytes: Uint8Array = new Uint8Array(0);
+    private objBytes: Uint8Array = Uint8Array.wrap(this.objStaging);
+    private arenaCapacity: i32 = 0;
+    private arenaUsed: i32 = 0;
+    private arenaGroup: GPUBindGroup? = null;
+    private dynamicOffset: Array<u32> = [0];
     private white: GPUTextureView? = null;
     private identityInstance: GPUBuffer? = null;
+    private identityColor: GPUBuffer? = null;
+    private whiteColors: GPUBuffer? = null;
+    private whiteCount: i32 = 0;
     private samplers: Map<i32, GPUSampler> = new Map<i32, GPUSampler>();
     private bgGroup: GPUBindGroup? = null;
     private bgView: GPUTextureView? = null;
@@ -446,6 +466,7 @@ export class GPURenderer {
     render(scene: Object3D, camera: Camera): void {
         const info = this.info.render;
         info.frame++;
+        this.arenaUsed = 0;
         info.calls = 0;
         info.triangles = 0;
         info.culled = 0;
@@ -594,9 +615,12 @@ export class GPURenderer {
     /// Frees every GPU resource the renderer made.
     dispose(): void {
         this.geometries.disposeAll();
-        const states = this.states.values();
-        for (let i = 0; i < states.length; i++) states[i].ubo.release();
         this.states.clear();
+        const arena = this.arena;
+        if (arena != null) arena.release();
+        this.arena = null;
+        this.arenaGroup = null;
+        this.arenaCapacity = 0;
         this.pipelines.clear();
         this.mainTargets.release();
         const rts = this.rtTargets.values();
@@ -635,7 +659,7 @@ export class GPURenderer {
             if (module == null) return this.fail("shader asset 'three/shaders/three.wgsl' not found");
             this.module = module;
             const g0 = GPUBindGroupLayout.fromShader(module, 0);
-            const g1 = GPUBindGroupLayout.fromShader(module, 1);
+            const g1 = GPUBindGroupLayout.fromShader(module, 1, [0]);
             const g2 = GPUBindGroupLayout.fromShader(module, 2);
             const g3 = GPUBindGroupLayout.fromShader(module, 3);
             if (g0 == null || g1 == null || g2 == null || g3 == null) return this.fail("bind group layouts rejected");
@@ -644,22 +668,26 @@ export class GPURenderer {
             this.matLayout = g2;
             this.bgLayout = g3;
 
+            // Instances: matrices at slot 4 (InstancedMesh.instanceMatrix as
+            // is), colours at slot 5 (instanceColor, rgb).
             const instance = new GPUVertexBufferLayout();
-            instance.stride = INSTANCE_STRIDE;
+            instance.stride = INSTANCE_MATRIX_STRIDE;
             instance.stepMode = VertexStepMode.instance;
             instance.attributes = [
                 new GPUVertexAttribute(VertexFormat.float4, 4, 0),
                 new GPUVertexAttribute(VertexFormat.float4, 5, 16),
                 new GPUVertexAttribute(VertexFormat.float4, 6, 32),
                 new GPUVertexAttribute(VertexFormat.float4, 7, 48),
-                new GPUVertexAttribute(VertexFormat.float4, 8, 64),
             ];
+            const instanceColor = vertexLayout(INSTANCE_COLOR_STRIDE, VertexFormat.float3, 8);
+            instanceColor.stepMode = VertexStepMode.instance;
             this.vertexBuffers = [
                 vertexLayout(12, VertexFormat.float3, 0),
                 vertexLayout(12, VertexFormat.float3, 1),
                 vertexLayout(8, VertexFormat.float2, 2),
                 vertexLayout(16, VertexFormat.float4, 3),
                 instance,
+                instanceColor,
             ];
             const pointPosition = vertexLayout(12, VertexFormat.float3, 0);
             pointPosition.stepMode = VertexStepMode.instance;
@@ -701,10 +729,12 @@ export class GPURenderer {
             this.white = white.view();
 
             // One identity instance (white) for every non-instanced draw.
-            const id = new Float32Array(20);
+            const id = new Float32Array(16);
             id[0] = 1; id[5] = 1; id[10] = 1; id[15] = 1;
-            id[16] = 1; id[17] = 1; id[18] = 1; id[19] = 1;
-            this.identityInstance = new GPUBuffer(BufferUsage.vertex, <u32>INSTANCE_STRIDE, id.buffer, true);
+            this.identityInstance = new GPUBuffer(BufferUsage.vertex, <u32>INSTANCE_MATRIX_STRIDE, id.buffer, true);
+            const white3 = new Float32Array(3);
+            white3.fill(1);
+            this.identityColor = new GPUBuffer(BufferUsage.vertex, <u32>INSTANCE_COLOR_STRIDE, white3.buffer, true);
         }
         return true;
     }
@@ -818,7 +848,7 @@ export class GPURenderer {
             return null;
         }
         const g0 = GPUBindGroupLayout.fromShader(module, 0);
-        const g1 = GPUBindGroupLayout.fromShader(module, 1);
+        const g1 = GPUBindGroupLayout.fromShader(module, 1, [0]);
         if (g0 == null || g1 == null) return null;
         const hasUniforms = material.uniforms.size > 0;
         const g2 = hasUniforms ? GPUBindGroupLayout.fromShader(module, 2) : null;
@@ -1067,11 +1097,14 @@ export class GPURenderer {
 
         const mesh = o as Mesh;
         let instances = this.identityInstance!;
+        let colors = this.identityColor!;
         let instanceCount: u32 = 1;
         if (mesh instanceof InstancedMesh) {
             const im = mesh as InstancedMesh;
             if (im.count <= 0) return;
-            instances = this.instanceBuffer(im);
+            const ig = this.instanceBuffer(im);
+            instances = ig.matrices!;
+            colors = ig.colors!;
             instanceCount = <u32>im.count;
         }
         const groups = geometry.groups;
@@ -1083,16 +1116,17 @@ export class GPURenderer {
                 const start = max<i32>(rangeStart, group.start);
                 const end = min<i32>(rangeEnd, group.start + group.count);
                 this.addMeshDraw(mesh, mesh.materials[mi], geometry, g, i + 1, start, end, frame, instances,
-                    instanceCount);
+                    colors, instanceCount);
             }
         } else {
             this.addMeshDraw(mesh, override != null ? override : mesh.material, geometry, g, 0, rangeStart, rangeEnd,
-                frame, instances, instanceCount);
+                frame, instances, colors, instanceCount);
         }
     }
 
     private addMeshDraw(mesh: Mesh, material: Material, geometry: BufferGeometry, g: GeometryGPU, part: i32,
-                        start: i32, end: i32, frame: i32, instances: GPUBuffer, instanceCount: u32): void {
+                        start: i32, end: i32, frame: i32, instances: GPUBuffer, colors: GPUBuffer,
+                        instanceCount: u32): void {
         if (material.wireframe) {
             if (!this.geometries.lines(geometry, g, LINE_WIREFRAME)) return;
             // Each triangle's three edges: index range x2.
@@ -1101,12 +1135,14 @@ export class GPURenderer {
             item.index = g.lineBuffers[LINE_WIREFRAME];
             item.indexFormat = <u32>g.lineFormats[LINE_WIREFRAME];
             item.instances = instances;
+            item.instanceColors = colors;
             item.instanceCount = instanceCount;
             return;
         }
         const item = this.addDraw(mesh, material, g, part, start, end, frame, PRIM_TRIANGLES);
         if (item == null) return;
         item.instances = instances;
+        item.instanceColors = colors;
         item.instanceCount = instanceCount;
         if (g.indexed) {
             item.index = g.index;
@@ -1209,7 +1245,7 @@ export class GPURenderer {
             if (t != null) this.textures.update(t, frame);
         }
 
-        const item = new DrawItem(object, material, g, state, this.identityInstance!);
+        const item = new DrawItem(object, material, g, state, this.identityInstance!, this.identityColor!);
         item.prim = prim;
         item.first = start;
         item.count = end - start;
@@ -1238,7 +1274,7 @@ export class GPURenderer {
 
     /// The InstancedMesh's instances, packed as mat4 + RGBA, re-uploaded when
     /// instanceMatrix or instanceColor changed.
-    private instanceBuffer(im: InstancedMesh): GPUBuffer {
+    private instanceBuffer(im: InstancedMesh): InstanceGPU {
         let ig: InstanceGPU;
         if (this.instanceBuffers.has(im.id)) ig = this.instanceBuffers.get(im.id);
         else {
@@ -1248,37 +1284,35 @@ export class GPURenderer {
         const capacity = im.instanceMatrix.count;
         const colors = im.instanceColor;
         const colorVersion = colors != null ? colors.version : -2;
-        if (ig.buffer != null && ig.matrixVersion == im.instanceMatrix.version && ig.colorVersion == colorVersion
-                && ig.count == capacity) {
-            return ig.buffer!;
+        const resized = ig.count != capacity;
+        if (resized || ig.matrixVersion != im.instanceMatrix.version || ig.matrices == null) {
+            ig.matrices = uploadVertices(resized ? null : ig.matrices, im.instanceMatrix.array);
+            ig.matrixVersion = im.instanceMatrix.version;
         }
-        const floats = <i32>INSTANCE_STRIDE / 4;
-        if (ig.staging.length != capacity * floats) ig.staging = new Float32Array(capacity * floats);
-        const out = ig.staging;
-        const m = im.instanceMatrix.array;
-        for (let i = 0; i < capacity; i++) {
-            const o = i * floats;
-            for (let k = 0; k < 16; k++) out[o + k] = m[i * 16 + k];
+        if (resized || ig.colorVersion != colorVersion || ig.colors == null) {
             if (colors != null) {
-                out[o + 16] = colors.array[i * 3];
-                out[o + 17] = colors.array[i * 3 + 1];
-                out[o + 18] = colors.array[i * 3 + 2];
+                ig.colors = uploadVertices(ig.ownColors && !resized ? ig.colors : null, colors.array);
+                ig.ownColors = true;
             } else {
-                out[o + 16] = 1; out[o + 17] = 1; out[o + 18] = 1;
+                ig.colors = this.white3(capacity);
+                ig.ownColors = false;
             }
-            out[o + 19] = 1;
+            ig.colorVersion = colorVersion;
         }
-        const bytes = out.buffer;
-        const existing = ig.buffer;
-        if (existing != null && existing.size == <u32>bytes.byteLength) existing.update(0, bytes);
-        else {
-            if (existing != null) existing.release();
-            ig.buffer = new GPUBuffer(BufferUsage.vertex, <u32>bytes.byteLength, bytes);
-        }
-        ig.matrixVersion = im.instanceMatrix.version;
-        ig.colorVersion = colorVersion;
         ig.count = capacity;
-        return ig.buffer!;
+        return ig;
+    }
+
+    /// A white colour per instance for `count` instances (shared, grown).
+    private white3(count: i32): GPUBuffer {
+        if (this.whiteColors == null || this.whiteCount < count) {
+            const n = max<i32>(count, max<i32>(1024, this.whiteCount * 2));
+            const data = new Float32Array(n * 3);
+            data.fill(1);
+            this.whiteColors = new GPUBuffer(BufferUsage.vertex, <u32>(n * INSTANCE_COLOR_STRIDE), data.buffer, true);
+            this.whiteCount = n;
+        }
+        return this.whiteColors!;
     }
 
     /// Prepares the background texture's bind group; true when there is
@@ -1477,23 +1511,25 @@ export class GPURenderer {
                 const item = items[i];
                 const g = item.geometry!;
                 const state = item.state;
-                if (state.objGroup == null) continue;
+                if (state.frame != frame) continue;
                 const key = item.pipelineKey;
                 if (key != lastKey) {
                     pass.setPipeline(this.shadowPipeline(key));
                     pass.setBindGroup(0, this.tileGroups[t]);
                     lastKey = key;
                 }
-                pass.setBindGroup(1, state.objGroup!);
+                this.dynamicOffset[0] = state.objOffset;
+                pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
                 const pos = item.positionOverride;
                 pass.setVertexBuffer(0, pos != null ? pos : g.position!);
                 pass.setVertexBuffer(1, g.normal!);
                 pass.setVertexBuffer(2, g.uv!);
                 pass.setVertexBuffer(3, g.color!);
                 pass.setVertexBuffer(4, item.instances);
+                pass.setVertexBuffer(5, item.instanceColors);
                 if (item.skinned) {
-                    pass.setVertexBuffer(5, g.skinIndex!);
-                    pass.setVertexBuffer(6, g.skinWeight!);
+                    pass.setVertexBuffer(6, g.skinIndex!);
+                    pass.setVertexBuffer(7, g.skinWeight!);
                 }
                 const index = item.index;
                 if (index != null) {
@@ -1514,11 +1550,14 @@ export class GPURenderer {
         if (g == null) return;
         const material = mesh.material;
         let instances = this.identityInstance!;
+        let colors = this.identityColor!;
         let instanceCount: u32 = 1;
         if (mesh instanceof InstancedMesh) {
             const im = mesh as InstancedMesh;
             if (im.count <= 0) return;
-            instances = this.instanceBuffer(im);
+            const ig = this.instanceBuffer(im);
+            instances = ig.matrices!;
+            colors = ig.colors!;
             instanceCount = <u32>im.count;
         }
         const stateKey = mesh.id * 64;
@@ -1528,7 +1567,7 @@ export class GPURenderer {
             state = new DrawState();
             this.states.set(stateKey, state);
         }
-        const item = new DrawItem(mesh, material, g, state, instances);
+        const item = new DrawItem(mesh, material, g, state, instances, colors);
         item.instanceCount = instanceCount;
         item.first = 0;
         item.count = g.count;
@@ -1766,11 +1805,65 @@ export class GPURenderer {
         f[s + 5] = light instanceof PointLight ? 1 : 0;
     }
 
+    /// Room for `count` more object blocks in the arena (grows it, keeping
+    /// what this render wrote; returns true when it moved).
+    private reserveArena(count: i32): bool {
+        const need = this.arenaUsed + count;
+        if (need <= this.arenaCapacity && this.arena != null) return false;
+        let capacity = max<i32>(64, this.arenaCapacity);
+        while (capacity < need) capacity *= 2;
+        const staging = new ArrayBuffer(capacity * OBJ_BYTES);
+        const bytes = Uint8Array.wrap(staging);
+        if (this.arenaUsed > 0) bytes.set(this.arenaBytes.subarray(0, this.arenaUsed * OBJ_BYTES));
+        this.arenaStaging = staging;
+        this.arenaBytes = bytes;
+        this.arena = new GPUBuffer(BufferUsage.uniform, <u32>(capacity * OBJ_BYTES));
+        this.arenaCapacity = capacity;
+        this.arenaGroup = null;
+        return true;
+    }
+
+    /// The group 1 of a draw: the shared arena group, or for a skinned
+    /// draw one with its bones (both read the block at state.objOffset).
+    private objGroupOf(item: DrawItem): GPUBindGroup {
+        const arena = this.arena!;
+        if (!item.skinned || item.bones == null) {
+            let g = this.arenaGroup;
+            if (g == null) {
+                g = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
+                    new GPUBindGroupUBO(1, this.dummyBones!)]);
+                this.arenaGroup = g;
+            }
+            return g;
+        }
+        const state = item.state;
+        const bones = item.bones!;
+        if (state.objGroup == null || state.arena !== arena || state.bones !== bones) {
+            state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
+                new GPUBindGroupUBO(1, bones)]);
+            state.arena = arena;
+            state.bones = bones;
+        }
+        return state.objGroup!;
+    }
+
+    /// A ShaderMaterial pipeline's group 1 over the arena.
+    private customObjGroup(cp: CustomPipeline): GPUBindGroup {
+        const arena = this.arena!;
+        if (cp.objGroup == null || cp.objArena !== arena) {
+            cp.objGroup = new GPUBindGroup(cp.layout1, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES)]);
+            cp.objArena = arena;
+        }
+        return cp.objGroup!;
+    }
+
     private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
         const buf = this.objStaging;
         const f = Float32Array.wrap(buf);
         const u = Uint32Array.wrap(buf);
         const mu = this.uniforms;
+        const moved = this.reserveArena(list.length);
+        const firstSlot = this.arenaUsed;
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             const state = item.state;
@@ -1846,28 +1939,19 @@ export class GPURenderer {
             if (object.receiveShadow && this.tileCount > 0) flags |= FLAG_RECEIVE_SHADOW;
             o = OBJ_FLAGS >> 2;
             u[o] = premul; u[o + 1] = flags; u[o + 2] = 0; u[o + 3] = 0;
-            state.ubo.update(0, buf);
-
             if (item.skinned) {
                 const sm = object as SkinnedMesh;
                 sm.bindMatrix.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX);
                 sm.bindMatrixInverse.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX_INVERSE);
-                state.ubo.update(0, buf);
             }
+            const slot = this.arenaUsed++;
+            state.objOffset = <u32>(slot * OBJ_BYTES);
+            this.arenaBytes.set(this.objBytes, <i32>state.objOffset);
+
             const cp = item.custom;
             if (cp != null) {
-                if (state.customObjGroup == null || state.customLayout !== cp.layout1) {
-                    state.customObjGroup = new GPUBindGroup(cp.layout1, [new GPUBindGroupUBO(0, state.ubo)]);
-                    state.customLayout = cp.layout1;
-                }
                 item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
                 continue;
-            }
-            const bones = item.bones != null ? item.bones! : this.dummyBones!;
-            if (state.objGroup == null || state.bones !== bones) {
-                state.objGroup = new GPUBindGroup(this.objLayout!,
-                    [new GPUBindGroupUBO(0, state.ubo), new GPUBindGroupUBO(1, bones)]);
-                state.bones = bones;
             }
             let changed = state.matGroup == null || state.sampler !== sampler;
             for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.views[s] !== views[s];
@@ -1882,6 +1966,13 @@ export class GPURenderer {
                 state.sampler = sampler;
             }
         }
+        // One upload: the new blocks, or everything this render wrote when
+        // the arena moved.
+        const from = moved ? 0 : firstSlot;
+        const count = this.arenaUsed - from;
+        if (count > 0) {
+            this.arena!.update(<u32>(from * OBJ_BYTES), this.arenaStaging, <u32>(count * OBJ_BYTES), <u32>(from * OBJ_BYTES));
+        }
     }
 
     // ------------------------------------------------------------------ draw
@@ -1889,6 +1980,11 @@ export class GPURenderer {
     private drawList(pass: GPURenderPass, list: Array<DrawItem>): void {
         const info = this.info.render;
         let lastKey = -1;
+        // Bindings already set (draws sharing a geometry or material skip them).
+        let lastMat: GPUBindGroup? = null;
+        let lastPos: GPUBuffer? = null, lastNrm: GPUBuffer? = null, lastUv: GPUBuffer? = null;
+        let lastColor: GPUBuffer? = null, lastInst: GPUBuffer? = null, lastIndex: GPUBuffer? = null;
+        let lastSkin: GPUBuffer? = null;
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             const state = item.state;
@@ -1898,7 +1994,10 @@ export class GPURenderer {
                 pass.setPipeline(cp.pipeline);
                 lastKey = -1;
                 pass.setBindGroup(0, cp.frameGroup);
-                pass.setBindGroup(1, state.customObjGroup!);
+                lastMat = null; lastPos = null; lastNrm = null; lastUv = null; lastColor = null;
+                lastInst = null; lastIndex = null; lastSkin = null;
+                this.dynamicOffset[0] = state.objOffset;
+                pass.setBindGroup(1, this.customObjGroup(cp), this.dynamicOffset);
                 const cu = item.customUniforms;
                 if (cu != null && cu.group != null) pass.setBindGroup(2, cu.group!);
                 pass.setVertexBuffer(0, g.position!);
@@ -1906,6 +2005,7 @@ export class GPURenderer {
                 pass.setVertexBuffer(2, g.uv!);
                 pass.setVertexBuffer(3, g.color!);
                 pass.setVertexBuffer(4, item.instances);
+                pass.setVertexBuffer(5, item.instanceColors);
                 const index = item.index;
                 if (index != null) {
                     pass.setIndexBuffer(index, item.indexFormat);
@@ -1917,14 +2017,19 @@ export class GPURenderer {
                 info.triangles += (item.count / 3) * <i32>item.instanceCount;
                 continue;
             }
-            if (state.objGroup == null || state.matGroup == null) continue;
+            if (state.matGroup == null) continue;
             if (item.pipelineKey != lastKey) {
                 pass.setPipeline(this.pipeline(item.pipelineKey));
                 pass.setBindGroup(0, this.frameGroup!);
                 lastKey = item.pipelineKey;
             }
-            pass.setBindGroup(1, state.objGroup!);
-            pass.setBindGroup(2, state.matGroup!);
+            this.dynamicOffset[0] = state.objOffset;
+            pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
+            const mat = state.matGroup!;
+            if (mat !== lastMat) {
+                pass.setBindGroup(2, mat);
+                lastMat = mat;
+            }
             const prim = item.prim;
             if (prim == PRIM_SPRITE) {
                 pass.draw(6);
@@ -1934,6 +2039,7 @@ export class GPURenderer {
             }
             const g = item.geometry!;
             if (prim == PRIM_POINTS) {
+                lastPos = null; lastColor = null;
                 pass.setVertexBuffer(0, g.position!, <u32>(item.first * 12));
                 pass.setVertexBuffer(1, g.color!, <u32>(item.first * 16));
                 pass.draw(6, <u32>item.count);
@@ -1941,20 +2047,36 @@ export class GPURenderer {
                 info.points += item.count;
                 continue;
             }
-            const pos = item.positionOverride;
-            const nrm = item.normalOverride;
-            pass.setVertexBuffer(0, pos != null ? pos : g.position!);
-            pass.setVertexBuffer(1, nrm != null ? nrm : g.normal!);
-            pass.setVertexBuffer(2, g.uv!);
-            pass.setVertexBuffer(3, g.color!);
-            pass.setVertexBuffer(4, item.instances);
+            const po = item.positionOverride;
+            const no = item.normalOverride;
+            const pos = po != null ? po! : g.position!;
+            const nrm = no != null ? no! : g.normal!;
+            if (pos !== lastPos) { pass.setVertexBuffer(0, pos); lastPos = pos; }
+            if (nrm !== lastNrm) { pass.setVertexBuffer(1, nrm); lastNrm = nrm; }
+            const uv = g.uv!;
+            if (uv !== lastUv) { pass.setVertexBuffer(2, uv); lastUv = uv; }
+            const color = g.color!;
+            if (color !== lastColor) { pass.setVertexBuffer(3, color); lastColor = color; }
+            const inst = item.instances;
+            if (inst !== lastInst) {
+                pass.setVertexBuffer(4, inst);
+                pass.setVertexBuffer(5, item.instanceColors);
+                lastInst = inst;
+            }
             if (item.skinned) {
-                pass.setVertexBuffer(5, g.skinIndex!);
-                pass.setVertexBuffer(6, g.skinWeight!);
+                const si = g.skinIndex!;
+                if (si !== lastSkin) {
+                    pass.setVertexBuffer(6, si);
+                    pass.setVertexBuffer(7, g.skinWeight!);
+                    lastSkin = si;
+                }
             }
             const index = item.index;
             if (index != null) {
-                pass.setIndexBuffer(index, item.indexFormat);
+                if (index !== lastIndex) {
+                    pass.setIndexBuffer(index, item.indexFormat);
+                    lastIndex = index;
+                }
                 pass.drawIndexed(<u32>item.count, item.instanceCount, <u32>item.first);
             } else {
                 pass.draw(<u32>item.count, item.instanceCount, <u32>item.first);
