@@ -35,6 +35,11 @@ with Rive's `GPUCanvas` and WGSL shaders. Read these before changing code:
   `examples/shaders/lit.wgsl` from it.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
+- A new example is an artboard in `examples/examples.rml` (with
+  `isComponent="true"`, so the gallery can nest it) plus a line in
+  `gallery/make_gallery.py`'s `EXAMPLES`; then run
+  `python3 gallery/make_gallery.py --thumbs`.
+
 ## Commands
 
 ```bash
