@@ -59,6 +59,8 @@ export abstract class ThreeLayout extends Layout {
     private captured: ArtboardTexture? = null;
     private uniforms: MaterialUniforms = new MaterialUniforms();
     private hitUv: Vector2 = new Vector2();
+    /// Seconds since the previous frame (the last advance).
+    delta: f64 = 0;
 
     override init(context: Context): bool {
         this.context = context;
@@ -92,16 +94,24 @@ export abstract class ThreeLayout extends Layout {
     }
 
     override advance(seconds: f64): bool {
+        this.delta = seconds;
         this.animate(seconds);
         const c = this.controls;
         if (c != null) c.update(seconds);
         return true;
     }
 
+    /// Renders the frame; override to render through an EffectComposer
+    /// (`this.composer.render(this.delta)`) or into render targets first.
+    renderFrame(): void {
+        const r = this.renderer;
+        if (r != null) r.render(this.scene, this.camera);
+    }
+
     override draw(renderer: Renderer): void {
         const r = this.renderer;
         if (r == null) return;
-        r.render(this.scene, this.camera);
+        this.renderFrame();
         r.present(renderer);
     }
 

@@ -93,7 +93,7 @@ struct FrameU {
     env: vec4<f32>,          // x 1 when there is an environment, y intensity, z max mip
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
-    shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size
+    shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
     lights: array<Light, 8>,
     shadow_tiles: array<ShadowTile, 12>,
 };
@@ -760,7 +760,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         }
     }
 
-    if ((flags & FLAG_TONE_MAPPED) != 0u) {
+    let linear_output = F.shadow_params.z > 0.5;
+    if ((flags & FLAG_TONE_MAPPED) != 0u && !linear_output) {
         rgb = tone_map(rgb);
     }
     if ((flags & FLAG_FOG) != 0u && F.fog_color.w > 0.5) {
@@ -772,6 +773,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             fog = 1.0 - exp(-d * d);
         }
         rgb = mix(rgb, F.fog_color.rgb, fog);
+    }
+    if (linear_output) {
+        return vec4<f32>(rgb * alpha, alpha);
     }
     return vec4<f32>(linear_to_srgb(rgb) * alpha, alpha);
 }
@@ -811,5 +815,9 @@ fn fs_background(in: BgOut) -> @location(0) vec4<f32> {
     }
     let texel = textureSampleLevel(t_background, s_background, uv, F.output.w);
     let c = decode(texel, F.bg_flags.w != 0u, F.bg_flags.y != 0u);
-    return vec4<f32>(linear_to_srgb(c.rgb * F.output.z), 1.0);
+    let bg = c.rgb * F.output.z;
+    if (F.shadow_params.z > 0.5) {
+        return vec4<f32>(bg, 1.0);
+    }
+    return vec4<f32>(linear_to_srgb(bg), 1.0);
 }

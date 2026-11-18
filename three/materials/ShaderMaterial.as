@@ -44,6 +44,9 @@ export abstract class UniformBase {
     /// Writes the value at byte `offset` of `f`.
     abstract write(f: Float32Array, offset: i32): void;
     texture(): Texture? { return null; }
+    /// A copy (vectors, colours and matrices copied; textures shared), as
+    /// three.js's UniformsUtils.clone.
+    abstract clone(): UniformBase;
 }
 
 /// A uniform holding `value`: f64 (f32 in WGSL), Vector2, Vector3,
@@ -108,6 +111,18 @@ export class Uniform<T> extends UniformBase {
             if (v instanceof Texture) return v as Texture;
         }
         return null;
+    }
+
+    override clone(): UniformBase {
+        if (isReference<T>()) {
+            const v = this.value;
+            if (v instanceof Vector2) return new Uniform<Vector2>((v as Vector2).clone());
+            if (v instanceof Vector3) return new Uniform<Vector3>((v as Vector3).clone());
+            if (v instanceof Color) return new Uniform<Color>((v as Color).clone());
+            if (v instanceof Vector4) return new Uniform<Vector4>((v as Vector4).clone());
+            if (v instanceof Matrix4) return new Uniform<Matrix4>((v as Matrix4).clone());
+        }
+        return new Uniform<T>(this.value);
     }
 }
 

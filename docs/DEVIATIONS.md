@@ -379,6 +379,33 @@ export class Demo extends Layout {
   `EquirectangularReflectionMapping` ones surround it, with
   `backgroundRotation` and `backgroundBlurriness` (a mip level).
 
+## Render targets and post-processing
+
+- `RenderTarget(w, h, { type })`: `UnsignedByteType` (the default) is a Rive
+  canvas holding sRGB, premultiplied colour, tone mapped; its `image` draws
+  with `Renderer.drawImage`. `HalfFloatType` / `FloatType` targets are an
+  rgba16float texture (FloatType too) holding **linear, not tone-mapped**
+  colour, as three.js's renderer writes into float targets; they have no
+  `image`. Materials skip tone mapping and sRGB encoding into them.
+- `EffectComposer`, `RenderPass`, `ShaderPass`, `OutputPass`, `FXAAPass`
+  and `UnrealBloomPass` are in `three/addons/postprocessing/` (not
+  `Three.as`). The composer's buffers are HalfFloatType; put an
+  `OutputPass` last (FXAA after it). The composer follows the renderer's
+  size on its own. ThreeLayout renders through `renderFrame()`: override it
+  with `composer.render(this.delta)`.
+- Shaders are `ShaderDefinition`s (`CopyShader`, `OutputShader`,
+  `FXAAShader`, `LuminosityHighPassShader`) over WGSL in
+  `three/shaders/post/`, instead of `{ uniforms, vertexShader,
+  fragmentShader }` objects: `new ShaderPass(FXAAShader)`, or
+  `ShaderPass.fromMaterial(material)` for a ShaderMaterial. A custom pass
+  shader follows the ShaderMaterial contract and places the quad itself
+  (copy `three/shaders/post/copy.wgsl`). `pass.uniform<T>(name).value`
+  replaces `pass.uniforms.name.value`.
+- `UnrealBloomPass` has no `bloomTintColors`; one shader holds its three
+  stages, so every stage material carries all its uniforms.
+- Not ported: MaskPass/ClearMaskPass, SMAA, SSAO, BokehPass, the other
+  shader passes; `Uniform.clone()` is UniformsUtils.clone per uniform.
+
 ## Rive-only additions
 
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
@@ -392,4 +419,4 @@ export class Demo extends Layout {
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
 RectAreaLight (not planned: it needs three.js's LTC tables),
-cube textures, ObjectLoader, post-processing, `EventDispatcher` events (`dispose` events are internal).
+cube textures, ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), `EventDispatcher` events (`dispose` events are internal).

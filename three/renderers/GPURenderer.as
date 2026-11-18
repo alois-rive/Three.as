@@ -317,7 +317,10 @@ export class GPURenderer {
     private warnedBones: bool = false;
     private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
     private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
+    // The colour format of the target being rendered (pipelines are cached
+    // per format).
     private pipelineFormat: u32 = 0xFFFFFFFF;
+    private linearOutput: bool = false;
     private samples: u32 = 1;
 
     private frameUbo: GPUBuffer? = null;
@@ -457,7 +460,7 @@ export class GPURenderer {
         if (rt != null) {
             pw = rt.width; ph = rt.height;
             if (pw == 0 || ph == 0) return;
-            canvas = rt.ensureCanvas(this.context);
+            canvas = rt.isHDR ? this.ensureCanvas() : rt.ensureCanvas(this.context);
             if (!this.rtTargets.has(rt.id)) this.rtTargets.set(rt.id, new PassTargets());
             targets = this.rtTargets.get(rt.id);
             this.passRatio = 1;
@@ -472,13 +475,27 @@ export class GPURenderer {
             this.passRatio = this.pixelRatio;
         }
         if (canvas == null) return;
-        const target = canvas.view;
+        // HDR targets render into their own texture, through the main canvas
+        // (any target can host a pass).
+        let target: GPUTextureView?;
+        this.linearOutput = false;
+        if (rt != null && rt.isHDR) {
+            const host = this.ensureCanvas();
+            if (host == null) return;
+            canvas = host;
+            target = rt.ensureHDR();
+            this.pipelineFormat = <u32>TextureFormat.rgba16float;
+            this.linearOutput = true;
+        } else {
+            target = canvas.view;
+            this.pipelineFormat = canvas.format;
+        }
         if (target == null) return;
         if (!this.ensureSetup(canvas)) return;
         this.passSamples = rt != null ? (rt.samples > 1 ? this.samples : 1) : this.samples;
         this.passWidth = pw;
         this.passHeight = ph;
-        this.ensureTargets(targets, canvas, pw, ph, this.passSamples);
+        this.ensureTargets(targets, this.pipelineFormat, pw, ph, this.passSamples);
         const depthView = targets.depthView;
         if (depthView == null) return;
         this.drainDisposed();
@@ -521,9 +538,13 @@ export class GPURenderer {
                 r = c.r * k; g = c.g * k; b = c.b * k; a = 1;
             }
         }
-        color.clearR = <f32>(LinearToSRGB(r) * a);
-        color.clearG = <f32>(LinearToSRGB(g) * a);
-        color.clearB = <f32>(LinearToSRGB(b) * a);
+        if (this.linearOutput) {
+            color.clearR = <f32>(r * a); color.clearG = <f32>(g * a); color.clearB = <f32>(b * a);
+        } else {
+            color.clearR = <f32>(LinearToSRGB(r) * a);
+            color.clearG = <f32>(LinearToSRGB(g) * a);
+            color.clearB = <f32>(LinearToSRGB(b) * a);
+        }
         color.clearA = <f32>a;
         color.loadOp = this.autoClear ? LoadOp.clear : LoadOp.load;
         const msaa = targets.msaaView;
@@ -534,7 +555,7 @@ export class GPURenderer {
             // An MSAA texture cannot keep the last frame: always clear it.
             color.loadOp = LoadOp.clear;
         } else {
-            color.view = null;
+            color.view = this.linearOutput ? target : null;
             color.resolveTarget = null;
             color.storeOp = StoreOp.store;
         }
@@ -685,15 +706,11 @@ export class GPURenderer {
             id[16] = 1; id[17] = 1; id[18] = 1; id[19] = 1;
             this.identityInstance = new GPUBuffer(BufferUsage.vertex, <u32>INSTANCE_STRIDE, id.buffer, true);
         }
-        if (this.pipelineFormat != canvas.format) {
-            this.pipelines.clear();
-            this.pipelineFormat = canvas.format;
-        }
         return true;
     }
 
-    private ensureTargets(t: PassTargets, canvas: GPUCanvas, w: u32, h: u32, samples: u32): void {
-        if (t.depthView != null && t.width == w && t.height == h && t.format == canvas.format && t.samples == samples) return;
+    private ensureTargets(t: PassTargets, format: u32, w: u32, h: u32, samples: u32): void {
+        if (t.depthView != null && t.width == w && t.height == h && t.format == format && t.samples == samples) return;
         t.release();
         const dd = new GPUTextureDesc();
         dd.width = w; dd.height = h;
@@ -706,7 +723,7 @@ export class GPURenderer {
         if (samples > 1) {
             const md = new GPUTextureDesc();
             md.width = w; md.height = h;
-            md.format = <TextureFormat>canvas.format;
+            md.format = <TextureFormat>format;
             md.renderTarget = true;
             md.sampleCount = samples;
             const msaa = new GPUTexture(md);
@@ -715,12 +732,13 @@ export class GPURenderer {
         }
         t.width = w;
         t.height = h;
-        t.format = canvas.format;
+        t.format = format;
         t.samples = samples;
     }
 
     private pipeline(key: i32): GPUPipeline {
-        if (this.pipelines.has(key)) return this.pipelines.get(key);
+        const cacheKey = key | (<i32>this.pipelineFormat << 16);
+        if (this.pipelines.has(cacheKey)) return this.pipelines.get(cacheKey);
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
         const ds = new GPUDepthStencilDesc();
@@ -774,7 +792,7 @@ export class GPURenderer {
             }
         }
         const p = new GPUPipeline(d);
-        this.pipelines.set(key, p);
+        this.pipelines.set(cacheKey, p);
         return p;
     }
 
@@ -782,7 +800,7 @@ export class GPURenderer {
     /// missing: the draw is skipped, with one log line).
     private customPipeline(material: ShaderMaterial, key: i32): CustomPipeline? {
         const name = material.shader + "|" + material.vertexEntryPoint + "|" + material.fragmentEntryPoint + "|"
-            + key.toString();
+            + key.toString() + "|" + this.pipelineFormat.toString();
         if (this.customPipelines.has(name)) return this.customPipelines.get(name);
         let module: GPUShaderModule? = null;
         if (this.customModules.has(material.shader)) module = this.customModules.get(material.shader);
@@ -1700,6 +1718,7 @@ export class GPURenderer {
         const type = this.shadowMap.type;
         f[o] = type == BasicShadowMap ? 0 : type == PCFShadowMap ? 1 : 2;
         f[o + 1] = this.shadowSize > 0 ? <f32>(1.0 / <f64>this.shadowSize) : 0;
+        f[o + 2] = this.linearOutput ? 1 : 0;   // HDR target: no tone mapping, no sRGB
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(buf, FRAME_SHADOW_TILES + t * SHADOW_TILE_BYTES);
         }

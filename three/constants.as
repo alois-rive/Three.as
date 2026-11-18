@@ -28,8 +28,10 @@ export const LinearMipmapLinearFilter: i32 = 1008;
 // Texture.format
 export const RGBAFormat: i32 = 1023;
 
-// Texture.type
+// Texture.type / RenderTarget type
 export const UnsignedByteType: i32 = 1009;
+export const FloatType: i32 = 1015;
+export const HalfFloatType: i32 = 1016;
 
 // Texture.mapping
 export const UVMapping: i32 = 300;

@@ -70,6 +70,7 @@ rive . --artboard=Model                           # a glTF model, animated
 rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a live artboard
 rive . --artboard=Environment                     # image-based lighting
 rive . --artboard=Shadows                         # directional, spot and point shadows
+rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```

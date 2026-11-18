@@ -155,8 +155,9 @@ In steps, each committed with tests and a screenshot check:
 
 ### M6: post-processing and performance
 
-- EffectComposer with RenderPass, ShaderPass, UnrealBloomPass, OutputPass,
-  FXAA/SMAA.
+- (M6a, done) EffectComposer with RenderPass, ShaderPass, UnrealBloomPass,
+  OutputPass, FXAAPass over HalfFloat (rgba16float) render targets. Later:
+  SMAA, SSAO, bokeh.
 - Batching and sorting by pipeline/material, instancing paths, uploads
   from `Blob`s off the main lane.
 - Benchmarks against equivalent three.js scenes; the published-web check
