@@ -171,7 +171,7 @@ tests, an example artboard (or an addition to one), a screenshot check and
 docs/DEVIATIONS.md updated. The Rive APIs each one relies on are named, so
 a step can start by checking them (`rive docs animascript/api/<module>`).
 
-### M7: textures and environments
+### M7: textures and environments (done)
 
 Goal: environments and textures as three.js has them, so glTF scenes and
 three.js lighting setups look the same.
