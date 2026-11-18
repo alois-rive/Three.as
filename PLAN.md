@@ -254,7 +254,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   Box3Helper, PlaneHelper, ArrowHelper, CameraHelper,
   Directional/Point/Spot/HemisphereLightHelper, SkeletonHelper,
   VertexNormalsHelper (addon).
-- **M10b, object and geometry utilities.** Deep `Object3D.clone/copy`,
+- **M10b, object and geometry utilities (done; events take listener objects).** Deep `Object3D.clone/copy`,
   `BufferGeometry.clone/copy/toNonIndexed`, InterleavedBuffer and
   InterleavedBufferAttribute, EventDispatcher with typed events (`change`
   on controls, `added`/`removed`, `dispose`), BufferGeometryUtils

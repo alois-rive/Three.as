@@ -43,6 +43,20 @@ export class Line extends Object3D {
         this.geometry.setAttribute("lineDistance", new Float32BufferAttribute(distances, 1));
         return this;
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Line) {
+            const s = source as Line;
+            this.geometry = s.geometry;
+            this.material = s.material;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Line(this.geometry, this.material).copy(this, recursive);
+    }
 }
 
 /// Independent segments: vertices 0-1, 2-3, ...
@@ -67,6 +81,15 @@ export class LineSegments extends Line {
         this.geometry.setAttribute("lineDistance", new Float32BufferAttribute(distances, 1));
         return this;
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new LineSegments(this.geometry, this.material).copy(this, recursive);
+    }
 }
 
 /// A closed line: the last vertex joins the first.
@@ -76,6 +99,15 @@ export class LineLoop extends Line {
     constructor(geometry: BufferGeometry = new BufferGeometry(), material: Material = new LineBasicMaterial()) {
         super(geometry, material);
         this.type = "LineLoop";
+    }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new LineLoop(this.geometry, this.material).copy(this, recursive);
     }
 }
 

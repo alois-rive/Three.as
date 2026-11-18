@@ -30,4 +30,22 @@ export class SpotLight extends Light {
     /// Luminous power in lumens (intensity x PI).
     get power(): f64 { return this.intensity * Math.PI; }
     set power(value: f64) { this.intensity = value / Math.PI; }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof SpotLight) {
+            const s = source as SpotLight;
+            this.distance = s.distance;
+            this.angle = s.angle;
+            this.penumbra = s.penumbra;
+            this.decay = s.decay;
+            this.target = s.target.clone(true);
+            this.shadow.copy(s.shadow);
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new SpotLight().copy(this, recursive);
+    }
 }

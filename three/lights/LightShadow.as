@@ -27,6 +27,18 @@ export class LightShadow {
     constructor(camera: Camera = new OrthographicCamera(-5, 5, 5, -5, 0.5, 500)) {
         this.camera = camera;
     }
+
+    copy(source: LightShadow): LightShadow {
+        this.camera = source.camera.clone(true) as Camera;
+        this.bias = source.bias;
+        this.normalBias = source.normalBias;
+        this.radius = source.radius;
+        this.blurSamples = source.blurSamples;
+        this.mapSize.copy(source.mapSize);
+        this.intensity = source.intensity;
+        this.autoUpdate = source.autoUpdate;
+        return this;
+    }
 }
 
 export class DirectionalLightShadow extends LightShadow {

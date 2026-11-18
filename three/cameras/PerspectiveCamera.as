@@ -1,6 +1,7 @@
 // three.js PerspectiveCamera. Call updateProjectionMatrix() after changing
 // fov, aspect, near, far, zoom or filmOffset (on resize, set aspect).
 
+import { Object3D } from "../core/Object3D";
 import { Camera } from "./Camera";
 import { Mat4 } from "rive/mat4";
 import { DEG2RAD, RAD2DEG } from "../math/MathUtils";
@@ -62,5 +63,25 @@ export class PerspectiveCamera extends Camera {
             this.projectionMatrix.makePerspective(left, left + width, top, top - height, near, this.far);
         }
         this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
+    }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof PerspectiveCamera) {
+            const s = source as PerspectiveCamera;
+            this.fov = s.fov;
+            this.aspect = s.aspect;
+            this.near = s.near;
+            this.far = s.far;
+            this.zoom = s.zoom;
+            this.focus = s.focus;
+            this.filmGauge = s.filmGauge;
+            this.filmOffset = s.filmOffset;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new PerspectiveCamera().copy(this, recursive);
     }
 }

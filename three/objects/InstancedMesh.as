@@ -2,6 +2,7 @@
 // its own matrix (setMatrixAt) and optional colour (setColorAt). Set
 // `instanceMatrix.needsUpdate = true` (and instanceColor's) after changes.
 
+import { Object3D } from "../core/Object3D";
 import { Mesh } from "./Mesh";
 import { BufferGeometry } from "../core/BufferGeometry";
 import { InstancedBufferAttribute } from "../core/InstancedBufferAttribute";
@@ -104,6 +105,22 @@ export class InstancedMesh extends Mesh {
     }
 
     dispose(): void {}
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof InstancedMesh) {
+            const s = source as InstancedMesh;
+            this.instanceMatrix.copy(s.instanceMatrix);
+            const ic = s.instanceColor;
+            if (ic != null) this.instanceColor = ic.clone() as InstancedBufferAttribute;
+            this.count = s.count;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new InstancedMesh(this.geometry, this.material, this.count).copy(this, recursive);
+    }
 }
 
 const _m: Matrix4 = new Matrix4();

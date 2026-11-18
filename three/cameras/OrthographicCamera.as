@@ -1,6 +1,7 @@
 // three.js OrthographicCamera. Call updateProjectionMatrix() after changing
 // the frustum or zoom.
 
+import { Object3D } from "../core/Object3D";
 import { Camera } from "./Camera";
 
 export class OrthographicCamera extends Camera {
@@ -32,5 +33,24 @@ export class OrthographicCamera extends Camera {
         const cy = (this.top + this.bottom) / 2;
         this.projectionMatrix.makeOrthographic(cx - dx, cx + dx, cy + dy, cy - dy, this.near, this.far);
         this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
+    }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof OrthographicCamera) {
+            const s = source as OrthographicCamera;
+            this.left = s.left;
+            this.right = s.right;
+            this.top = s.top;
+            this.bottom = s.bottom;
+            this.near = s.near;
+            this.far = s.far;
+            this.zoom = s.zoom;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new OrthographicCamera().copy(this, recursive);
     }
 }

@@ -28,4 +28,25 @@ export class Scene extends Object3D {
         super();
         this.type = "Scene";
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Scene) {
+            const s = source as Scene;
+            this.background = s.background;
+            this.backgroundIntensity = s.backgroundIntensity;
+            this.backgroundBlurriness = s.backgroundBlurriness;
+            this.backgroundRotation.copy(s.backgroundRotation);
+            this.environment = s.environment;
+            this.environmentIntensity = s.environmentIntensity;
+            this.environmentRotation.copy(s.environmentRotation);
+            this.fog = s.fog;
+            this.overrideMaterial = s.overrideMaterial;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Scene().copy(this, recursive);
+    }
 }

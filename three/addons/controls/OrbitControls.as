@@ -13,6 +13,7 @@
 // pointers dolly and pan; the scroll wheel dollies. Positions are the
 // layout's local coordinates (points).
 
+import { Controls } from "../../extras/Controls";
 import { PointerEvent, ScrollEvent } from "rive/events";
 import { Camera } from "../../cameras/Camera";
 import { PerspectiveCamera } from "../../cameras/PerspectiveCamera";
@@ -31,11 +32,10 @@ const STATE_TOUCH_DOLLY_PAN: i32 = 5;
 
 const TWO_PI: f64 = Math.PI * 2;
 
-export class OrbitControls {
-    object: Camera;
+export class OrbitControls extends Controls {
+    readonly camera: Camera;
     /// Gives the viewport size (getSize), as three.js's domElement.
     domElement: GPURenderer?;
-    enabled: bool = true;
     /// The point orbited.
     target: Vector3 = new Vector3();
     cursor: Vector3 = new Vector3();
@@ -84,8 +84,14 @@ export class OrbitControls {
     private position0: Vector3 = new Vector3();
     private zoom0: f64 = 1;
 
+    // The pose last reported by "change".
+    private lastPosition: Vector3 = new Vector3();
+    private lastQuaternion: Quaternion = new Quaternion();
+    private lastTarget: Vector3 = new Vector3();
+
     constructor(object: Camera, domElement: GPURenderer? = null) {
-        this.object = object;
+        super(object);
+        this.camera = object;
         this.domElement = domElement;
         this.quat.setFromUnitVectors(object.up, new Vector3(0, 1, 0));
         this.quatInverse.copy(this.quat).invert();
@@ -100,14 +106,14 @@ export class OrbitControls {
     saveState(): void {
         this.target0.copy(this.target);
         this.position0.copy(this.object.position);
-        this.zoom0 = zoomOf(this.object);
+        this.zoom0 = zoomOf(this.camera);
     }
 
     reset(): void {
         this.target.copy(this.target0);
         this.object.position.copy(this.position0);
-        setZoom(this.object, this.zoom0);
-        this.object.updateProjectionMatrix();
+        setZoom(this.camera, this.zoom0);
+        this.camera.updateProjectionMatrix();
         this.update();
         this.state = STATE_NONE;
     }
@@ -161,20 +167,32 @@ export class OrbitControls {
             o.updateProjectionMatrix();
         }
         this.scale = 1;
-        return true;
+        // "change" when the camera moved (three.js's EPS test).
+        const EPS = 0.000001;
+        if (this.lastPosition.distanceToSquared(position) > EPS
+                || 8 * (1 - this.lastQuaternion.dot(this.object.quaternion)) > EPS
+                || this.lastTarget.distanceToSquared(this.target) > EPS) {
+            this.changed();
+            this.lastPosition.copy(position);
+            this.lastQuaternion.copy(this.object.quaternion);
+            this.lastTarget.copy(this.target);
+            return true;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------ events
 
-    pointerDown(event: PointerEvent): void {
+    override pointerDown(event: PointerEvent): void {
         if (!this.enabled) return;
+        if (this.pointerIds.length == 0) this.started();
         this.addPointer(event);
         if (this.pointerIds.length == 1) this.startSingle(event);
         else if (this.pointerIds.length == 2) this.startDollyPan();
         event.hit();
     }
 
-    pointerMove(event: PointerEvent): void {
+    override pointerMove(event: PointerEvent): void {
         if (!this.enabled) return;
         const i = this.pointerIds.indexOf(event.id);
         if (i < 0) return;
@@ -210,13 +228,14 @@ export class OrbitControls {
         event.hit();
     }
 
-    pointerUp(event: PointerEvent): void {
+    override pointerUp(event: PointerEvent): void {
         const i = this.pointerIds.indexOf(event.id);
         if (i < 0) return;
         this.pointerIds.splice(i, 1);
         this.pointerPositions.splice(i, 1);
         if (this.pointerIds.length == 0) {
             this.state = STATE_NONE;
+            this.ended();
         } else if (this.pointerIds.length == 1) {
             const p = this.pointerPositions[0];
             this.startSingleAt(p.x, p.y);
@@ -224,17 +243,19 @@ export class OrbitControls {
         event.hit();
     }
 
-    pointerExit(event: PointerEvent): void {
+    override pointerExit(event: PointerEvent): void {
         this.pointerUp(event);
     }
 
     /// The wheel dollies (zoom in when scrolling up, as three.js).
-    pointerScroll(event: ScrollEvent): void {
+    override pointerScroll(event: ScrollEvent): void {
         if (!this.enabled || !this.enableZoom || this.state != STATE_NONE) return;
+        this.started();
         // Rive's delta follows the content; three.js's deltaY is the wheel's.
         const deltaY = -<f64>event.delta.y;
         if (deltaY < 0) this.dollyIn(this.zoomScale(deltaY));
         else if (deltaY > 0) this.dollyOut(this.zoomScale(deltaY));
+        this.ended();
         event.hit();
     }
 

@@ -26,4 +26,18 @@ export class Points extends Object3D {
         raycastPoints(this, raycaster, intersects);
         return true;
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Points) {
+            const s = source as Points;
+            this.geometry = s.geometry;
+            this.material = s.material;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Points(this.geometry, this.material).copy(this, recursive);
+    }
 }

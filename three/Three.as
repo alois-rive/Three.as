@@ -29,12 +29,14 @@ export * from "./math/SphericalHarmonics3";
 export * from "./math/Cylindrical";
 
 export * from "./core/Object3D";
+export * from "./core/EventDispatcher";
 export * from "./core/Layers";
 export * from "./core/Raycaster";
 export * from "./core/Clock";
 export * from "./core/ColorOrTexture";
 export * from "./core/BufferAttribute";
 export * from "./core/InstancedBufferAttribute";
+export * from "./core/InterleavedBuffer";
 export * from "./core/BufferGeometry";
 
 export * from "./objects/Group";
@@ -109,6 +111,7 @@ export * from "./extras/curves/Curves";
 export * from "./extras/ShapeUtils";
 export * from "./extras/Earcut";
 export * from "./extras/PMREMGenerator";
+export * from "./extras/Controls";
 
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";

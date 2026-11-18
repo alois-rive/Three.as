@@ -30,4 +30,19 @@ export class Camera extends Object3D {
 
     /// Recomputes projectionMatrix after a parameter changed.
     updateProjectionMatrix(): void {}
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Camera) {
+            const s = source as Camera;
+            this.matrixWorldInverse.copy(s.matrixWorldInverse);
+            this.projectionMatrix.copy(s.projectionMatrix);
+            this.projectionMatrixInverse.copy(s.projectionMatrixInverse);
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Camera().copy(this, recursive);
+    }
 }

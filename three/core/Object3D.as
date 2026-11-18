@@ -1,6 +1,7 @@
 // three.js Object3D: a transform with children. Y up, right handed;
 // cameras and lights look down their -Z.
 
+import { EventDispatcher, Event } from "./EventDispatcher";
 import { Material } from "../materials/Material";
 import { Vector3 } from "../math/Vector3";
 import { Quaternion } from "../math/Quaternion";
@@ -12,7 +13,7 @@ import { Raycaster, Intersection } from "./Raycaster";
 
 let _object3DId: i32 = 0;
 
-export class Object3D {
+export class Object3D extends EventDispatcher {
     static DEFAULT_UP: Vector3 = new Vector3(0, 1, 0);
     static DEFAULT_MATRIX_AUTO_UPDATE: bool = true;
     static DEFAULT_MATRIX_WORLD_AUTO_UPDATE: bool = true;
@@ -58,6 +59,7 @@ export class Object3D {
     renderOrder: i32 = 0;
 
     constructor() {
+        super();
         this.id = _object3DId++;
         const r = new Euler();
         const q = new Quaternion();
@@ -83,6 +85,8 @@ export class Object3D {
         object.removeFromParent();
         object.parent = this;
         this.children.push(object);
+        object.notify("added", null);
+        this.notify("childadded", object);
         return this;
     }
 
@@ -91,8 +95,18 @@ export class Object3D {
         if (i >= 0) {
             this.children.splice(i, 1);
             object.parent = null;
+            object.notify("removed", null);
+            this.notify("childremoved", object);
         }
         return this;
+    }
+
+    /// Dispatches `type` when something listens (internal).
+    protected notify(type: string, child: Object3D?): void {
+        if (!this.hasListeners(type)) return;
+        const e = new Event(type);
+        e.child = child;
+        this.dispatchEvent(e);
     }
 
     removeFromParent(): Object3D {
@@ -102,8 +116,13 @@ export class Object3D {
     }
 
     clear(): Object3D {
-        for (let i = 0; i < this.children.length; i++) this.children[i].parent = null;
+        const children = this.children;
         this.children = [];
+        for (let i = 0; i < children.length; i++) {
+            children[i].parent = null;
+            children[i].notify("removed", null);
+            this.notify("childremoved", children[i]);
+        }
         return this;
     }
 
@@ -121,6 +140,8 @@ export class Object3D {
         object.parent = this;
         this.children.push(object);
         object.updateWorldMatrix(false, true);
+        object.notify("added", null);
+        this.notify("childadded", object);
         return this;
     }
 
@@ -310,9 +331,28 @@ export class Object3D {
         }
     }
 
+    /// three.js's copy: name, transform, flags and (recursive) clones of the
+    /// children. Subclasses copy their own fields after `super.copy`.
+    copy(source: Object3D, recursive: bool = true): Object3D {
+        this.copyTransform(source);
+        this.matrixWorldAutoUpdate = source.matrixWorldAutoUpdate;
+        this.matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;
+        this.customDepthMaterial = source.customDepthMaterial;
+        this.customDistanceMaterial = source.customDistanceMaterial;
+        if (recursive) {
+            for (let i = 0; i < source.children.length; i++) this.add(source.children[i].clone(true));
+        }
+        return this;
+    }
+
+    /// A new object of the same class, copied (with cloned children when
+    /// `recursive`). Geometries and materials are shared, as three.js.
+    clone(recursive: bool = true): Object3D {
+        return new Object3D().copy(this, recursive);
+    }
+
     /// Copies the name, transform and flags of `source`, not its children
-    /// (three.js `copy(source, false)`; recursive copy and `clone()` come
-    /// later).
+    /// (three.js `copy(source, false)` without the rest).
     copyTransform(source: Object3D): Object3D {
         this.name = source.name;
         this.up.copy(source.up);

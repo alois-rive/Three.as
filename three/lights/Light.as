@@ -17,4 +17,18 @@ export class Light extends Object3D {
     }
 
     override facesNegativeZ(): bool { return true; }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Light) {
+            const s = source as Light;
+            this.color.copy(s.color);
+            this.intensity = s.intensity;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Light().copy(this, recursive);
+    }
 }

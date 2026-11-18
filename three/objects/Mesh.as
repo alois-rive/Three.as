@@ -73,6 +73,24 @@ export class Mesh extends Object3D {
         raycastMesh(this, raycaster, intersects, this.matrixWorld, -1);
         return true;
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Mesh) {
+            const s = source as Mesh;
+            this.geometry = s.geometry;
+            this.material = s.material;
+            this.materials = s.materials.slice();
+            this.morphTargetInfluences = s.morphTargetInfluences.slice();
+            const keys = s.morphTargetDictionary.keys();
+            for (let i = 0; i < keys.length; i++) this.morphTargetDictionary.set(keys[i], s.morphTargetDictionary.get(keys[i]));
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Mesh(this.geometry, this.material).copy(this, recursive);
+    }
 }
 
 const _morph: Vector3 = new Vector3();

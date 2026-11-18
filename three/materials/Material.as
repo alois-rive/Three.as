@@ -2,6 +2,7 @@
 // are typed classes filled by object literals:
 //     new MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 })
 
+import { EventDispatcher, Event } from "../core/EventDispatcher";
 import {
     FrontSide, NormalBlending, LessEqualDepth, AlwaysStencilFunc, KeepStencilOp,
 } from "../constants";
@@ -48,7 +49,7 @@ export class MaterialParameters {
     shadowSide: i32 = -1;
 }
 
-export class Material {
+export class Material extends EventDispatcher {
     readonly isMaterial: bool = true;
     id: i32;
     name: string = "";
@@ -105,6 +106,7 @@ export class Material {
     version: i32 = 0;
 
     constructor() {
+        super();
         this.id = _materialId++;
     }
 
@@ -187,5 +189,7 @@ export class Material {
     }
 
     /// Nothing to free: pipelines are shared by the renderer.
-    dispose(): void {}
+    dispose(): void {
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
+    }
 }

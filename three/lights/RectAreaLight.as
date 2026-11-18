@@ -3,6 +3,7 @@
 // linearly transformed cosines, as three.js. Casts no shadows. (three.js
 // needs RectAreaLightUniformsLib.init(); the tables are built in here.)
 
+import { Object3D } from "../core/Object3D";
 import { Light } from "./Light";
 
 export class RectAreaLight extends Light {
@@ -20,4 +21,18 @@ export class RectAreaLight extends Light {
     /// Luminous power in lumens (intensity x area x PI).
     get power(): f64 { return this.intensity * this.width * this.height * Math.PI; }
     set power(value: f64) { this.intensity = value / (this.width * this.height * Math.PI); }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof RectAreaLight) {
+            const s = source as RectAreaLight;
+            this.width = s.width;
+            this.height = s.height;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new RectAreaLight().copy(this, recursive);
+    }
 }

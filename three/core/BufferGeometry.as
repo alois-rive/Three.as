@@ -1,6 +1,7 @@
 // three.js BufferGeometry: named vertex attributes ("position", "normal",
 // "uv") and an optional index.
 
+import { EventDispatcher, Event } from "./EventDispatcher";
 import { BufferAttribute, Uint32BufferAttribute } from "./BufferAttribute";
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
@@ -32,7 +33,7 @@ export class DrawRange {
     count: i32 = -1;
 }
 
-export class BufferGeometry {
+export class BufferGeometry extends EventDispatcher {
     readonly isBufferGeometry: bool = true;
     id: i32;
     name: string = "";
@@ -53,6 +54,7 @@ export class BufferGeometry {
     boundingSphere: Sphere? = null;
 
     constructor() {
+        super();
         this.id = _geometryId++;
     }
 
@@ -270,8 +272,81 @@ export class BufferGeometry {
 
     /// Frees the GPU buffers; the geometry can be drawn again afterward (it
     /// re-uploads).
+    /// three.js's copy: attributes, index, morph attributes, groups,
+    /// bounds and draw range, cloned.
+    copy(source: BufferGeometry): BufferGeometry {
+        this.name = source.name;
+        this.attributes = new Map<string, BufferAttribute>();
+        const names = source.attributes.keys();
+        for (let i = 0; i < names.length; i++) this.attributes.set(names[i], source.attributes.get(names[i]).clone());
+        const index = source.index;
+        if (index != null) {
+            const copy = new Uint32BufferAttribute([]);
+            copy.array = index.array.slice();
+            this.index = copy;
+        } else {
+            this.index = null;
+        }
+        this.morphAttributes = new Map<string, Array<BufferAttribute>>();
+        const morphs = source.morphAttributes.keys();
+        for (let i = 0; i < morphs.length; i++) {
+            const list = source.morphAttributes.get(morphs[i]);
+            const out: Array<BufferAttribute> = [];
+            for (let j = 0; j < list.length; j++) {
+                const c = list[j].clone();
+                c.name = list[j].name;
+                out.push(c);
+            }
+            this.morphAttributes.set(morphs[i], out);
+        }
+        this.morphTargetsRelative = source.morphTargetsRelative;
+        this.groups = [];
+        for (let i = 0; i < source.groups.length; i++) {
+            const g = source.groups[i];
+            this.groups.push(new GeometryGroup(g.start, g.count, g.materialIndex));
+        }
+        const bb = source.boundingBox;
+        this.boundingBox = bb != null ? bb.clone() : null;
+        const bs = source.boundingSphere;
+        this.boundingSphere = bs != null ? bs.clone() : null;
+        this.drawRange.start = source.drawRange.start;
+        this.drawRange.count = source.drawRange.count;
+        return this;
+    }
+
+    clone(): BufferGeometry {
+        return new BufferGeometry().copy(this);
+    }
+
+    /// A geometry with the same triangles and no index (each vertex used
+    /// once per triangle), as three.js's toNonIndexed.
+    toNonIndexed(): BufferGeometry {
+        const index = this.index;
+        if (index == null) return this.clone();
+        const out = new BufferGeometry();
+        const idx = index.array;
+        const names = this.attributes.keys();
+        for (let n = 0; n < names.length; n++) {
+            const a = this.attributes.get(names[n]);
+            const size = a.itemSize;
+            const data = new Float32Array(idx.length * size);
+            for (let i = 0; i < idx.length; i++) {
+                const v = <i32>idx[i];
+                for (let k = 0; k < size; k++) data[i * size + k] = a.array[v * size + k];
+            }
+            out.setAttribute(names[n], new BufferAttribute(data, size, a.normalized));
+        }
+        for (let i = 0; i < this.groups.length; i++) {
+            const g = this.groups[i];
+            out.addGroup(g.start, g.count, g.materialIndex);
+        }
+        out.name = this.name;
+        return out;
+    }
+
     dispose(): void {
         disposedGeometries.push(this.id);
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }
 

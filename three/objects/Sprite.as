@@ -25,4 +25,18 @@ export class Sprite extends Object3D {
         raycastSprite(this, raycaster, intersects);
         return true;
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof Sprite) {
+            const s = source as Sprite;
+            this.material = s.material;
+            this.center.copy(s.center);
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Sprite(this.material).copy(this, recursive);
+    }
 }

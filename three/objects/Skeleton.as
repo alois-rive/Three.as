@@ -11,6 +11,15 @@ export class Bone extends Object3D {
         super();
         this.type = "Bone";
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Bone().copy(this, recursive);
+    }
 }
 
 /// The bones deforming a SkinnedMesh, with the inverse of each bone's

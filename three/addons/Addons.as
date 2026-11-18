@@ -22,3 +22,6 @@ export * from "./lights/RectAreaLightUniformsLib";
 export * from "./csm/CSM";
 export * from "./csm/CSMFrustum";
 export * from "./helpers/VertexNormalsHelper";
+// Utilities are namespaces, imported by path as in three.js:
+//     import * as BufferGeometryUtils from "../three/addons/utils/BufferGeometryUtils";
+//     (also SceneUtils, SkeletonUtils)

@@ -9,4 +9,13 @@ export class Group extends Object3D {
         super();
         this.type = "Group";
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new Group().copy(this, recursive);
+    }
 }

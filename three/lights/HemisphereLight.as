@@ -17,4 +17,17 @@ export class HemisphereLight extends Light {
         this.position.copy(Object3D.DEFAULT_UP);
         this.updateMatrix();
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof HemisphereLight) {
+            const s = source as HemisphereLight;
+            this.groundColor.copy(s.groundColor);
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new HemisphereLight().copy(this, recursive);
+    }
 }

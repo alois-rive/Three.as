@@ -33,7 +33,7 @@ import { Sprite } from "../objects/Sprite";
 import { Material } from "../materials/Material";
 import { MaterialUniforms, SLOT_MAP } from "../materials/MaterialUniforms";
 import { Vector2 } from "../math/Vector2";
-import { OrbitControls } from "../addons/controls/OrbitControls";
+import { Controls } from "../extras/Controls";
 import { ArtboardTexture } from "./ArtboardTexture";
 
 export abstract class ThreeLayout extends Layout {
@@ -43,7 +43,7 @@ export abstract class ThreeLayout extends Layout {
     /// A PerspectiveCamera's aspect follows the layout.
     camera: Camera = new PerspectiveCamera(50, 1, 0.1, 2000);
     /// Driven by the pointer and updated every frame when set.
-    controls: OrbitControls? = null;
+    controls: Controls? = null;
     /// The last pointer position, normalized device coordinates (x right,
     /// y up, -1 to 1), as three.js examples keep it.
     pointer: Vector2 = new Vector2();
@@ -59,6 +59,8 @@ export abstract class ThreeLayout extends Layout {
     private captured: ArtboardTexture? = null;
     private uniforms: MaterialUniforms = new MaterialUniforms();
     private hitUv: Vector2 = new Vector2();
+    // Presses that began inside the layout and have not ended.
+    private pressed: i32 = 0;
     /// Seconds since the previous frame (the last advance).
     delta: f64 = 0;
 
@@ -122,7 +124,16 @@ export abstract class ThreeLayout extends Layout {
     onPointerMove(event: PointerEvent): void {}
     onPointerUp(event: PointerEvent): void {}
 
+    /// Whether `x, y` (layout coordinates) is inside the layout. Rive hands
+    /// a script every pointer event of its artboard, so presses and scrolls
+    /// elsewhere (other UI around the layout) are left alone.
+    contains(x: f64, y: f64): bool {
+        return x >= 0 && y >= 0 && x <= this.width && y <= this.height;
+    }
+
     override pointerDown(event: PointerEvent): void {
+        if (!this.contains(<f64>event.position.x, <f64>event.position.y)) return;
+        this.pressed++;
         this.setPointer(event);
         const t = this.artboardUnderPointer();
         if (t != null && t.pointerDown(this.hitUv, event.id)) {
@@ -136,6 +147,11 @@ export abstract class ThreeLayout extends Layout {
     }
 
     override pointerMove(event: PointerEvent): void {
+        // Outside the layout, only drags that started inside it continue.
+        if (this.pressed == 0 && !this.contains(<f64>event.position.x, <f64>event.position.y)) {
+            this.pointerExit(event);
+            return;
+        }
         this.setPointer(event);
         const t = this.artboardUnderPointer();
         const hovered = this.hovered;
@@ -154,6 +170,8 @@ export abstract class ThreeLayout extends Layout {
     }
 
     override pointerUp(event: PointerEvent): void {
+        if (this.pressed == 0) return;
+        this.pressed--;
         this.setPointer(event);
         const t = this.artboardUnderPointer();
         const captured = this.captured;
@@ -170,6 +188,7 @@ export abstract class ThreeLayout extends Layout {
     }
 
     override pointerExit(event: PointerEvent): void {
+        this.pressed = 0;
         const hovered = this.hovered;
         if (hovered != null) hovered.pointerExit(this.hitUv, event.id);
         this.hovered = null;
@@ -178,6 +197,7 @@ export abstract class ThreeLayout extends Layout {
     }
 
     override pointerScroll(event: ScrollEvent): void {
+        if (!this.contains(<f64>event.position.x, <f64>event.position.y)) return;
         const c = this.controls;
         if (c != null) c.pointerScroll(event);
     }

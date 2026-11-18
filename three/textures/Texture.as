@@ -13,6 +13,7 @@ import { GPUTextureView } from "rive/gpu";
 import { Vector2 } from "../math/Vector2";
 import { Matrix3 } from "../math/Matrix3";
 import { ColorOrTexture } from "../core/ColorOrTexture";
+import { Event } from "../core/EventDispatcher";
 import {
     ClampToEdgeWrapping, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, SRGBColorSpace,
     RGBAFormat, UnsignedByteType, UVMapping,
@@ -118,5 +119,6 @@ export class Texture extends ColorOrTexture {
     /// Frees GPU resources the renderer made for this texture.
     dispose(): void {
         disposedTextures.push(this.id);
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }

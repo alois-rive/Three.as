@@ -10,4 +10,8 @@ export class InstancedBufferAttribute extends BufferAttribute {
         super(array, itemSize, normalized);
         this.meshPerAttribute = meshPerAttribute;
     }
+
+    override clone(): BufferAttribute {
+        return new InstancedBufferAttribute(this.array.slice(), this.itemSize, this.normalized, this.meshPerAttribute);
+    }
 }

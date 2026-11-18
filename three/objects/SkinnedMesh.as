@@ -3,6 +3,7 @@
 // bindMode "attached" (default): the mesh's own transform moves with it;
 // "detached": only the bones place it.
 
+import { Object3D } from "../core/Object3D";
 import { Mesh } from "./Mesh";
 import { Skeleton } from "./Skeleton";
 import { BufferGeometry } from "../core/BufferGeometry";
@@ -127,6 +128,22 @@ export class SkinnedMesh extends Mesh {
     override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
         raycastMesh(this, raycaster, intersects, this.matrixWorld, -1);
         return true;
+    }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof SkinnedMesh) {
+            const s = source as SkinnedMesh;
+            this.bindMode = s.bindMode;
+            this.bindMatrix.copy(s.bindMatrix);
+            this.bindMatrixInverse.copy(s.bindMatrixInverse);
+            this.skeleton = s.skeleton;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new SkinnedMesh(this.geometry, this.material).copy(this, recursive);
     }
 }
 

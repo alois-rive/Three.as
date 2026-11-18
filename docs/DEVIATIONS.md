@@ -155,8 +155,25 @@ export class Demo extends Layout {
   `setIndexAttribute(Uint32BufferAttribute)`). `geometry.index` is a
   `Uint32BufferAttribute`; `Uint16BufferAttribute` has the same storage. The
   renderer uploads 16-bit indices when they fit.
-- `Object3D.copy` / `clone()` are not ported yet; `copyTransform(source)`
-  copies name, transform and flags (not children).
+- `Object3D.copy(source, recursive)` / `clone(recursive)` work for every
+  object class (geometries and materials shared, as three.js);
+  `copyTransform` copies just the transform and flags. `clone()` returns
+  `Object3D`: cast it (`mesh.clone() as Mesh`). `BufferGeometry.copy`,
+  `clone` and `toNonIndexed` as three.js.
+- **Events take listener objects** (no closures): subclass
+  `EventListener` with `handleEvent(event)`. Objects dispatch "added",
+  "removed", "childadded", "childremoved"; materials, geometries and
+  textures "dispose"; controls "change", "start", "end".
+- `InterleavedBuffer` / `InterleavedBufferAttribute`: the attribute keeps
+  its own dense copy (the renderer uploads attributes separately); its
+  setters write both, and `buffer.needsUpdate = true` after writing
+  `buffer.array` directly refreshes them.
+- `BufferGeometryUtils` (mergeGeometries, mergeAttributes, mergeVertices,
+  interleaveAttributes, deinterleaveGeometry; computeMikkTSpaceTangents is
+  computeTangents), `SceneUtils` (createMultiMaterialObject,
+  createMeshesFromInstancedMesh, createMeshesFromMultiMaterialMesh) and
+  `SkeletonUtils` (clone, getBoneByName, a simplified retarget copying
+  local rotations by bone name) are addons imported by path as namespaces.
 - The polyhedron presets (`IcosahedronGeometry`, `OctahedronGeometry`,
   `TetrahedronGeometry`, `DodecahedronGeometry`) live in
   `geometries/PolyhedronGeometry.as` rather than a file each; through the
@@ -326,8 +343,12 @@ export class Demo extends Layout {
   to `controls.pointerDown/Move/Up/Exit/Scroll(event)` (ThreeLayout does).
   Rive pointer events have no mouse button, so one pointer rotates
   (MapControls: pans), two pointers dolly and pan (three.js's touch
-  mapping), the wheel dollies. `keys`, `listenToKeyEvents`, `zoomToCursor`
-  and change events are not ported. Import controls from
+  mapping), the wheel dollies. `keys`, `listenToKeyEvents` and
+  `zoomToCursor` are not ported. Controls extend `Controls` (three.js r16x's
+  base) and dispatch "change", "start" and "end". ThreeLayout's
+  `controls` is a `Controls`. Rive hands a script every pointer event of
+  its artboard: ThreeLayout ignores presses and scrolls outside its own
+  bounds (drags that started inside continue). Import controls from
   `three/addons/controls/OrbitControls` (or `three/addons/Addons`).
 - **Time comes from `advance(seconds)`.** `Clock` has `tick(seconds)` to
   feed it (call it each advance); `Timer.update(seconds)` takes the frame's
@@ -569,4 +590,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
-ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), `EventDispatcher` events (`dispose` events are internal).
+ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), 

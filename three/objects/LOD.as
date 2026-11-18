@@ -93,6 +93,25 @@ export class LOD extends Object3D {
         this.currentLevel = i - 1;
         for (; i < levels.length; i++) levels[i].object.visible = false;
     }
+
+    /// three.js's LOD.copy: the levels' objects cloned (not the children
+    /// twice).
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, false);
+        if (source instanceof LOD) {
+            const s = source as LOD;
+            for (let i = 0; i < s.levels.length; i++) {
+                const l = s.levels[i];
+                this.addLevel(l.object.clone(true), l.distance, l.hysteresis);
+            }
+            this.autoUpdate = s.autoUpdate;
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new LOD().copy(this, recursive);
+    }
 }
 
 const _v1: Vector3 = new Vector3();

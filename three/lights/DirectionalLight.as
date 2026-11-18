@@ -23,4 +23,18 @@ export class DirectionalLight extends Light {
         this.position.copy(Object3D.DEFAULT_UP);
         this.updateMatrix();
     }
+
+    override copy(source: Object3D, recursive: bool = true): Object3D {
+        super.copy(source, recursive);
+        if (source instanceof DirectionalLight) {
+            const s = source as DirectionalLight;
+            this.target = s.target.clone(true);
+            this.shadow.copy(s.shadow);
+        }
+        return this;
+    }
+
+    override clone(recursive: bool = true): Object3D {
+        return new DirectionalLight().copy(this, recursive);
+    }
 }
