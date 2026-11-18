@@ -10,7 +10,7 @@
 const PI: f32 = 3.141592653589793;
 const RECIPROCAL_PI: f32 = 0.3183098861837907;
 const MAX_LIGHTS: u32 = 32u;
-const MAX_SHADOW_TILES: u32 = 12u;
+const MAX_SHADOW_TILES: u32 = 24u;
 const FLAG_VERTEX_COLORS: u32 = 1u;
 const FLAG_FOG: u32 = 2u;
 const FLAG_TRANSPARENT: u32 = 4u;
@@ -34,7 +34,7 @@ struct Light {
     color: vec4<f32>,      // rgb colour x intensity (linear), w cut off distance
     params: vec4<f32>,     // x decay, y cos(penumbra edge)
     shadow: vec4<f32>,     // x first shadow layer (-1: none), y bias, z normalBias, w radius
-    shadow2: vec4<f32>,    // x intensity, y 1 for a point light (six layers)
+    shadow2: vec4<f32>,    // x intensity, y 1 for a point light (six layers), zw cascade view depth range (CSM)
 };
 
 struct ShadowTile {
@@ -65,7 +65,7 @@ struct FrameU {
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
     probe: array<vec4<f32>, 9>,  // summed LightProbe SH coefficients (rgb)
     lights: array<Light, 32>,
-    shadow_tiles: array<ShadowTile, 12>,
+    shadow_tiles: array<ShadowTile, 24>,
 };
 
 struct ObjU {
@@ -106,7 +106,7 @@ struct ObjU {
     clip: vec4<f32>,         // x union count, y total count
     misc0: vec4<f32>,        // MeshDistanceMaterial referencePosition xyz, nearDistance
     misc1: vec4<f32>,        // farDistance, y 1: alphaHash
-    light_list: vec4<u32>,   // bytes: the count, then frame light indices
+    light_list: array<vec4<u32>, 2>,   // bytes: the count, then frame light indices
 };
 
 struct LtcTable {

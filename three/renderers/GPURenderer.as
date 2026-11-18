@@ -465,6 +465,7 @@ export class GPURenderer {
     // The frame's lights for per-object culling: x, y, z, reach, weight.
     private frameLights: Float64Array = new Float64Array(MAX_LIGHTS * 5);
     private frameLightCount: i32 = 0;
+    private cameraPos: Vector3 = new Vector3();
     private lightScores: Float64Array = new Float64Array(MAX_LIGHTS);
     private lightOrder: Int32Array = new Int32Array(MAX_LIGHTS);
     private passStates: Array<PassState> = [new PassState()];
@@ -637,6 +638,7 @@ export class GPURenderer {
         if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
         else camera.updateWorldMatrix(true, false);
         Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
+        camera.getWorldPosition(this.cameraPos);
         this.invViewProj.copy(this.viewProj).invert();
         _frustum.setFromProjectionMatrix(this.viewProj);
 
@@ -1739,7 +1741,12 @@ export class GPURenderer {
             }
             this.tileCount += need;
         }
-        if (this.tileCount > 0) this.ensureShadowTexture(<u32>Math.max(256, Math.min(2048, mapSize)), <u32>this.tileCount);
+        if (this.tileCount > 0) {
+            // The largest mapSize, halved until the layers fit 64 MB.
+            let size = <u32>Math.max(256, Math.min(2048, mapSize));
+            while (size > 256 && <f64>size * <f64>size * 4 * <f64>this.tileCount > 64 * 1024 * 1024) size >>= 1;
+            this.ensureShadowTexture(size, <u32>this.tileCount);
+        }
     }
 
     private lookFrom(cam: Camera, from: Vector3, to: Vector3, ux: f64, uy: f64, uz: f64): void {
@@ -2186,6 +2193,11 @@ export class GPURenderer {
         const s = base + 16;
         f[s] = -1; f[s + 1] = 0; f[s + 2] = 0; f[s + 3] = 1;
         f[s + 4] = 0; f[s + 5] = 0; f[s + 6] = 0; f[s + 7] = 0;
+        if (light instanceof DirectionalLight) {
+            const d = light as DirectionalLight;
+            f[s + 6] = <f32>d.cascadeNear;
+            f[s + 7] = <f32>d.cascadeFar;
+        }
         if (!this.lightFirstTile.has(light.id)) return;
         let shadow: LightShadow;
         if (light instanceof DirectionalLight) shadow = (light as DirectionalLight).shadow;
@@ -2390,6 +2402,10 @@ export class GPURenderer {
                 const d = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - r);
                 if (reach > 0 && d > reach) continue;
                 score = score / (1 + d * d);
+                // Among lights equally close (a big object), nearer the camera first.
+                const cx = fl[i * 5] - this.cameraPos.x, cy = fl[i * 5 + 1] - this.cameraPos.y;
+                const cz = fl[i * 5 + 2] - this.cameraPos.z;
+                score = score / (1 + 0.001 * (cx * cx + cy * cy + cz * cz));
             }
             this.lightScores[found] = score;
             this.lightOrder[found] = i;
@@ -2411,7 +2427,8 @@ export class GPURenderer {
             found = MAX_OBJECT_LIGHTS;
         }
         const o = OBJ_LIGHTS >> 2;
-        u[o] = <u32>found; u[o + 1] = 0; u[o + 2] = 0; u[o + 3] = 0;
+        for (let w = 0; w < 8; w++) u[o + w] = 0;
+        u[o] = <u32>found;
         for (let k = 0; k < found; k++) {
             const b = k + 1;
             u[o + b / 4] |= <u32>this.lightOrder[k] << <u32>((b % 4) * 8);

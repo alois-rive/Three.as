@@ -403,11 +403,18 @@ export class Demo extends Layout {
   `receiveShadow`, `light.shadow.mapSize/bias/normalBias/radius/intensity/
   camera` as three.js, for directional, spot and point lights.
 - Shadow maps share one depth **array texture** (needs texture arrays; else
-  shadows are off with a log line): at most **12 layers**, one per
+  shadows are off with a log line): at most **24 layers**, one per
   directional or spot light and six per point light; the layer size is the
-  largest `mapSize` (256 to 2048). Lights beyond 12 layers cast no shadow.
+  largest `mapSize` (256 to 2048), halved until all layers fit 64 MB.
+  Lights beyond 24 layers cast no shadow.
 - `VSMShadowMap` renders as `PCFSoftShadowMap` (PCF 5x5); `shadow.radius`
-  scales the PCF step.
+  scales the PCF step. `SpotLight.map` (projected textures) is not
+  supported (the main shader has no texture binding left).
+- The **CSM** addon (`three/addons/csm/`) fits one DirectionalLight per
+  cascade as three.js; instead of injecting shader code
+  (`setupMaterial` does nothing), each cascade light carries its view
+  depth range (`cascadeNear` / `cascadeFar`) and lights only fragments in
+  it. Cascades switch hard (`fade` is not supported).
 - Casters render the side three.js picks (`shadowSide`, else the
   opposite of `side`); casters with `alphaTest`, `alphaHash` or
   `alphaToCoverage` cut their shadows with their `map` alpha and
@@ -426,10 +433,10 @@ export class Demo extends Layout {
   lights): diffuse is `irradiance * albedo / PI`. Sources written for
   `useLegacyLights = true` need their intensities multiplied by PI.
 - At most **32** directional, point and spot lights per render (the rest
-  are ignored, with one log line), and **each draw is lit by at most 15**:
+  are ignored, with one log line), and **each draw is lit by at most 31**:
   the lights whose `distance` reaches its bounding sphere (all directional
-  lights and lights with `distance` 0 do), the strongest and nearest
-  first. three.js lights every object with every light. Ambient lights are summed, without
+  lights and lights with `distance` 0 do), the strongest, nearest and
+  closest to the camera first. three.js lights every object with every light. Ambient lights are summed, without
   limit. Hemisphere lights are summed too, all along the first one's
   direction.
 - Without an environment map, metals reflect only direct lights and look

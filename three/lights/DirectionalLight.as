@@ -12,6 +12,10 @@ export class DirectionalLight extends Light {
     /// scene to move it with a parent.
     target: Object3D = new Object3D();
     shadow: DirectionalLightShadow = new DirectionalLightShadow();
+    /// Rive-only, set by the CSM addon: the view depth range this light
+    /// lights (a cascade), far 0 for everywhere.
+    cascadeNear: f64 = 0;
+    cascadeFar: f64 = 0;
 
     constructor(color: u32 = 0xFFFFFF, intensity: f64 = 1) {
         super(color, intensity);

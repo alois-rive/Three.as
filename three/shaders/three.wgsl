@@ -71,10 +71,10 @@ struct Light {
     color: vec4<f32>,      // rgb colour x intensity (linear), w cut off distance
     params: vec4<f32>,     // x decay, y cos(penumbra edge)
     shadow: vec4<f32>,     // x first shadow layer (-1: none), y bias, z normalBias, w radius
-    shadow2: vec4<f32>,    // x intensity, y 1 for a point light (six layers)
+    shadow2: vec4<f32>,    // x intensity, y 1 for a point light (six layers), zw cascade view depth range (CSM)
 };
 
-const MAX_SHADOW_TILES: u32 = 12u;
+const MAX_SHADOW_TILES: u32 = 24u;
 
 struct ShadowTile {
     matrix: mat4x4<f32>,   // world -> the light camera's clip space
@@ -104,7 +104,7 @@ struct FrameU {
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
     probe: array<vec4<f32>, 9>,  // summed LightProbe SH coefficients (rgb)
     lights: array<Light, 32>,
-    shadow_tiles: array<ShadowTile, 12>,
+    shadow_tiles: array<ShadowTile, 24>,
 };
 
 struct ObjU {
@@ -145,17 +145,17 @@ struct ObjU {
     clip: vec4<f32>,         // x union count, y total count
     misc0: vec4<f32>,        // MeshDistanceMaterial referencePosition xyz, nearDistance
     misc1: vec4<f32>,        // farDistance, y 1: alphaHash
-    light_list: vec4<u32>,   // bytes: the count, then frame light indices
+    light_list: array<vec4<u32>, 2>,   // bytes: the count, then frame light indices
 };
 
 /// The `k`th light reaching this draw (an index into F.lights).
 fn object_light(k: u32) -> u32 {
     let b = k + 1u;
-    return (O.light_list[b / 4u] >> ((b % 4u) * 8u)) & 0xffu;
+    return (O.light_list[b / 16u][(b / 4u) % 4u] >> ((b % 4u) * 8u)) & 0xffu;
 }
 
 fn object_light_count() -> u32 {
-    return O.light_list.x & 0xffu;
+    return O.light_list[0].x & 0xffu;
 }
 
 const ROLE_LIGHT: u32 = 0u;
@@ -1366,6 +1366,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         let count = object_light_count();
         for (var k = 0u; k < count; k++) {
             let light = F.lights[object_light(k)];
+            // A CSM cascade lights only the view depths it covers.
+            if (light.shadow2.w > 0.0 && (in.view_depth < light.shadow2.z || in.view_depth >= light.shadow2.w)) {
+                continue;
+            }
             if (light.position.w == LIGHT_RECT) {
                 // RectAreaLight (three.js's RE_Direct_RectArea_Physical):
                 // physically based materials only.

@@ -3,7 +3,7 @@
 
 export const MAX_LIGHTS: i32 = 32;
 /// Lights one draw's fragments loop over (its nearest/strongest).
-export const MAX_OBJECT_LIGHTS: i32 = 15;
+export const MAX_OBJECT_LIGHTS: i32 = 31;
 
 export const FRAME_VIEW_PROJ: i32 = 0;
 export const FRAME_VIEW: i32 = 64;
@@ -30,8 +30,8 @@ export const FRAME_LIGHTS: i32 = 752;
 export const LIGHT_BYTES: i32 = 96;
 export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 3824
 export const SHADOW_TILE_BYTES: i32 = 80;
-export const MAX_SHADOW_TILES: i32 = 12;
-export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 4784
+export const MAX_SHADOW_TILES: i32 = 24;
+export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 5744
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;
@@ -70,13 +70,13 @@ export const OBJ_CLIP: i32 = 1216;          // x union count, y total count
 export const MAX_CLIP_PLANES: i32 = 8;
 export const OBJ_MISC0: i32 = 1232;   // MeshDistanceMaterial referencePosition xyz, nearDistance
 export const OBJ_MISC1: i32 = 1248;   // farDistance, alphaHash
-export const OBJ_LIGHTS: i32 = 1264;  // u8s: count, then up to 15 frame light indices
-export const OBJ_USED: i32 = 1280;
+export const OBJ_LIGHTS: i32 = 1264;  // 2 vec4 of u8s: count, then up to 31 frame light indices
+export const OBJ_USED: i32 = 1296;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384
 /// The per-draw buffer size (room to grow).
-export const OBJ_BYTES: i32 = 1280;
+export const OBJ_BYTES: i32 = 1536;
 
 export const FLAG_VERTEX_COLORS: u32 = 1;
 export const FLAG_FOG: u32 = 2;

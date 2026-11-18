@@ -231,15 +231,16 @@ render as authored.
 - Example `MaterialsPlus`: glass, iridescent and anisotropic spheres, a
   clipped and capped model (stencil), bump and displacement.
 
-### M9: lighting at scale
+### M9: lighting at scale (done)
 
-- **M9a, many lights (done: 32 a render, 15 per draw, culled by range).** Lift the 8-light cap (light data in a storage or
+- **M9a, many lights (done: 32 a render, 31 per draw, culled by range).** Lift the 8-light cap (light data in a storage or
   larger uniform buffer, per-object light lists or clustered lighting).
 - **M9b, area and probe lights (done; LTC tables at 32 x 32; probes from
   equirectangular data).** RectAreaLight with three.js's LTC tables
   shipped as a blob asset (RectAreaLightUniformsLib), LightProbe,
   SphericalHarmonics3, LightProbeGenerator, HemisphereLightProbe.
-- **M9c, shadows at scale.** More than 12 shadow layers (atlas sizing per
+- **M9c, shadows at scale (done: 24 layers in a 64 MB budget, CSM; real
+  VSM and SpotLight.map left out, see DEVIATIONS).** More than 12 shadow layers (atlas sizing per
   light), CSM (cascaded shadow maps addon), real VSM, spot light `map`
   (projected textures, three.js r162+).
 - Example `Lights`: a night street of point and area lights with cascaded
