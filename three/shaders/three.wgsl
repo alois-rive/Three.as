@@ -1,11 +1,15 @@
 // ThreeAS shaders (three/renderers/GPURenderer.as). Every mesh material is
 // one pipeline family; the shading model is a uniform branch on O.flags.x.
 //
-// Group 0: the frame block (camera, lights, fog, tone mapping, background).
-// Group 1: the per-draw block.
-// Group 2: the material's textures (slots 0..6) and their sampler.
-// Group 3: the background texture and sampler (background pass only).
-// Layouts are mirrored by hand in renderers/gpu/Layout.as.
+// Group 0: the frame block (camera, lights, fog, tone mapping), the
+//          environment, the shadow maps and the transmission texture.
+// Group 1: the per-draw block (dynamic offset), bones, five extra maps.
+// Group 2: the material's eight base textures.
+// Group 3: their eight samplers (extra map k borrows sampler k).
+// The background pass is three_background.wgsl. Rive allows 8 bindings a
+// group; the web 16 textures a stage. Layouts are mirrored by hand in
+// renderers/gpu/Layout.as; after editing, run tools/make_shader_chunks.py
+// (three/shaders/lib/three_chunks.wgsl copies the shared parts).
 //
 // Lighting follows three.js: physical light intensities, BRDF_Lambert,
 // BRDF_GGX, BRDF_BlinnPhong, Charlie sheen, clearcoat, its distance and spot

@@ -232,9 +232,19 @@ export class Demo extends Layout {
   uniforms at group 2; see `three/materials/ShaderMaterial.as`) and outputs
   sRGB, premultiplied colour. `uniforms` is a `Map<string, UniformBase>` of
   `Uniform<T>` (f64, Vector2/3/4, Color, Matrix4, Texture), packed in
-  insertion order: `material.uniform<f64>("time").value += dt`. `defines`,
-  `extensions`, `lights`, `fog`, `wireframe` and custom points/lines are not
-  supported for shader materials.
+  insertion order: `material.uniform<f64>("time").value += dt`.
+- **ShaderChunk is a file to copy from**, not an include: WGSL has no
+  `#include` and Rive shaders cannot import, so
+  `three/shaders/lib/three_chunks.wgsl` (generated from three.wgsl by
+  `tools/make_shader_chunks.py`) holds the renderer's frame and object
+  blocks, bindings and helpers (`three_direct_light`, `three_ambient`,
+  `three_output` for tone mapping, fog and sRGB, `shadow_factor`,
+  `tone_map`). With `lights: true` a ShaderMaterial is bound with every
+  frame binding (lights, environment, shadow maps, transmission); keep them
+  declared and used (`three_keep_frame_bindings`). `fog` defaults to false
+  as three.js and is honoured by `three_output`. **`defines` and
+  `extensions` are not supported** (Rive pipelines take no overridable
+  constants); `wireframe` and custom points/lines neither.
 
 ## ShadowMaterial, MeshDistanceMaterial, alpha hashing
 

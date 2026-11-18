@@ -200,7 +200,7 @@ three.js lighting setups look the same.
 - Examples `Environments` (cube, .hdr and .exr environments, a roughness
   sweep, CubeCamera reflections) and `Textures` (uv transforms, uv1, KTX2).
 
-### M8: materials completeness
+### M8: materials completeness (done)
 
 Goal: every three.js material option, so ported scenes and glTF assets
 render as authored.
@@ -222,7 +222,8 @@ render as authored.
 - **M8d, shadow and alpha options (done; alphaToCoverage as alphaHash).** ShadowMaterial, MeshDistanceMaterial,
   alpha-tested shadows and `customDepthMaterial` /
   `customDistanceMaterial`, `shadowSide`, `alphaHash`, `alphaToCoverage`.
-- **M8e, shader material reach.** A WGSL chunk library (three.js's
+- **M8e, shader material reach (done; no `defines`: Rive has no
+  pipeline-overridable constants).** A WGSL chunk library (three.js's
   ShaderChunk counterpart: lights, fog, tone mapping, colour space
   functions) ShaderMaterials can reuse, `lights: true` / `fog: true`
   support, and `defines` as WGSL pipeline-overridable constants if Rive

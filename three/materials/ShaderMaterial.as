@@ -134,6 +134,15 @@ export class ShaderMaterialParameters extends MaterialParameters {
     /// Entry points; empty takes the shader's first @vertex / @fragment.
     vertexEntryPoint: string = "";
     fragmentEntryPoint: string = "";
+    /// Bind every frame binding (environment, shadow maps, transmission), so
+    /// the shader can light itself with the chunks in
+    /// three/shaders/lib/three_chunks.wgsl.
+    lights: bool = false;
+
+    constructor() {
+        super();
+        this.fog = false;   // three.js's ShaderMaterial default
+    }
 }
 
 export class ShaderMaterial extends Material {
@@ -141,17 +150,21 @@ export class ShaderMaterial extends Material {
     shader: string = "";
     vertexEntryPoint: string = "";
     fragmentEntryPoint: string = "";
+    /// See ShaderMaterialParameters.lights.
+    lights: bool = false;
     /// Uniforms, written in insertion order.
     uniforms: Map<string, UniformBase> = new Map<string, UniformBase>();
 
     constructor(parameters: ShaderMaterialParameters? = null) {
         super();
         this.type = "ShaderMaterial";
+        this.fog = false;
         if (parameters != null) {
             this.setValues(parameters);
             this.shader = parameters.shader;
             this.vertexEntryPoint = parameters.vertexEntryPoint;
             this.fragmentEntryPoint = parameters.fragmentEntryPoint;
+            this.lights = parameters.lights;
         }
     }
 

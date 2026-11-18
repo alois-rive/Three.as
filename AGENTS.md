@@ -29,7 +29,10 @@ with Rive's `GPUCanvas` and WGSL shaders. Read these before changing code:
 - Library files under `three/` declare no protocol classes (no `Layout`,
   `Node` ...), so they never become script assets of their own.
 - WGSL lives in `three/shaders/`; its uniform layouts are mirrored by hand in
-  `three/renderers/GPURenderer.as` (keep both in sync).
+  `three/renderers/gpu/Layout.as` (keep both in sync). After editing
+  `three.wgsl`, run `python3 tools/make_shader_chunks.py`: it regenerates
+  the ShaderChunk library (`three/shaders/lib/three_chunks.wgsl`) and
+  `examples/shaders/lit.wgsl` from it.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
 ## Commands

@@ -175,6 +175,10 @@ class CustomPipeline {
     frameGroup: GPUBindGroup;
     // Its group 1 over the object arena (rebuilt when the arena grows).
     objGroup: GPUBindGroup? = null;
+    // `lights: true`: its group 0 with every frame binding, and their views.
+    lights: bool = false;
+    fullGroup: GPUBindGroup? = null;
+    fullViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(3);
     objArena: GPUBuffer? = null;
 
     constructor(pipeline: GPUPipeline, layout0: GPUBindGroupLayout, layout1: GPUBindGroupLayout, frameGroup: GPUBindGroup) {
@@ -953,7 +957,7 @@ export class GPURenderer {
     /// missing: the draw is skipped, with one log line).
     private customPipeline(material: ShaderMaterial, key: i32): CustomPipeline? {
         const name = material.shader + "|" + material.vertexEntryPoint + "|" + material.fragmentEntryPoint + "|"
-            + key.toString() + "|" + this.pipelineFormat.toString();
+            + key.toString() + "|" + this.pipelineFormat.toString() + (material.lights ? "|lights" : "");
         if (this.customPipelines.has(name)) return this.customPipelines.get(name);
         let module: GPUShaderModule? = null;
         if (this.customModules.has(material.shader)) module = this.customModules.get(material.shader);
@@ -990,8 +994,17 @@ export class GPURenderer {
         d.vertexBuffers = this.vertexBuffers;
         d.bindGroupLayouts = g2 != null ? [g0, g1, g2] : [g0, g1];
         const p = new GPUPipeline(d);
-        const frameGroup = new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)]);
+        // `lights: true` binds every frame texture (placeholders here; the
+        // real ones per render, customFullGroup).
+        const frameGroup = material.lights
+            ? new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)],
+                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
+                    new GPUBindGroupTexture(5, this.white!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                    new GPUBindGroupSampler(6, this.backgroundSampler(true))])
+            : new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)]);
         const cp = new CustomPipeline(p, g0, g1, frameGroup);
+        cp.lights = material.lights;
         cp.layout2 = g2;
         this.customPipelines.set(name, cp);
         return cp;
@@ -2189,6 +2202,24 @@ export class GPURenderer {
         return state.objGroup!;
     }
 
+    /// A `lights: true` ShaderMaterial's group 0: the frame block (the pass's
+    /// own in the transmission pass) and every frame texture.
+    private customFullGroup(cp: CustomPipeline, frameGroup: GPUBindGroup): GPUBindGroup {
+        if (frameGroup !== this.frameGroup) return frameGroup;
+        const env = this.frameEnvView != null ? this.frameEnvView! : this.white!;
+        const shadow = this.frameShadowView != null ? this.frameShadowView! : this.dummyShadowView!;
+        const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
+        const v = cp.fullViews;
+        if (cp.fullGroup == null || v[0] !== env || v[1] !== shadow || v[2] !== tr) {
+            cp.fullGroup = new GPUBindGroup(cp.layout0, [new GPUBindGroupUBO(0, this.frameUbo!)],
+                [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+            v[0] = env; v[1] = shadow; v[2] = tr;
+        }
+        return cp.fullGroup!;
+    }
+
     /// A ShaderMaterial pipeline's group 1 over the arena.
     private customObjGroup(cp: CustomPipeline): GPUBindGroup {
         const arena = this.arena!;
@@ -2473,7 +2504,7 @@ export class GPURenderer {
                 const g = item.geometry!;
                 pass.setPipeline(cp.pipeline);
                 lastKey = -1;
-                pass.setBindGroup(0, cp.frameGroup);
+                pass.setBindGroup(0, cp.lights ? this.customFullGroup(cp, frameGroup) : cp.frameGroup);
                 lastMat = null; lastSamplers = null; lastPos = null; lastNrm = null; lastUv = null; lastColor = null;
                 lastInst = null; lastIndex = null; lastSkin = null;
                 this.dynamicOffset[0] = state.objOffset;
