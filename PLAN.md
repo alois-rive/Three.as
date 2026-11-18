@@ -87,7 +87,7 @@ In steps, each committed with tests and a screenshot check:
 - **M2a, bounds and culling (done).** Math: Box3, Sphere, Plane, Ray, Line3,
   Triangle, Frustum, Spherical, Cylindrical. `computeBoundingBox` /
   `computeBoundingSphere`, Layers, frustum culling in the renderer.
-- **M2b, geometries.** Circle, Ring, Cylinder, Cone, Torus, TorusKnot,
+- **M2b, geometries (done).** Circle, Ring, Cylinder, Cone, Torus, TorusKnot,
   Capsule, Lathe, Polyhedron/Icosahedron/Octahedron/Tetrahedron/
   Dodecahedron, EdgesGeometry, WireframeGeometry.
 - **M2c, shading.** Geometry groups with material arrays, vertexColors,

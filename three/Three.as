@@ -54,6 +54,17 @@ export * from "./materials/MeshStandardMaterial";
 export * from "./geometries/BoxGeometry";
 export * from "./geometries/PlaneGeometry";
 export * from "./geometries/SphereGeometry";
+export * from "./geometries/CircleGeometry";
+export * from "./geometries/RingGeometry";
+export * from "./geometries/CylinderGeometry";
+export * from "./geometries/ConeGeometry";
+export * from "./geometries/TorusGeometry";
+export * from "./geometries/TorusKnotGeometry";
+export * from "./geometries/LatheGeometry";
+export * from "./geometries/CapsuleGeometry";
+export * from "./geometries/PolyhedronGeometry";
+export * from "./geometries/EdgesGeometry";
+export * from "./geometries/WireframeGeometry";
 
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";

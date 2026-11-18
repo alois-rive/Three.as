@@ -43,6 +43,7 @@ Needs the Rive CLI (`rive --version` 1.9.2 or later).
 ```bash
 rive .                                            # live preview (FirstScene)
 rive . --artboard=HelloCube                       # three.js's first tutorial
+rive . --artboard=Geometries                      # every built-in geometry
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```
@@ -51,7 +52,9 @@ rive . --screenshot=build/s.png --advance=1s      # headless render
 
 Milestone 1: math (Vector2/3/4, Quaternion, Euler, Matrix3/4, Color,
 MathUtils), Object3D, BufferGeometry, Scene, Group, Mesh, perspective and
-orthographic cameras, Box/Plane/Sphere geometries, Basic/Normal/Lambert/
+orthographic cameras, Box/Plane/Sphere geometries (and, from M2,
+Circle/Ring/Cylinder/Cone/Torus/TorusKnot/Lathe/Capsule/Polyhedra/Edges/
+Wireframe, Box3/Sphere/Plane/Ray/Triangle/Frustum, frustum culling), Basic/Normal/Lambert/
 Standard materials, ambient/directional/point lights, Texture, DataTexture,
 CanvasTexture, TextureLoader, ArtboardTexture, and `GPURenderer` (MSAA,
 depth, transparency sorting, sRGB output).

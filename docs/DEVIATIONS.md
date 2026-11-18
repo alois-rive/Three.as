@@ -98,6 +98,11 @@ export class Demo extends Layout {
 - **Numbers have sizes.** Public coordinates, angles and factors are `f64`;
   counts, indices and enum constants (`THREE.DoubleSide`,
   `THREE.RepeatWrapping`) are `i32`; colours are `u32`. Cast with `<f64>x`.
+- **Integer division truncates**, unlike JavaScript: `i / segments` with two
+  `i32`s is 0 for `i < segments`. Where three.js divides counters, cast an
+  operand: `<f64>i / <f64>segments`. The reverse trap: a cast applies its
+  type to the expression inside, so `<f64>(i / 4)` is a *float* division
+  (1.25 for 5); to truncate, divide first into an `i32` local.
 - **Down-casting** uses `instanceof` and `as`: `if (o instanceof THREE.Mesh)
   { const mesh = o as THREE.Mesh; }`. The `isMesh`-style flags exist too.
 - **No `userData`** (no untyped objects). Subclass, or keep a `Map` keyed by
@@ -141,6 +146,10 @@ export class Demo extends Layout {
 - `Object3D.copy` / `clone()` are not ported yet; `copyTransform(source)`
   copies name, transform and flags (not children).
 - `castShadow` defaults to false and is ignored until shadows land (M5).
+- The polyhedron presets (`IcosahedronGeometry`, `OctahedronGeometry`,
+  `TetrahedronGeometry`, `DodecahedronGeometry`) live in
+  `geometries/PolyhedronGeometry.as` rather than a file each; through the
+  `THREE` namespace nothing changes.
 
 ## Lighting
 
@@ -183,9 +192,10 @@ export class Demo extends Layout {
 
 ## Not yet supported
 
-Missing in M1, planned in [../PLAN.md](../PLAN.md): Line/Points/Sprite/
-InstancedMesh, material arrays and geometry groups, every geometry except
-Box/Plane/Sphere, Phong/Physical/Toon/Matcap/Depth/line/points materials,
+Missing so far, planned in [../PLAN.md](../PLAN.md): Line/Points/Sprite/
+InstancedMesh (so EdgesGeometry and WireframeGeometry build but cannot be
+drawn yet), material arrays and geometry groups, Shape/ShapeGeometry/
+ExtrudeGeometry/TubeGeometry, Phong/Physical/Toon/Matcap/Depth/line/points materials,
 maps other than `map`, `wireframe`, `vertexColors`, SpotLight,
 HemisphereLight, RectAreaLight, fog, background textures, shadows,
 environment maps, tone mapping, ShaderMaterial, render targets,
