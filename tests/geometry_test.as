@@ -140,5 +140,19 @@ export class GeometryTests extends Tests {
                 expect.that(<f64>bad).is(0);
             });
         });
+        group("computeTangents", () => {
+            test("a plane's tangents follow +u, right handed", (expect) => {
+                const g = new PlaneGeometry(2, 2, 2, 2);
+                g.computeTangents();
+                const t = g.getAttribute("tangent");
+                expect.that(t != null).is(true);
+                if (t == null) return;
+                expect.that(<f64>t.itemSize).is(4);
+                for (let v = 0; v < t.count; v++) {
+                    expect.that(Math.abs(<f64>t.array[v * 4] - 1) < 1e-6 && Math.abs(<f64>t.array[v * 4 + 1]) < 1e-6
+                        && <f64>t.array[v * 4 + 3] == 1).is(true);
+                }
+            });
+        });
     }
 }

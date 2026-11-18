@@ -1,7 +1,10 @@
 // three.js MeshBasicMaterial: unlit colour, times `map`.
 
+import { MultiplyOperation } from "../constants";
 import { Material, MaterialParameters } from "./Material";
-import { MaterialUniforms, KIND_BASIC, SLOT_MAP, SLOT_ALPHA, SLOT_AO } from "./MaterialUniforms";
+import {
+    MaterialUniforms, KIND_BASIC, SLOT_MAP, SLOT_ALPHA, SLOT_AO, ROLE_LIGHT, ROLE_SPECULAR, SLOT_ENV,
+} from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Texture } from "../textures/Texture";
 
@@ -12,6 +15,13 @@ export class MeshBasicMaterialParameters extends MaterialParameters {
     alphaMap: Texture? = null;
     aoMap: Texture? = null;
     aoMapIntensity: f64 = 1;
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    specularMap: Texture? = null;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
 }
 
 export class MeshBasicMaterial extends Material {
@@ -23,11 +33,26 @@ export class MeshBasicMaterial extends Material {
     aoMap: Texture? = null;
     aoMapIntensity: f64 = 1;
 
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    specularMap: Texture? = null;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
+
     constructor(parameters: MeshBasicMaterialParameters? = null) {
         super();
         this.type = "MeshBasicMaterial";
         if (parameters != null) {
             this.setValues(parameters);
+            this.lightMap = parameters.lightMap;
+            this.lightMapIntensity = parameters.lightMapIntensity;
+            this.specularMap = parameters.specularMap;
+            this.envMap = parameters.envMap;
+            this.combine = parameters.combine;
+            this.reflectivity = parameters.reflectivity;
+            this.refractionRatio = parameters.refractionRatio;
             this.color.setHex(parameters.color);
             this.map = parameters.map;
             this.alphaMap = parameters.alphaMap;
@@ -44,5 +69,12 @@ export class MeshBasicMaterial extends Material {
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_ALPHA] = this.alphaMap;
         u.textures[SLOT_AO] = this.aoMap;
+        u.roles[ROLE_LIGHT] = this.lightMap;
+        u.lightMapIntensity = this.lightMapIntensity;
+        u.roles[ROLE_SPECULAR] = this.specularMap;
+        u.textures[SLOT_ENV] = this.envMap;
+        u.combine = this.combine;
+        u.reflectivity = this.reflectivity;
+        u.refractionRatio = this.refractionRatio;
     }
 }

@@ -122,7 +122,31 @@ struct ObjU {
     // xyz) and, in the first row's w, its uv channel.
     uv_matrix: array<vec4<f32>, 16>,
     env: vec4<f32>,          // x 1: the material's envMap, y its max lod, z 1: prefiltered (PMREM)
+    // Extra maps: six slots, roles mapped to them (see MaterialUniforms).
+    x_uv: array<vec4<f32>, 12>,  // per slot: uv transform rows; row 0 w channel
+    x_flags: vec4<u32>,      // present, sRGB, premultiplied, flipY (bit per slot)
+    x_roles: vec4<u32>,      // x roles 0-7, y roles 8-15 (slot nibbles, 15 none), z 1: tangent attribute
+    x_params: vec4<f32>,     // bumpScale, displacementScale, displacementBias, lightMapIntensity
+    x_params2: vec4<f32>,    // normalMapType, combine, reflectivity, refractionRatio
+    x_params3: vec4<f32>,    // clearcoatNormalScale xy, z 1: refraction mapping
 };
+
+const ROLE_LIGHT: u32 = 0u;
+const ROLE_BUMP: u32 = 1u;
+const ROLE_DISPLACEMENT: u32 = 2u;
+const ROLE_SPECULAR: u32 = 3u;
+const ROLE_CLEARCOAT: u32 = 4u;
+const ROLE_CLEARCOAT_ROUGHNESS: u32 = 5u;
+const ROLE_CLEARCOAT_NORMAL: u32 = 6u;
+const ROLE_SHEEN_COLOR: u32 = 7u;
+const ROLE_SHEEN_ROUGHNESS: u32 = 8u;
+const ROLE_SPECULAR_INTENSITY: u32 = 9u;
+const ROLE_SPECULAR_COLOR: u32 = 10u;
+const ROLE_TRANSMISSION: u32 = 11u;
+const ROLE_THICKNESS: u32 = 12u;
+const ROLE_IRIDESCENCE: u32 = 13u;
+const ROLE_IRIDESCENCE_THICKNESS: u32 = 14u;
+const ROLE_ANISOTROPY: u32 = 15u;
 
 const MAX_BONES: u32 = 256u;
 
@@ -135,10 +159,14 @@ struct BonesU {
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
 @group(0) @binding(4) var s_shadow: sampler_comparison;
-@group(0) @binding(5) var t_background: texture_2d<f32>;
-@group(0) @binding(6) var s_background: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
+@group(1) @binding(2) var t_x0: texture_2d<f32>;
+@group(1) @binding(3) var t_x1: texture_2d<f32>;
+@group(1) @binding(4) var t_x2: texture_2d<f32>;
+@group(1) @binding(5) var t_x3: texture_2d<f32>;
+@group(1) @binding(6) var t_x4: texture_2d<f32>;
+@group(1) @binding(7) var t_x5: texture_2d<f32>;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
 @group(2) @binding(1) var t_normal: texture_2d<f32>;
 @group(2) @binding(2) var t_aux: texture_2d<f32>;
@@ -162,6 +190,7 @@ struct VsIn {
     @location(2) uv: vec2<f32>,
     @location(3) color: vec4<f32>,
     @location(11) uv1: vec2<f32>,
+    @location(12) tangent: vec4<f32>,
 };
 
 struct InstanceIn {
@@ -180,6 +209,7 @@ struct VsOut {
     @location(3) color: vec4<f32>,
     @location(4) view_depth: f32,
     @location(5) uv1: vec2<f32>,
+    @location(6) tangent: vec4<f32>,   // world xyz, w handedness
 };
 
 fn has_flag(bits: u32, slot: u32) -> bool {
@@ -196,6 +226,23 @@ fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
     return transform_vertex(in.position, in.normal, in, inst);
 }
 
+// displacementMap: the vertex moves along its normal by the map's red
+// channel x displacementScale + displacementBias (three.js's
+// displacementmap_vertex).
+fn displace(position: vec3<f32>, normal: vec3<f32>, in: VsIn) -> vec3<f32> {
+    let slot = role_slot(ROLE_DISPLACEMENT);
+    if (slot >= 6u) {
+        return position;
+    }
+    let h = x_sample_level(slot, x_slot_uv(slot, in.uv, in.uv1)).r;
+    return position + normalize(normal) * (h * O.x_params.y + O.x_params.z);
+}
+
+@vertex
+fn vs_displaced(in: VsIn, inst: InstanceIn) -> VsOut {
+    return transform_vertex(displace(in.position, in.normal, in), in.normal, in, inst);
+}
+
 // Skinned meshes: three.js's skinning (bindMatrixInverse x weighted bone
 // matrices x bindMatrix) before the usual transform.
 @vertex
@@ -205,6 +252,17 @@ fn vs_skinned(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
     let bones = B.bones[i.x] * w.x + B.bones[i.y] * w.y + B.bones[i.z] * w.z + B.bones[i.w] * w.w;
     let m = O.bind_matrix_inverse * bones * O.bind_matrix;
     let p = (m * vec4<f32>(in.position, 1.0)).xyz;
+    let n = (m * vec4<f32>(in.normal, 0.0)).xyz;
+    return transform_vertex(p, n, in, inst);
+}
+
+@vertex
+fn vs_skinned_displaced(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
+    let w = skin.weight;
+    let i = vec4<u32>(min(vec4<u32>(skin.index), vec4<u32>(MAX_BONES - 1u)));
+    let bones = B.bones[i.x] * w.x + B.bones[i.y] * w.y + B.bones[i.z] * w.z + B.bones[i.w] * w.w;
+    let m = O.bind_matrix_inverse * bones * O.bind_matrix;
+    let p = (m * vec4<f32>(displace(in.position, in.normal, in), 1.0)).xyz;
     let n = (m * vec4<f32>(in.normal, 0.0)).xyz;
     return transform_vertex(p, n, in, inst);
 }
@@ -219,6 +277,7 @@ fn transform_vertex(position: vec3<f32>, normal: vec3<f32>, in: VsIn, inst: Inst
     let im3 = mat3x3<f32>(im[0].xyz, im[1].xyz, im[2].xyz);
     let n = im3 * (normal / vec3<f32>(dot(im3[0], im3[0]), dot(im3[1], im3[1]), dot(im3[2], im3[2])));
     out.normal = (O.normal_matrix * vec4<f32>(n, 0.0)).xyz;
+    out.tangent = vec4<f32>((O.model * (im * vec4<f32>(in.tangent.xyz, 0.0))).xyz, in.tangent.w);
     out.uv = in.uv;
     out.uv1 = in.uv1;
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
@@ -259,6 +318,7 @@ fn vs_points(p: PointIn, @builtin(vertex_index) vi: u32) -> VsOut {
     out.normal = -F.camera_dir.xyz;
     out.uv = corner * 0.5 + vec2<f32>(0.5);
     out.uv1 = out.uv;
+    out.tangent = vec4<f32>(0.0);
     out.color = select(vec4<f32>(1.0), p.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.view_depth = -view_z;
     return out;
@@ -285,6 +345,7 @@ fn vs_sprite(@builtin(vertex_index) vi: u32) -> VsOut {
     out.normal = -F.camera_dir.xyz;
     out.uv = corner + vec2<f32>(0.5);
     out.uv1 = out.uv;
+    out.tangent = vec4<f32>(0.0);
     out.color = vec4<f32>(1.0);
     out.view_depth = -mv.z;
     return out;
@@ -328,6 +389,88 @@ fn slot_uv(uv: vec2<f32>, uv1: vec2<f32>, slot: u32) -> vec2<f32> {
 
 fn flip_uv(uv: vec2<f32>, slot: u32) -> vec2<f32> {
     return select(uv, vec2<f32>(uv.x, 1.0 - uv.y), has_flag(O.tex_flags.w, slot));
+}
+
+// ---------------------------------------------------------------- extra maps
+
+/// The extra slot holding `role`'s texture (6 or more: none).
+fn role_slot(role: u32) -> u32 {
+    let word = select(O.x_roles.x, O.x_roles.y, role >= 8u);
+    return (word >> ((role % 8u) * 4u)) & 0xfu;
+}
+
+/// An extra slot's uv (its texture.matrix and channel, then flipY).
+fn x_slot_uv(slot: u32, uv: vec2<f32>, uv1: vec2<f32>) -> vec2<f32> {
+    let s = min(slot, 5u);
+    let r0 = O.x_uv[s * 2u];
+    let r1 = O.x_uv[s * 2u + 1u];
+    let p = vec3<f32>(select(uv, uv1, r0.w > 0.5), 1.0);
+    let t = vec2<f32>(dot(r0.xyz, p), dot(r1.xyz, p));
+    return select(t, vec2<f32>(t.x, 1.0 - t.y), has_flag(O.x_flags.w, s));
+}
+
+/// An extra slot's raw texel (any control flow: explicit gradients).
+/// Extra slot k samples with base slot k's sampler (one sampler per
+/// texture keeps the shader translatable to GLSL).
+fn x_sample_grad(slot: u32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>) -> vec4<f32> {
+    switch slot {
+        case 0u: { return textureSampleGrad(t_x0, s_map, uv, dx, dy); }
+        case 1u: { return textureSampleGrad(t_x1, s_normal, uv, dx, dy); }
+        case 2u: { return textureSampleGrad(t_x2, s_aux, uv, dx, dy); }
+        case 3u: { return textureSampleGrad(t_x3, s_metalness, uv, dx, dy); }
+        case 4u: { return textureSampleGrad(t_x4, s_ao, uv, dx, dy); }
+        default: { return textureSampleGrad(t_x5, s_emissive, uv, dx, dy); }
+    }
+}
+
+/// Vertex stage: level 0.
+fn x_sample_level(slot: u32, uv: vec2<f32>) -> vec4<f32> {
+    switch slot {
+        case 0u: { return textureSampleLevel(t_x0, s_map, uv, 0.0); }
+        case 1u: { return textureSampleLevel(t_x1, s_normal, uv, 0.0); }
+        case 2u: { return textureSampleLevel(t_x2, s_aux, uv, 0.0); }
+        case 3u: { return textureSampleLevel(t_x3, s_metalness, uv, 0.0); }
+        case 4u: { return textureSampleLevel(t_x4, s_ao, uv, 0.0); }
+        default: { return textureSampleLevel(t_x5, s_emissive, uv, 0.0); }
+    }
+}
+
+/// The uvs of the six extra slots and their screen derivatives, taken in
+/// uniform control flow at the top of fs_main.
+struct ExtraUVs {
+    uv: array<vec2<f32>, 6>,
+    dx: array<vec2<f32>, 6>,
+    dy: array<vec2<f32>, 6>,
+};
+
+fn has_role(role: u32) -> bool {
+    let slot = role_slot(role);
+    return slot < 6u && has_flag(O.x_flags.x, slot);
+}
+
+/// `role`'s texel as three.js sees it (straight alpha, linear colour), or
+/// `fallback` when the material has no such map.
+fn role_texel(role: u32, x: ExtraUVs, fallback: vec4<f32>) -> vec4<f32> {
+    let slot = role_slot(role);
+    if (slot >= 6u || !has_flag(O.x_flags.x, slot)) {
+        return fallback;
+    }
+    let t = x_sample_grad(slot, x.uv[slot], x.dx[slot], x.dy[slot]);
+    return decode(t, has_flag(O.x_flags.z, slot), has_flag(O.x_flags.y, slot));
+}
+
+/// The bump map's height differences along the screen axes (three.js's
+/// dHdxy_fwd).
+fn bump_dhdxy(x: ExtraUVs) -> vec2<f32> {
+    let slot = role_slot(ROLE_BUMP);
+    let uv = x.uv[slot];
+    let dx = x.dx[slot];
+    let dy = x.dy[slot];
+    let s = O.x_params.x;
+    let hll = s * x_sample_grad(slot, uv, dx, dy).x;
+    let dbx = s * x_sample_grad(slot, uv + dx, dx, dy).x - hll;
+    let dby = s * x_sample_grad(slot, uv + dy, dx, dy).x - hll;
+    return vec2<f32>(dbx, dby);
 }
 
 fn sample_slot(t: texture_2d<f32>, s: sampler, uv: vec2<f32>, slot: u32) -> vec4<f32> {
@@ -496,6 +639,27 @@ fn env_sample(dir: vec3<f32>, lod: f32) -> vec3<f32> {
     return decode(texel, F.env_flags.z != 0u, F.env_flags.x != 0u).rgb;
 }
 
+/// three.js's envmap_fragment for Basic, Lambert and Phong: the envMap
+/// along the reflected (or refracted) view ray, combined with the lit
+/// colour by `combine`, `reflectivity` and the specular strength.
+fn env_combine(outgoing: vec3<f32>, world: vec3<f32>, n: vec3<f32>, specular_strength: f32) -> vec3<f32> {
+    let camera_to_frag = select(normalize(world - F.camera_pos.xyz), F.camera_dir.xyz, F.camera_pos.w > 0.5);
+    var dir = reflect(camera_to_frag, n);
+    if (O.x_params3.z > 0.5) {
+        dir = refract(camera_to_frag, n, O.x_params2.w);
+    }
+    let env = env_sample(dir, 0.0);
+    let k = specular_strength * O.x_params2.z;
+    let combine = u32(O.x_params2.y);
+    if (combine == 1u) {
+        return mix(outgoing, env, k);
+    }
+    if (combine == 2u) {
+        return outgoing + env * k;
+    }
+    return mix(outgoing, outgoing * env, k);
+}
+
 /// three.js's DFGApprox.
 fn dfg_approx(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> vec2<f32> {
     let dotNV = saturate(dot(N, V));
@@ -581,6 +745,13 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let duvy = dpdy(uv_normal);
     let dnx = dpdx(in.normal);
     let dny = dpdy(in.normal);
+    var x: ExtraUVs;
+    for (var s = 0u; s < 6u; s++) {
+        let xuv = x_slot_uv(s, in.uv, in.uv1);
+        x.uv[s] = xuv;
+        x.dx[s] = dpdx(xuv);
+        x.dy[s] = dpdy(xuv);
+    }
     let orthographic = F.camera_pos.w > 0.5;
     let V = select(normalize(F.camera_pos.xyz - in.world), -F.camera_dir.xyz, orthographic);
     let face = select(-1.0, 1.0, front);
@@ -635,14 +806,36 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     // getTangentFrame), so no tangent attribute is needed.
     if (has_flag(present, SLOT_NORMAL) && kind != KIND_DEPTH) {
         var map_n = c_normal.xyz * 2.0 - 1.0;
-        map_n = vec3<f32>(map_n.xy * O.extra.xy, map_n.z);
-        let q1perp = cross(dpy, N);
-        let q0perp = cross(N, dpx);
-        let T = q1perp * duvx.x + q0perp * duvy.x;
-        let B = q1perp * duvx.y + q0perp * duvy.y;
-        let det = max(dot(T, T), dot(B, B));
-        let scale = select(inverseSqrt(det), 0.0, det == 0.0);
-        N = normalize(T * (map_n.x * scale) + B * (map_n.y * scale) + N * map_n.z);
+        if (O.x_params2.x > 0.5) {
+            // ObjectSpaceNormalMap.
+            N = normalize((O.normal_matrix * vec4<f32>(map_n, 0.0)).xyz) * face;
+        } else {
+            map_n = vec3<f32>(map_n.xy * O.extra.xy, map_n.z);
+            if (O.x_roles.z != 0u && dot(in.tangent.xyz, in.tangent.xyz) > 0.0) {
+                // The tangent attribute (three.js's USE_TANGENT).
+                let T = normalize(in.tangent.xyz - N * dot(N, in.tangent.xyz)) * face;
+                let B = cross(normalize(in.normal), normalize(in.tangent.xyz)) * in.tangent.w * face;
+                N = normalize(T * map_n.x + B * map_n.y + N * map_n.z);
+            } else {
+                let q1perp = cross(dpy, N);
+                let q0perp = cross(N, dpx);
+                let T = q1perp * duvx.x + q0perp * duvy.x;
+                let B = q1perp * duvx.y + q0perp * duvy.y;
+                let det = max(dot(T, T), dot(B, B));
+                let scale = select(inverseSqrt(det), 0.0, det == 0.0);
+                N = normalize(T * (map_n.x * scale) + B * (map_n.y * scale) + N * map_n.z);
+            }
+        }
+    } else if (has_role(ROLE_BUMP) && kind != KIND_DEPTH) {
+        // three.js's perturbNormalArb.
+        let dh = bump_dhdxy(x);
+        let sx = normalize(dpx);
+        let sy = normalize(dpy);
+        let r1 = cross(sy, N);
+        let r2 = cross(N, sx);
+        let fdet = dot(sx, r1) * face;
+        let grad = sign(fdet) * (dh.x * r1 + dh.y * r2);
+        N = normalize(abs(fdet) * N - grad);
     }
 
     var ao = 1.0;
@@ -664,8 +857,19 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     }
 
     var rgb = diffuse.rgb;
+    // Basic, Lambert: specularMap; Phong's is the aux slot.
+    var specular_strength = role_texel(ROLE_SPECULAR, x, vec4<f32>(1.0)).r;
+    if (kind == KIND_PHONG && has_flag(present, SLOT_AUX)) {
+        specular_strength = c_aux.r;
+    }
+    let light_map = role_texel(ROLE_LIGHT, x, vec4<f32>(0.0)).rgb * O.x_params.w;
     if (kind == KIND_BASIC || kind == KIND_LINE_DASHED) {
-        rgb = diffuse.rgb * ao;
+        // three.js: a lightMap replaces the unit indirect light.
+        let indirect = select(vec3<f32>(1.0), light_map * RECIPROCAL_PI, has_role(ROLE_LIGHT));
+        rgb = diffuse.rgb * indirect * ao;
+        if (kind == KIND_BASIC && O.env.x > 0.5) {
+            rgb = env_combine(rgb, in.world, N, specular_strength);
+        }
     } else if (kind == KIND_MATCAP) {
         rgb = diffuse.rgb * select(vec3<f32>(1.0), c_aux.rgb, has_flag(present, SLOT_AUX));
     } else {
@@ -692,21 +896,19 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             if (physical) {
                 let ior = O.extra.w;
                 let r = (ior - 1.0) / (ior + 1.0);
-                let dielectric = min(vec3<f32>(r * r) * O.physical2.rgb, vec3<f32>(1.0)) * O.physical0.w;
+                let spec_intensity = O.physical0.w * role_texel(ROLE_SPECULAR_INTENSITY, x, vec4<f32>(1.0)).a;
+                let spec_color = O.physical2.rgb * role_texel(ROLE_SPECULAR_COLOR, x, vec4<f32>(1.0)).rgb;
+                let dielectric = min(vec3<f32>(r * r) * spec_color, vec3<f32>(1.0)) * spec_intensity;
                 f0 = mix(dielectric, diffuse.rgb, metalness);
-                f90 = mix(O.physical0.w, 1.0, metalness);
+                f90 = mix(spec_intensity, 1.0, metalness);
             } else {
                 f0 = mix(vec3<f32>(0.04), diffuse.rgb, metalness);
             }
         }
         let diffuse_color = diffuse.rgb * (1.0 - metalness);
-        var specular_strength = 1.0;
-        if (kind == KIND_PHONG && has_flag(present, SLOT_AUX)) {
-            specular_strength = c_aux.r;
-        }
 
-        // Indirect: ambient and hemisphere light, occluded by the aoMap.
-        var indirect = F.ambient.rgb;
+        // Indirect: ambient, hemisphere and lightMap light, occluded by the aoMap.
+        var indirect = F.ambient.rgb + light_map;
         if (F.hemi_dir.w > 0.5) {
             let w = 0.5 * dot(N, F.hemi_dir.xyz) + 0.5;
             indirect += mix(F.hemi_ground.rgb, F.hemi_sky.rgb, w);
@@ -715,7 +917,26 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         var specular = vec3<f32>(0.0);
         var sheen = vec3<f32>(0.0);
         var clearcoat_spec = vec3<f32>(0.0);
-        let clearcoat_roughness = clamp(O.physical0.y, 0.0525, 1.0);
+        let sheen_color = O.physical1.rgb * role_texel(ROLE_SHEEN_COLOR, x, vec4<f32>(1.0)).rgb;
+        let sheen_roughness = clamp(O.physical0.z * role_texel(ROLE_SHEEN_ROUGHNESS, x, vec4<f32>(1.0)).a, 0.07, 1.0);
+        let clearcoat = O.physical0.x * role_texel(ROLE_CLEARCOAT, x, vec4<f32>(1.0)).r;
+        let clearcoat_roughness = clamp(O.physical0.y * role_texel(ROLE_CLEARCOAT_ROUGHNESS, x, vec4<f32>(1.0)).g,
+            0.0525, 1.0);
+        // The clearcoat's own normal: the geometry normal, or its normal map
+        // (tangent space, from derivatives).
+        var cc_n = geometry_normal;
+        if (physical && has_role(ROLE_CLEARCOAT_NORMAL)) {
+            var m = role_texel(ROLE_CLEARCOAT_NORMAL, x, vec4<f32>(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            m = vec3<f32>(m.xy * O.x_params3.xy, m.z);
+            let slot = role_slot(ROLE_CLEARCOAT_NORMAL);
+            let q1perp = cross(dpy, cc_n);
+            let q0perp = cross(cc_n, dpx);
+            let T = q1perp * x.dx[slot].x + q0perp * x.dy[slot].x;
+            let B = q1perp * x.dx[slot].y + q0perp * x.dy[slot].y;
+            let det = max(dot(T, T), dot(B, B));
+            let sc = select(inverseSqrt(det), 0.0, det == 0.0);
+            cc_n = normalize(T * (m.x * sc) + B * (m.y * sc) + cc_n * m.z);
+        }
 
         let count = min(u32(F.ambient.w), MAX_LIGHTS);
         for (var i = 0u; i < count; i++) {
@@ -759,9 +980,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             } else if (pbr) {
                 specular += irradiance * BRDF_GGX(L, V, N, f0, f90, roughness);
                 if (physical) {
-                    sheen += irradiance * BRDF_Sheen(L, V, N, O.physical1.rgb, O.physical0.z);
-                    let cc_irradiance = saturate(dot(geometry_normal, L)) * radiance;
-                    clearcoat_spec += cc_irradiance * BRDF_GGX(L, V, geometry_normal, vec3<f32>(0.04), 1.0, clearcoat_roughness);
+                    sheen += irradiance * BRDF_Sheen(L, V, N, sheen_color, sheen_roughness);
+                    let cc_irradiance = saturate(dot(cc_n, L)) * radiance;
+                    clearcoat_spec += cc_irradiance * BRDF_GGX(L, V, cc_n, vec3<f32>(0.04), 1.0, clearcoat_roughness);
                 }
             }
         }
@@ -792,12 +1013,25 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             let ibl_diffuse = diffuse_color * (1.0 - max(total.r, max(total.g, total.b))) * cosine_irradiance;
             let ibl_specular = radiance * fss_ess + multi * cosine_irradiance;
             rgb += (ibl_diffuse + ibl_specular) * ao;
+            if (physical && clearcoat > 0.0) {
+                // The clearcoat reflects the environment too (three.js's
+                // clearcoatSpecularIndirect).
+                let rc = reflect(-V, cc_n);
+                let cc_radiance = env_sample(normalize(mix(rc, cc_n, clearcoat_roughness * clearcoat_roughness)),
+                    clearcoat_roughness * max_lod) * intensity;
+                let cfab = dfg_approx(cc_n, V, clearcoat_roughness);
+                clearcoat_spec += cc_radiance * (vec3<f32>(0.04) * cfab.x + vec3<f32>(cfab.y)) * ao;
+            }
         }
         if (physical) {
-            let sc = O.physical1.rgb;
+            let sc = sheen_color;
             rgb = rgb * (1.0 - 0.157 * max(sc.r, max(sc.g, sc.b))) + sheen;
-            let fcc = F_Schlick(vec3<f32>(0.04), 1.0, saturate(dot(geometry_normal, V)));
-            rgb = rgb * (1.0 - O.physical0.x * fcc) + clearcoat_spec * O.physical0.x;
+            let fcc = F_Schlick(vec3<f32>(0.04), 1.0, saturate(dot(cc_n, V)));
+            rgb = rgb * (1.0 - clearcoat * fcc) + clearcoat_spec * clearcoat;
+        }
+        if (!pbr && O.env.x > 0.5) {
+            // Lambert and Phong envMap (three.js's envmap_fragment).
+            rgb = env_combine(rgb, in.world, N, specular_strength);
         }
     }
 
@@ -819,46 +1053,4 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         return vec4<f32>(rgb * alpha, alpha);
     }
     return vec4<f32>(linear_to_srgb(rgb) * alpha, alpha);
-}
-
-// ---------------------------------------------------------------- background
-
-struct BgOut {
-    @builtin(position) clip: vec4<f32>,
-    @location(0) ndc: vec2<f32>,
-};
-
-@vertex
-fn vs_background(@builtin(vertex_index) vi: u32) -> BgOut {
-    var out: BgOut;
-    let x = f32((vi << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(vi & 2u) * 2.0 - 1.0;
-    out.clip = vec4<f32>(x, y, 1.0, 1.0);
-    out.ndc = vec2<f32>(x, y);
-    return out;
-}
-
-@fragment
-fn fs_background(in: BgOut) -> @location(0) vec4<f32> {
-    var uv: vec2<f32>;
-    if (F.bg_flags.x == MAPPING_EQUIRECT) {
-        let far = F.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
-        let near = F.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
-        var dir = normalize(far.xyz / far.w - near.xyz / near.w);
-        dir = (F.bg_rotation * vec4<f32>(dir, 0.0)).xyz;
-        uv = vec2<f32>(atan2(dir.z, dir.x) * 0.5 * RECIPROCAL_PI + 0.5,
-                       asin(clamp(dir.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);
-    } else {
-        uv = in.ndc * 0.5 + vec2<f32>(0.5);
-    }
-    if (F.bg_flags.z != 0u) {
-        uv.y = 1.0 - uv.y;
-    }
-    let texel = textureSampleLevel(t_background, s_background, uv, F.output.w);
-    let c = decode(texel, F.bg_flags.w != 0u, F.bg_flags.y != 0u);
-    let bg = c.rgb * F.output.z;
-    if (F.shadow_params.z > 0.5) {
-        return vec4<f32>(bg, 1.0);
-    }
-    return vec4<f32>(linear_to_srgb(bg), 1.0);
 }

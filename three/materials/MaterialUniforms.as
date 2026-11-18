@@ -30,6 +30,28 @@ export const SLOT_ALPHA: i32 = 6;
 export const SLOT_ENV: i32 = 7;
 export const TEXTURE_SLOTS: i32 = 8;
 
+// Extra maps ("roles"): each has its own uv transform and lands in one of
+// six extra texture bindings (maps sharing a texture share one).
+export const ROLE_LIGHT: i32 = 0;
+export const ROLE_BUMP: i32 = 1;
+export const ROLE_DISPLACEMENT: i32 = 2;
+/// Basic and Lambert specularMap (Phong's is SLOT_AUX).
+export const ROLE_SPECULAR: i32 = 3;
+export const ROLE_CLEARCOAT: i32 = 4;
+export const ROLE_CLEARCOAT_ROUGHNESS: i32 = 5;
+export const ROLE_CLEARCOAT_NORMAL: i32 = 6;
+export const ROLE_SHEEN_COLOR: i32 = 7;
+export const ROLE_SHEEN_ROUGHNESS: i32 = 8;
+export const ROLE_SPECULAR_INTENSITY: i32 = 9;
+export const ROLE_SPECULAR_COLOR: i32 = 10;
+export const ROLE_TRANSMISSION: i32 = 11;
+export const ROLE_THICKNESS: i32 = 12;
+export const ROLE_IRIDESCENCE: i32 = 13;
+export const ROLE_IRIDESCENCE_THICKNESS: i32 = 14;
+export const ROLE_ANISOTROPY: i32 = 15;
+export const ROLE_COUNT: i32 = 16;
+export const EXTRA_SLOTS: i32 = 6;
+
 export class MaterialUniforms {
     kind: i32 = KIND_BASIC;
     r: f64 = 1; g: f64 = 1; b: f64 = 1;
@@ -63,7 +85,18 @@ export class MaterialUniforms {
     dashSize: f64 = 0;
     gapSize: f64 = 0;
     dashScale: f64 = 1;
+    // Extra maps and their parameters.
+    bumpScale: f64 = 1;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    lightMapIntensity: f64 = 1;
+    normalMapType: i32 = 0;
+    combine: i32 = 0;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
+    clearcoatNormalScaleX: f64 = 1; clearcoatNormalScaleY: f64 = 1;
     textures: StaticArray<Texture?> = new StaticArray<Texture?>(TEXTURE_SLOTS);
+    roles: StaticArray<Texture?> = new StaticArray<Texture?>(ROLE_COUNT);
 
     reset(): void {
         this.kind = KIND_BASIC;
@@ -87,6 +120,10 @@ export class MaterialUniforms {
         this.specularColorR = 1; this.specularColorG = 1; this.specularColorB = 1;
         this.size = 1; this.sizeAttenuation = true; this.rotation = 0;
         this.dashSize = 0; this.gapSize = 0; this.dashScale = 1;
+        this.bumpScale = 1; this.displacementScale = 1; this.displacementBias = 0; this.lightMapIntensity = 1;
+        this.normalMapType = 0; this.combine = 0; this.reflectivity = 1; this.refractionRatio = 0.98;
+        this.clearcoatNormalScaleX = 1; this.clearcoatNormalScaleY = 1;
         for (let i = 0; i < TEXTURE_SLOTS; i++) this.textures[i] = null;
+        for (let i = 0; i < ROLE_COUNT; i++) this.roles[i] = null;
     }
 }

@@ -63,7 +63,9 @@ import { DirectionalLight } from "../lights/DirectionalLight";
 import { PointLight } from "../lights/PointLight";
 import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
-import { MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV } from "../materials/MaterialUniforms";
+import {
+    MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT,
+} from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
 import { Texture, disposedTextures } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
@@ -78,7 +80,7 @@ import {
     BackSide, DoubleSide, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter,
     LinearMipmapLinearFilter, RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace, NoToneMapping,
     NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
-    EquirectangularReflectionMapping, EquirectangularRefractionMapping, BasicShadowMap, PCFShadowMap,
+    EquirectangularReflectionMapping, EquirectangularRefractionMapping, CubeRefractionMapping, BasicShadowMap, PCFShadowMap,
 
 } from "../constants";
 import { LightShadow } from "../lights/LightShadow";
@@ -86,6 +88,7 @@ import { CubeTexture } from "../textures/CubeTexture";
 import { CubeCamera } from "../cameras/CubeCamera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
+import { interleaveNormalTangent } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
 import { RenderTarget } from "./RenderTarget";
 import {
@@ -97,11 +100,14 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
 const SHADER_NAMES: Array<string> = ["three/shaders/three", "shaders/three", "three"];
+const BACKGROUND_SHADER_NAMES: Array<string> = [
+    "three/shaders/three_background", "shaders/three_background", "three_background",
+];
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
 
@@ -115,6 +121,7 @@ const KEY_COLOR_WRITE: i32 = 1 << 8;
 const KEY_PRIM_SHIFT: i32 = 9;          // 2 bits: PRIM_*
 const KEY_MSAA: i32 = 1 << 11;
 const KEY_SKINNED: i32 = 1 << 12;
+const KEY_DISPLACED: i32 = 1 << 13;      // displacementMap: the vs_*_displaced entry points
 const KEY_BACKGROUND: i32 = 1 << 30;
 
 // The depth (and MSAA colour) attachments of one render destination.
@@ -257,6 +264,10 @@ class DrawState {
     samplerGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
+    /// The extra map slots' views (group 1 bindings 2-7) and how many.
+    xviews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(EXTRA_SLOTS);
+    xcount: i32 = 0;
+    xgroupViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(EXTRA_SLOTS);
     frame: i32 = -1;
 }
 
@@ -367,8 +378,12 @@ export class GPURenderer {
     private whiteCount: i32 = 0;
     private samplers: Map<i32, GPUSampler> = new Map<i32, GPUSampler>();
     private bgView: GPUTextureView? = null;
+    private bgModule: GPUShaderModule? = null;
+    private backgroundLayout: GPUBindGroupLayout? = null;
+    private bgGroup: GPUBindGroup? = null;
+    private bgGroupView: GPUTextureView? = null;
+    private bgGroupMipmapped: bool = false;
     private bgMipmapped: bool = false;
-    private frameGroupBg: GPUTextureView? = null;
     private bgTexture: Texture? = null;
     private envTexture: Texture? = null;
     private envView: GPUTextureView? = null;
@@ -397,6 +412,7 @@ export class GPURenderer {
     private casterItems: Array<DrawItem> = [];
     private shadowPipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private shadowsWarned: bool = false;
+    private warnedExtraMaps: bool = false;
 
     private mainTargets: PassTargets = new PassTargets();
     private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
@@ -629,7 +645,7 @@ export class GPURenderer {
         const pass = canvas.beginRenderPass(pd);
         if (background) {
             pass.setPipeline(this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0)));
-            pass.setBindGroup(0, this.frameGroup!);
+            pass.setBindGroup(0, this.bgGroup!);
             pass.draw(3);
         }
         this.drawList(pass, this.opaque);
@@ -694,6 +710,13 @@ export class GPURenderer {
         if (this.module == null) {
             let module: GPUShaderModule? = null;
             for (let i = 0; i < SHADER_NAMES.length && module == null; i++) module = this.context.shader(SHADER_NAMES[i]);
+            let bgModule: GPUShaderModule? = null;
+            for (let i = 0; i < BACKGROUND_SHADER_NAMES.length && bgModule == null; i++) {
+                bgModule = this.context.shader(BACKGROUND_SHADER_NAMES[i]);
+            }
+            if (bgModule == null) return this.fail("shader asset 'three/shaders/three_background.wgsl' not found");
+            this.bgModule = bgModule;
+            this.backgroundLayout = GPUBindGroupLayout.fromShader(bgModule!, 0);
             if (module == null) return this.fail("shader asset 'three/shaders/three.wgsl' not found");
             this.module = module;
             const g0 = GPUBindGroupLayout.fromShader(module, 0);
@@ -706,6 +729,13 @@ export class GPURenderer {
             this.matLayout = g2;
             this.samplerLayout = g3;
 
+            // Normals and tangents interleaved at slot 1.
+            const normalTangent = new GPUVertexBufferLayout();
+            normalTangent.stride = 28;
+            normalTangent.attributes = [
+                new GPUVertexAttribute(VertexFormat.float3, 1, 0),
+                new GPUVertexAttribute(VertexFormat.float4, 12, 12),
+            ];
             // Instances: matrices at slot 4 (InstancedMesh.instanceMatrix as
             // is), colours at slot 5 (instanceColor, rgb).
             const instance = new GPUVertexBufferLayout();
@@ -721,7 +751,7 @@ export class GPURenderer {
             instanceColor.stepMode = VertexStepMode.instance;
             this.vertexBuffers = [
                 vertexLayout(12, VertexFormat.float3, 0),
-                vertexLayout(12, VertexFormat.float3, 1),
+                normalTangent,
                 vertexLayout(8, VertexFormat.float2, 2),
                 vertexLayout(16, VertexFormat.float4, 3),
                 instance,
@@ -821,12 +851,14 @@ export class GPURenderer {
         d.sampleCount = (key & KEY_MSAA) != 0 ? this.samples : 1;
         d.depthStencil = ds;
         if ((key & KEY_BACKGROUND) != 0) {
+            d.vertexModule = this.bgModule;
+            d.fragmentModule = this.bgModule;
             d.vertexEntryPoint = "vs_background";
             d.fragmentEntryPoint = "fs_background";
             ds.compare = CompareFunction.always;
             ds.write = false;
             d.colorTargets = [target];
-            d.bindGroupLayouts = [this.frameLayout];
+            d.bindGroupLayouts = [this.backgroundLayout];
         } else {
             const cull = key & KEY_CULL_MASK;
             const blending = (key >> KEY_BLEND_SHIFT) & 7;
@@ -852,10 +884,10 @@ export class GPURenderer {
                 d.vertexEntryPoint = "vs_sprite";
                 d.cullMode = CullMode.none;
             } else if ((key & KEY_SKINNED) != 0) {
-                d.vertexEntryPoint = "vs_skinned";
+                d.vertexEntryPoint = (key & KEY_DISPLACED) != 0 ? "vs_skinned_displaced" : "vs_skinned";
                 d.vertexBuffers = this.skinBuffers;
             } else {
-                d.vertexEntryPoint = "vs_main";
+                d.vertexEntryPoint = (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
                 d.vertexBuffers = this.vertexBuffers;
                 if (prim == PRIM_LINES) {
                     d.topology = PrimitiveTopology.lineList;
@@ -1257,7 +1289,9 @@ export class GPURenderer {
         if (normal != null && normal.count == position.count) {
             if (geometry.morphAttributes.has("normal")) {
                 m.normals = blend(normal.array, geometry.morphAttributes.get("normal"), influences, relative, m.normals);
-                m.normal = uploadVertices(m.normal, m.normals);
+                const tangent = geometry.getAttribute("tangent");
+                const t = tangent != null && tangent.count == position.count && tangent.itemSize == 4 ? tangent.array : null;
+                m.normal = uploadVertices(m.normal, interleaveNormalTangent(m.normals, t, position.count));
             } else {
                 m.normal = null;
             }
@@ -1282,6 +1316,11 @@ export class GPURenderer {
             const t = u.textures[i];
             if (t != null) this.textures.update(t, frame);
         }
+        for (let i = 0; i < ROLE_COUNT; i++) {
+            const t = u.roles[i];
+            if (t != null) this.textures.update(t, frame);
+        }
+        const displaced = u.roles[ROLE_DISPLACEMENT] != null && prim == PRIM_TRIANGLES;
 
         const item = new DrawItem(object, material, g, state, this.identityInstance!, this.identityColor!);
         item.prim = prim;
@@ -1295,7 +1334,7 @@ export class GPURenderer {
         item.pipelineKey = cull | (blending << KEY_BLEND_SHIFT)
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
             | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT)
-            | (this.passSamples > 1 ? KEY_MSAA : 0);
+            | (this.passSamples > 1 ? KEY_MSAA : 0) | (displaced ? KEY_DISPLACED : 0);
         if (material instanceof ShaderMaterial) {
             if (prim != PRIM_TRIANGLES) return null;   // custom points/lines are not supported
             const cp = this.customPipeline(material as ShaderMaterial, item.pipelineKey);
@@ -1397,16 +1436,20 @@ export class GPURenderer {
             ? (this.envPrefiltered ? this.textures.pmremLevels(env) : this.textures.levels(env)) : 1;
         const bind = view != null ? view! : this.white!;
         const shadow = this.tileCount > 0 && this.shadowView != null ? this.shadowView! : this.dummyShadowView!;
-        const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
-        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow
-                || this.frameGroupBg !== bg) {
+        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow) {
             this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, bg)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                    new GPUBindGroupSampler(6, this.backgroundSampler(this.bgMipmapped))]);
+                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]);
             this.frameGroupView = bind;
             this.frameGroupShadow = shadow;
-            this.frameGroupBg = bg;
+        }
+        // The background pass's own group: the frame block and the texture.
+        const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
+        if (this.bgGroup == null || this.bgGroupView !== bg || this.bgGroupMipmapped != this.bgMipmapped) {
+            this.bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
+                [new GPUBindGroupTexture(1, bg)], [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
+            this.bgGroupView = bg;
+            this.bgGroupMipmapped = this.bgMipmapped;
         }
     }
 
@@ -1540,10 +1583,8 @@ export class GPURenderer {
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.tileUbos.push(ubo);
             this.tileGroups.push(new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
-                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
-                    new GPUBindGroupTexture(5, this.white!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]));
+                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]));
         }
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
@@ -1570,6 +1611,11 @@ export class GPURenderer {
                 }
                 this.dynamicOffset[0] = state.objOffset;
                 pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
+                if ((key & KEY_DISPLACED) != 0) {
+                    if (state.matGroup == null || state.samplerGroup == null) continue;
+                    pass.setBindGroup(2, state.matGroup!);
+                    pass.setBindGroup(3, state.samplerGroup!);
+                }
                 const pos = item.positionOverride;
                 pass.setVertexBuffer(0, pos != null ? pos : g.position!);
                 pass.setVertexBuffer(1, g.normal!);
@@ -1643,10 +1689,12 @@ export class GPURenderer {
         const d = new GPUPipelineDesc();
         d.vertexModule = this.module;
         const skinned = (key & KEY_SKINNED) != 0;
-        d.vertexEntryPoint = skinned ? "vs_skinned" : "vs_main";
+        const displaced = (key & KEY_DISPLACED) != 0;
+        d.vertexEntryPoint = (skinned ? "vs_skinned" : "vs_main") + (displaced ? "_displaced" : "");
         d.colorTargets = [];
         d.vertexBuffers = skinned ? this.skinBuffers : this.vertexBuffers;
-        d.bindGroupLayouts = [this.frameLayout, this.objLayout];
+        d.bindGroupLayouts = displaced ? [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout]
+            : [this.frameLayout, this.objLayout];
         const cull = key & KEY_CULL_MASK;
         d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
         d.winding = FaceWinding.counterClockwise;
@@ -1882,22 +1930,28 @@ export class GPURenderer {
     /// draw one with its bones (both read the block at state.objOffset).
     private objGroupOf(item: DrawItem): GPUBindGroup {
         const arena = this.arena!;
-        if (!item.skinned || item.bones == null) {
+        const state = item.state;
+        const skinned = item.skinned && item.bones != null;
+        if (!skinned && state.xcount == 0) {
             let g = this.arenaGroup;
             if (g == null) {
+                const white = this.white!;
                 g = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                    new GPUBindGroupUBO(1, this.dummyBones!)]);
+                    new GPUBindGroupUBO(1, this.dummyBones!)], extraTextures(null, white));
                 this.arenaGroup = g;
             }
             return g;
         }
-        const state = item.state;
-        const bones = item.bones!;
-        if (state.objGroup == null || state.arena !== arena || state.bones !== bones) {
+        // Its own group: bones and/or extra maps.
+        const bones = skinned ? item.bones! : this.dummyBones!;
+        let changed = state.objGroup == null || state.arena !== arena || state.bones !== bones;
+        for (let i = 0; i < EXTRA_SLOTS && !changed; i++) changed = state.xgroupViews[i] !== state.xviews[i];
+        if (changed) {
             state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                new GPUBindGroupUBO(1, bones)]);
+                new GPUBindGroupUBO(1, bones)], extraTextures(state.xviews, this.white!));
             state.arena = arena;
             state.bones = bones;
+            for (let i = 0; i < EXTRA_SLOTS; i++) state.xgroupViews[i] = state.xviews[i];
         }
         return state.objGroup!;
     }
@@ -1910,6 +1964,82 @@ export class GPURenderer {
             cp.objArena = arena;
         }
         return cp.objGroup!;
+    }
+
+    /// The extra maps (MaterialUniforms roles) of a draw: distinct textures
+    /// get the six extra slots (group 1 bindings 2-7), each with its uv
+    /// transform and a sampler borrowed from group 3 (an identical one, or
+    /// the binding of an empty base slot).
+    private writeExtraMaps(item: DrawItem, mu: MaterialUniforms, f: Float32Array, u: Uint32Array, present: u32,
+                           canvas: GPUCanvas): void {
+        const state = item.state;
+        const samplers = _samplers;
+        let xpresent: u32 = 0, xsrgb: u32 = 0, xpremul: u32 = 0, xflip: u32 = 0;
+        let roles0: u32 = 0xffffffff, roles1: u32 = 0xffffffff;
+        let used: u32 = 0;            // extra slots taken
+        let count = 0;
+        for (let i = 0; i < EXTRA_SLOTS; i++) {
+            state.xviews[i] = null;
+            _xtex[i] = null;
+        }
+        for (let r = 0; r < ROLE_COUNT; r++) {
+            const t = mu.roles[r];
+            if (t == null) continue;
+            let slot = -1;
+            for (let k = 0; k < EXTRA_SLOTS; k++) if (_xtex[k] === t) slot = k;
+            if (slot < 0) {
+                if (used == (1 << EXTRA_SLOTS) - 1) {
+                    if (!this.warnedExtraMaps) {
+                        this.context.log("three: a material uses more than " + EXTRA_SLOTS.toString()
+                            + " distinct extra maps; the rest are ignored");
+                        this.warnedExtraMaps = true;
+                    }
+                    continue;
+                }
+                const v = this.textures.view(t, canvas);
+                if (v == null) continue;
+                // Extra slot k samples with base slot k's sampler: take a
+                // slot whose base sampler matches or is free (its base slot
+                // empty), else any (that map then shares the base sampler).
+                const smp = this.sampler(t, this.textures.levels(t) > 1);
+                for (let k = 0; k < EXTRA_SLOTS && slot < 0; k++) {
+                    if (((used >> <u32>k) & 1) == 0 && ((present >> <u32>k) & 1) != 0 && samplers[k] === smp) slot = k;
+                }
+                for (let k = 0; k < EXTRA_SLOTS && slot < 0; k++) {
+                    if (((used >> <u32>k) & 1) == 0 && ((present >> <u32>k) & 1) == 0) slot = k;
+                }
+                for (let k = 0; k < EXTRA_SLOTS && slot < 0; k++) if (((used >> <u32>k) & 1) == 0) slot = k;
+                if (((present >> <u32>slot) & 1) == 0) samplers[slot] = smp;
+                used |= <u32>1 << <u32>slot;
+                count++;
+                _xtex[slot] = t;
+                state.xviews[slot] = v;
+                const bit: u32 = 1 << <u32>slot;
+                xpresent |= bit;
+                if (t.colorSpace == SRGBColorSpace) xsrgb |= bit;
+                if (t.premultiplyAlpha) xpremul |= bit;
+                if (t.flipY) xflip |= bit;
+                if (t.matrixAutoUpdate) t.updateMatrix();
+                const e = t.matrix.elements;
+                const o = (OBJ_X_UV >> 2) + slot * 8;
+                f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;
+                f[o + 4] = <f32>e[1]; f[o + 5] = <f32>e[4]; f[o + 6] = <f32>e[7]; f[o + 7] = 0;
+            }
+            const shift = <u32>((r & 7) * 4);
+            if (r < 8) roles0 = (roles0 & ~(<u32>0xf << shift)) | (<u32>slot << shift);
+            else roles1 = (roles1 & ~(<u32>0xf << shift)) | (<u32>slot << shift);
+        }
+        state.xcount = count;
+        let o = OBJ_X_FLAGS >> 2;
+        u[o] = xpresent; u[o + 1] = xsrgb; u[o + 2] = xpremul; u[o + 3] = xflip;
+        o = OBJ_X_ROLES >> 2;
+        const g = item.geometry;
+        u[o] = roles0; u[o + 1] = roles1; u[o + 2] = g != null && g.hasTangents ? 1 : 0; u[o + 3] = 0;
+        put4(f, OBJ_X_PARAMS, mu.bumpScale, mu.displacementScale, mu.displacementBias, mu.lightMapIntensity);
+        put4(f, OBJ_X_PARAMS2, <f64>mu.normalMapType, <f64>mu.combine, mu.reflectivity, mu.refractionRatio);
+        const env = mu.textures[SLOT_ENV];
+        const refract = env != null && (env.mapping == CubeRefractionMapping || env.mapping == EquirectangularRefractionMapping);
+        put4(f, OBJ_X_PARAMS3, mu.clearcoatNormalScaleX, mu.clearcoatNormalScaleY, refract ? 1 : 0, 0);
     }
 
     private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
@@ -1998,6 +2128,7 @@ export class GPURenderer {
                 f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;
                 f[o + 4] = <f32>e[1]; f[o + 5] = <f32>e[4]; f[o + 6] = <f32>e[7];
             }
+            this.writeExtraMaps(item, mu, f, u, present, canvas);
             o = OBJ_TEX_FLAGS >> 2;
             u[o] = <u32>mu.kind; u[o + 1] = present; u[o + 2] = srgb; u[o + 3] = flip;
             let flags: u32 = 0;
@@ -2286,3 +2417,14 @@ const _euler: Euler = new Euler();
 const _bgRotation: Matrix4 = new Matrix4();
 const _views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
 const _samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
+const _xtex: StaticArray<Texture?> = new StaticArray<Texture?>(EXTRA_SLOTS);
+
+/// Group 1 texture entries for the extra map slots (bindings 2-7).
+function extraTextures(views: StaticArray<GPUTextureView?>?, white: GPUTextureView): Array<GPUBindGroupTexture> {
+    const out: Array<GPUBindGroupTexture> = [];
+    for (let i = 0; i < EXTRA_SLOTS; i++) {
+        const v = views != null ? views[i] : null;
+        out.push(new GPUBindGroupTexture(<u32>(2 + i), v != null ? v! : white));
+    }
+    return out;
+}

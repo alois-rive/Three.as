@@ -98,3 +98,8 @@ export const LoopPingPong: i32 = 2202;
 export const InterpolateDiscrete: i32 = 2300;
 export const InterpolateLinear: i32 = 2301;
 export const InterpolateSmooth: i32 = 2302;
+
+// Material.combine (Basic, Lambert, Phong envMap)
+export const MultiplyOperation: i32 = 0;
+export const MixOperation: i32 = 1;
+export const AddOperation: i32 = 2;

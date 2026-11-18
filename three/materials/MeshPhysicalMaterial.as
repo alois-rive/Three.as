@@ -2,8 +2,12 @@
 // clearcoat, sheen, ior and specular intensity/colour. Transmission,
 // iridescence, anisotropy and the extra maps are not ported yet.
 
+import { Texture } from "../textures/Texture";
+import { Vector2 } from "../math/Vector2";
 import { MeshStandardMaterial, MeshStandardMaterialParameters } from "./MeshStandardMaterial";
-import { MaterialUniforms, KIND_PHYSICAL } from "./MaterialUniforms";
+import {
+    MaterialUniforms, KIND_PHYSICAL, ROLE_CLEARCOAT, ROLE_CLEARCOAT_NORMAL, ROLE_CLEARCOAT_ROUGHNESS, ROLE_SHEEN_COLOR, ROLE_SHEEN_ROUGHNESS, ROLE_SPECULAR_COLOR, ROLE_SPECULAR_INTENSITY,
+} from "./MaterialUniforms";
 import { Color } from "../math/Color";
 
 export class MeshPhysicalMaterialParameters extends MeshStandardMaterialParameters {
@@ -15,6 +19,14 @@ export class MeshPhysicalMaterialParameters extends MeshStandardMaterialParamete
     ior: f64 = 1.5;
     specularIntensity: f64 = 1;
     specularColor: u32 = 0xFFFFFF;
+    clearcoatMap: Texture? = null;
+    clearcoatRoughnessMap: Texture? = null;
+    clearcoatNormalMap: Texture? = null;
+    clearcoatNormalScale: Vector2 = new Vector2(1, 1);
+    sheenColorMap: Texture? = null;
+    sheenRoughnessMap: Texture? = null;
+    specularIntensityMap: Texture? = null;
+    specularColorMap: Texture? = null;
 }
 
 export class MeshPhysicalMaterial extends MeshStandardMaterial {
@@ -28,11 +40,28 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
     specularIntensity: f64 = 1;
     specularColor: Color = new Color(1, 1, 1);
 
+    clearcoatMap: Texture? = null;
+    clearcoatRoughnessMap: Texture? = null;
+    clearcoatNormalMap: Texture? = null;
+    clearcoatNormalScale: Vector2 = new Vector2(1, 1);
+    sheenColorMap: Texture? = null;
+    sheenRoughnessMap: Texture? = null;
+    specularIntensityMap: Texture? = null;
+    specularColorMap: Texture? = null;
+
     constructor(parameters: MeshPhysicalMaterialParameters? = null) {
         super(null);
         this.type = "MeshPhysicalMaterial";
         if (parameters != null) {
             this.setStandardValues(parameters);
+            this.clearcoatMap = parameters.clearcoatMap;
+            this.clearcoatRoughnessMap = parameters.clearcoatRoughnessMap;
+            this.clearcoatNormalMap = parameters.clearcoatNormalMap;
+            this.clearcoatNormalScale.copy(parameters.clearcoatNormalScale);
+            this.sheenColorMap = parameters.sheenColorMap;
+            this.sheenRoughnessMap = parameters.sheenRoughnessMap;
+            this.specularIntensityMap = parameters.specularIntensityMap;
+            this.specularColorMap = parameters.specularColorMap;
             this.clearcoat = parameters.clearcoat;
             this.clearcoatRoughness = parameters.clearcoatRoughness;
             this.sheen = parameters.sheen;
@@ -67,5 +96,13 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
         u.specularIntensity = this.specularIntensity;
         u.specularColorR = this.specularColor.r; u.specularColorG = this.specularColor.g;
         u.specularColorB = this.specularColor.b;
+        u.roles[ROLE_CLEARCOAT] = this.clearcoatMap;
+        u.roles[ROLE_CLEARCOAT_ROUGHNESS] = this.clearcoatRoughnessMap;
+        u.roles[ROLE_CLEARCOAT_NORMAL] = this.clearcoatNormalMap;
+        u.clearcoatNormalScaleX = this.clearcoatNormalScale.x; u.clearcoatNormalScaleY = this.clearcoatNormalScale.y;
+        u.roles[ROLE_SHEEN_COLOR] = this.sheenColorMap;
+        u.roles[ROLE_SHEEN_ROUGHNESS] = this.sheenRoughnessMap;
+        u.roles[ROLE_SPECULAR_INTENSITY] = this.specularIntensityMap;
+        u.roles[ROLE_SPECULAR_COLOR] = this.specularColorMap;
     }
 }

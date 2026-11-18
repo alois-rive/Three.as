@@ -69,7 +69,7 @@ export class Demo extends Layout {
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
-| custom vertex layouts | fixed slots: 0 position, 1 normal, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
+| custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
 | `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
 
 ## Language (AnimaScript is typed and compiled)
@@ -164,15 +164,33 @@ export class Demo extends Layout {
 
 ## Materials
 
-- Normal maps are tangent space, with the tangent frame built from screen
-  derivatives (three.js's path without a `tangent` attribute);
-  `normalMapType` and `bumpMap` are not supported.
+- Normal maps: tangent space (with the "tangent" attribute when the
+  geometry has one, e.g. from `computeTangents()`, else a frame from screen
+  derivatives) or `ObjectSpaceNormalMap`. `bumpMap`, `displacementMap`
+  (vertex stage, in shadow passes too), `lightMap`, `specularMap`, and the
+  physical maps (clearcoat, clearcoat roughness and normal, sheen colour and
+  roughness, specular intensity and colour) work as three.js.
+- **At most six distinct "extra" maps per material** (light, bump,
+  displacement, specular, and the physical maps; maps sharing a texture
+  count once, as glTF packs them), beyond the eight base slots (map,
+  normal, roughness/specular/gradient/matcap, metalness, ao, emissive,
+  alpha, envMap); further ones are ignored with a log line. **Extra map k
+  shares base slot k's sampler** (map, normal, roughness, metalness, ao,
+  emissive): the renderer prefers a slot whose base map is absent or has
+  the same wrapping and filters, else the extra map is sampled with the
+  base map's sampler. (Rive allows 8 bindings a group and the web 16
+  textures a stage; one sampler per texture keeps the shader translatable
+  to GLSL.)
+- Basic, Lambert and Phong `envMap` with `combine` (Multiply, Mix, Add),
+  `reflectivity` and `refractionRatio` (Cube/EquirectangularRefraction
+  mapping refracts) as three.js's envmap_fragment; they do not read
+  `scene.environment`, as three.js.
 - `MeshToonMaterial.gradientMap` is always read nearest (as three.js
   recommends setting it); without one the two tones step sharply.
 - `MeshDepthMaterial` supports `BasicDepthPacking` only.
 - `MeshPhysicalMaterial` supports clearcoat, sheen, ior, specularIntensity
-  and specularColor; transmission, thickness, iridescence, anisotropy,
-  dispersion and the physical maps are not ported.
+  and specularColor with their maps; transmission, thickness, iridescence,
+  anisotropy and dispersion come in M8b.
 - `flatShading` is on the `Material` base (ignored by unlit materials).
 - Fog is mixed in linear space after tone mapping and before the sRGB
   encode, so a fully fogged surface matches a background of the fog colour.
@@ -187,7 +205,7 @@ export class Demo extends Layout {
   so very rough reflections differ slightly. Irradiance reads the
   roughness-1 level, as three.js. A material's `envMap` overrides
   `scene.environment` for that material (`envMapIntensity` scales it;
-  `envMapRotation` is not read). Clearcoat ignores the environment.
+  `envMapRotation` is not read). The clearcoat reflects the environment too.
 - `PMREMGenerator`: `fromEquirectangular` and `fromCubemap` return their
   texture prepared (the renderer prefilters it); `fromScene(scene, sigma,
   near, far)` renders the scene into a 256 cube map at the start of the

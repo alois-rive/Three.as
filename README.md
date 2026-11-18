@@ -71,6 +71,7 @@ rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a l
 rive . --artboard=Environment                     # image-based lighting
 rive . --artboard=Environments                    # cube map, .hdr, .exr environments; CubeCamera
 rive . --artboard=Textures                        # uv transforms, uv1, KTX2 compressed textures
+rive . --artboard=MaterialsPlus                   # bump, displacement, light, env, clearcoat, sheen maps
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed

@@ -172,6 +172,57 @@ export class BufferGeometry {
     }
 
     /// Area-weighted vertex normals from the faces (index or triangle soup).
+    /// three.js's computeTangents: a "tangent" attribute (xyz, w the
+    /// bitangent's sign) from an indexed geometry's positions, normals and
+    /// uvs, which normal maps then use instead of screen derivatives.
+    computeTangents(): void {
+        const index = this.index;
+        const position = this.getAttribute("position");
+        const normal = this.getAttribute("normal");
+        const uv = this.getAttribute("uv");
+        if (index == null || position == null || normal == null || uv == null) return;
+        const count = position.count;
+        const p = position.array, n = normal.array, t = uv.array, idx = index.array;
+        const tan1 = new Float64Array(count * 3), tan2 = new Float64Array(count * 3);
+        let ranges = this.groups;
+        if (ranges.length == 0) ranges = [new GeometryGroup(0, index.count, 0)];
+        for (let g = 0; g < ranges.length; g++) {
+            const end = min<i32>(ranges[g].start + ranges[g].count, index.count);
+            for (let j = ranges[g].start; j + 2 < end; j += 3) {
+                const a = <i32>idx[j], b = <i32>idx[j + 1], c = <i32>idx[j + 2];
+                const x1 = <f64>p[b * 3] - <f64>p[a * 3], y1 = <f64>p[b * 3 + 1] - <f64>p[a * 3 + 1], z1 = <f64>p[b * 3 + 2] - <f64>p[a * 3 + 2];
+                const x2 = <f64>p[c * 3] - <f64>p[a * 3], y2 = <f64>p[c * 3 + 1] - <f64>p[a * 3 + 1], z2 = <f64>p[c * 3 + 2] - <f64>p[a * 3 + 2];
+                const s1 = <f64>t[b * 2] - <f64>t[a * 2], t1 = <f64>t[b * 2 + 1] - <f64>t[a * 2 + 1];
+                const s2 = <f64>t[c * 2] - <f64>t[a * 2], t2 = <f64>t[c * 2 + 1] - <f64>t[a * 2 + 1];
+                const r = 1.0 / (s1 * t2 - s2 * t1);
+                if (!isFinite(r)) continue;
+                const sx = (x1 * t2 - x2 * t1) * r, sy = (y1 * t2 - y2 * t1) * r, sz = (z1 * t2 - z2 * t1) * r;
+                const tx = (x2 * s1 - x1 * s2) * r, ty = (y2 * s1 - y1 * s2) * r, tz = (z2 * s1 - z1 * s2) * r;
+                const vs: StaticArray<i32> = [a, b, c];
+                for (let k = 0; k < 3; k++) {
+                    const v = vs[k] * 3;
+                    tan1[v] += sx; tan1[v + 1] += sy; tan1[v + 2] += sz;
+                    tan2[v] += tx; tan2[v + 1] += ty; tan2[v + 2] += tz;
+                }
+            }
+        }
+        const out = new Float32Array(count * 4);
+        for (let v = 0; v < count; v++) {
+            const nx = <f64>n[v * 3], ny = <f64>n[v * 3 + 1], nz = <f64>n[v * 3 + 2];
+            const tx = tan1[v * 3], ty = tan1[v * 3 + 1], tz = tan1[v * 3 + 2];
+            // Gram-Schmidt against the normal.
+            const d = nx * tx + ny * ty + nz * tz;
+            let ox = tx - nx * d, oy = ty - ny * d, oz = tz - nz * d;
+            const len = Math.sqrt(ox * ox + oy * oy + oz * oz);
+            if (len > 0) { ox /= len; oy /= len; oz /= len; }
+            // Handedness: (n x t) . tan2.
+            const cx = ny * tz - nz * ty, cy = nz * tx - nx * tz, cz = nx * ty - ny * tx;
+            const w = cx * tan2[v * 3] + cy * tan2[v * 3 + 1] + cz * tan2[v * 3 + 2] < 0 ? -1.0 : 1.0;
+            out[v * 4] = <f32>ox; out[v * 4 + 1] = <f32>oy; out[v * 4 + 2] = <f32>oz; out[v * 4 + 3] = <f32>w;
+        }
+        this.setAttribute("tangent", new BufferAttribute(out, 4));
+    }
+
     computeVertexNormals(): void {
         const position = this.getAttribute("position");
         if (position == null) return;

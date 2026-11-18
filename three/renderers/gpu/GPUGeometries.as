@@ -27,6 +27,10 @@ export class GeometryGPU {
     /// skinIndex and skinWeight interleaved (32 bytes a vertex: Rive allows
     /// 8 vertex buffers a pipeline).
     skin: GPUBuffer? = null;
+    tangentAttr: BufferAttribute? = null;
+    tangentVersion: i32 = -1;
+    /// Whether slot 1 carries the geometry's "tangent" attribute.
+    hasTangents: bool = false;
     skinIndexVersion: i32 = -1;
     skinWeightVersion: i32 = -1;
     private skinStaging: Float32Array = new Float32Array(0);
@@ -107,16 +111,23 @@ export class GPUGeometries {
             g.positionVersion = position.version;
         }
 
+        // Normals and tangents share slot 1 (7 floats a vertex; zero
+        // tangents when there are none).
         const normal = geometry.getAttribute("normal");
-        if (normal != null && normal.count == vertexCount) {
-            if (resized || g.normalAttr !== normal || g.normalVersion != normal.version) {
-                g.normal = upload(g.normal, normal.array);
-                g.normalAttr = normal;
-                g.normalVersion = normal.version;
-            }
-        } else if (resized || g.normal == null || g.normalAttr != null) {
-            g.normal = upload(g.normal, new Float32Array(vertexCount * 3));
-            g.normalAttr = null;
+        const tangent = geometry.getAttribute("tangent");
+        const hasNormal = normal != null && normal.count == vertexCount;
+        const hasTangent = tangent != null && tangent.count == vertexCount && tangent.itemSize == 4;
+        const nv = hasNormal ? normal!.version : -1;
+        const tv = hasTangent ? tangent!.version : -1;
+        if (resized || g.normal == null || g.normalAttr !== (hasNormal ? normal : null) || g.normalVersion != nv
+                || g.tangentAttr !== (hasTangent ? tangent : null) || g.tangentVersion != tv) {
+            g.normal = upload(g.normal, interleaveNormalTangent(hasNormal ? normal!.array : null,
+                hasTangent ? tangent!.array : null, vertexCount));
+            g.normalAttr = hasNormal ? normal : null;
+            g.normalVersion = nv;
+            g.tangentAttr = hasTangent ? tangent : null;
+            g.tangentVersion = tv;
+            g.hasTangents = hasTangent;
         }
 
         // Dashed lines read "lineDistance" through the uv slot.
@@ -316,4 +327,22 @@ function wholeBuffer(buffer: ArrayBuffer, offset: i32, length: i32): ArrayBuffer
 
 function releaseBuffer(b: GPUBuffer?): void {
     if (b != null) b.release();
+}
+
+/// Normals (3 floats) and tangents (4) interleaved, 28 bytes a vertex, as
+/// vertex slot 1 holds them; missing ones are zero.
+export function interleaveNormalTangent(normals: Float32Array?, tangents: Float32Array?,
+                                        count: i32): Float32Array {
+    const out = new Float32Array(count * 7);
+    for (let v = 0; v < count; v++) {
+        const o = v * 7;
+        if (normals != null) {
+            out[o] = normals[v * 3]; out[o + 1] = normals[v * 3 + 1]; out[o + 2] = normals[v * 3 + 2];
+        }
+        if (tangents != null) {
+            out[o + 3] = tangents[v * 4]; out[o + 4] = tangents[v * 4 + 1];
+            out[o + 5] = tangents[v * 4 + 2]; out[o + 6] = tangents[v * 4 + 3];
+        }
+    }
+    return out;
 }

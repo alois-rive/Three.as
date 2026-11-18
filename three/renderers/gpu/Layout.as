@@ -50,12 +50,19 @@ export const OBJ_BIND_MATRIX: i32 = 352;
 export const OBJ_BIND_MATRIX_INVERSE: i32 = 416;
 export const OBJ_UV_MATRIX: i32 = 480;   // 8 slots x 2 vec4
 export const OBJ_ENV: i32 = 736;         // x material envMap, y its max lod
-export const OBJ_USED: i32 = 752;
+// Extra maps (six slots, see MaterialUniforms' roles).
+export const OBJ_X_UV: i32 = 752;        // 6 slots x 2 vec4 (row 0 w: channel, row 1 w: sampler binding)
+export const OBJ_X_FLAGS: i32 = 944;     // u32: present, sRGB, premultiplied, flipY bits
+export const OBJ_X_ROLES: i32 = 960;     // u32: roles 0-7 and 8-15 as slot nibbles (15: none), z tangents
+export const OBJ_X_PARAMS: i32 = 976;    // bumpScale, displacementScale, displacementBias, lightMapIntensity
+export const OBJ_X_PARAMS2: i32 = 992;   // normalMapType, combine, reflectivity, refractionRatio
+export const OBJ_X_PARAMS3: i32 = 1008;  // clearcoatNormalScale xy, z 1: refraction mapping
+export const OBJ_USED: i32 = 1024;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384
 /// The per-draw buffer size (room to grow).
-export const OBJ_BYTES: i32 = 768;
+export const OBJ_BYTES: i32 = 1024;
 
 export const FLAG_VERTEX_COLORS: u32 = 1;
 export const FLAG_FOG: u32 = 2;

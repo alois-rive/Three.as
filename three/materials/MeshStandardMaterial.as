@@ -1,10 +1,10 @@
 // three.js MeshStandardMaterial: metallic-roughness PBR (GGX specular,
 // Lambert diffuse), lit as three.js does.
 
+import { TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
 import {
-    MaterialUniforms, KIND_STANDARD, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_METALNESS, SLOT_AO, SLOT_EMISSIVE,
-    SLOT_ALPHA, SLOT_ENV,
+    MaterialUniforms, KIND_STANDARD, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_METALNESS, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA, SLOT_ENV, ROLE_BUMP, ROLE_DISPLACEMENT, ROLE_LIGHT,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -27,6 +27,14 @@ export class MeshStandardMaterialParameters extends MaterialParameters {
     alphaMap: Texture? = null;
     envMap: Texture? = null;
     envMapIntensity: f64 = 1;
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
 }
 
 export class MeshStandardMaterial extends Material {
@@ -51,6 +59,15 @@ export class MeshStandardMaterial extends Material {
     envMap: Texture? = null;
     envMapIntensity: f64 = 1;
 
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+
     constructor(parameters: MeshStandardMaterialParameters? = null) {
         super();
         this.type = "MeshStandardMaterial";
@@ -59,6 +76,14 @@ export class MeshStandardMaterial extends Material {
 
     protected setStandardValues(p: MeshStandardMaterialParameters): void {
         this.setValues(p);
+        this.lightMap = p.lightMap;
+        this.lightMapIntensity = p.lightMapIntensity;
+        this.bumpMap = p.bumpMap;
+        this.bumpScale = p.bumpScale;
+        this.displacementMap = p.displacementMap;
+        this.displacementScale = p.displacementScale;
+        this.displacementBias = p.displacementBias;
+        this.normalMapType = p.normalMapType;
         this.color.setHex(p.color);
         this.roughness = p.roughness;
         this.metalness = p.metalness;
@@ -96,5 +121,13 @@ export class MeshStandardMaterial extends Material {
         u.textures[SLOT_AO] = this.aoMap;
         u.textures[SLOT_EMISSIVE] = this.emissiveMap;
         u.textures[SLOT_ALPHA] = this.alphaMap;
+        u.roles[ROLE_LIGHT] = this.lightMap;
+        u.lightMapIntensity = this.lightMapIntensity;
+        u.roles[ROLE_BUMP] = this.bumpMap;
+        u.bumpScale = this.bumpScale;
+        u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
+        u.displacementScale = this.displacementScale;
+        u.displacementBias = this.displacementBias;
+        u.normalMapType = this.normalMapType;
     }
 }

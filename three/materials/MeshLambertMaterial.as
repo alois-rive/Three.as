@@ -1,8 +1,9 @@
 // three.js MeshLambertMaterial: diffuse only.
 
+import { MultiplyOperation, TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
 import {
-    MaterialUniforms, KIND_LAMBERT, SLOT_MAP, SLOT_NORMAL, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA,
+    MaterialUniforms, KIND_LAMBERT, SLOT_MAP, SLOT_NORMAL, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA, ROLE_BUMP, ROLE_DISPLACEMENT, ROLE_LIGHT, ROLE_SPECULAR, SLOT_ENV,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -19,6 +20,19 @@ export class MeshLambertMaterialParameters extends MaterialParameters {
     aoMap: Texture? = null;
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+    specularMap: Texture? = null;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
 }
 
 export class MeshLambertMaterial extends Material {
@@ -34,11 +48,38 @@ export class MeshLambertMaterial extends Material {
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
 
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+    specularMap: Texture? = null;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
+
     constructor(parameters: MeshLambertMaterialParameters? = null) {
         super();
         this.type = "MeshLambertMaterial";
         if (parameters != null) {
             this.setValues(parameters);
+            this.lightMap = parameters.lightMap;
+            this.lightMapIntensity = parameters.lightMapIntensity;
+            this.bumpMap = parameters.bumpMap;
+            this.bumpScale = parameters.bumpScale;
+            this.displacementMap = parameters.displacementMap;
+            this.displacementScale = parameters.displacementScale;
+            this.displacementBias = parameters.displacementBias;
+            this.normalMapType = parameters.normalMapType;
+            this.specularMap = parameters.specularMap;
+            this.envMap = parameters.envMap;
+            this.combine = parameters.combine;
+            this.reflectivity = parameters.reflectivity;
+            this.refractionRatio = parameters.refractionRatio;
             this.color.setHex(parameters.color);
             this.map = parameters.map;
             this.emissive.setHex(parameters.emissive);
@@ -65,5 +106,18 @@ export class MeshLambertMaterial extends Material {
         u.textures[SLOT_AO] = this.aoMap;
         u.textures[SLOT_EMISSIVE] = this.emissiveMap;
         u.textures[SLOT_ALPHA] = this.alphaMap;
+        u.roles[ROLE_LIGHT] = this.lightMap;
+        u.lightMapIntensity = this.lightMapIntensity;
+        u.roles[ROLE_BUMP] = this.bumpMap;
+        u.bumpScale = this.bumpScale;
+        u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
+        u.displacementScale = this.displacementScale;
+        u.displacementBias = this.displacementBias;
+        u.normalMapType = this.normalMapType;
+        u.roles[ROLE_SPECULAR] = this.specularMap;
+        u.textures[SLOT_ENV] = this.envMap;
+        u.combine = this.combine;
+        u.reflectivity = this.reflectivity;
+        u.refractionRatio = this.refractionRatio;
     }
 }

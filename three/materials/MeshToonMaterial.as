@@ -1,9 +1,10 @@
 // three.js MeshToonMaterial: diffuse light quantized by `gradientMap` (a
 // strip of tones, sampled with NearestFilter), or a two-tone default.
 
+import { TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
 import {
-    MaterialUniforms, KIND_TOON, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA,
+    MaterialUniforms, KIND_TOON, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA, ROLE_BUMP, ROLE_DISPLACEMENT, ROLE_LIGHT,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -21,6 +22,14 @@ export class MeshToonMaterialParameters extends MaterialParameters {
     aoMap: Texture? = null;
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
 }
 
 export class MeshToonMaterial extends Material {
@@ -37,11 +46,28 @@ export class MeshToonMaterial extends Material {
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
 
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+
     constructor(parameters: MeshToonMaterialParameters? = null) {
         super();
         this.type = "MeshToonMaterial";
         if (parameters != null) {
             this.setValues(parameters);
+            this.lightMap = parameters.lightMap;
+            this.lightMapIntensity = parameters.lightMapIntensity;
+            this.bumpMap = parameters.bumpMap;
+            this.bumpScale = parameters.bumpScale;
+            this.displacementMap = parameters.displacementMap;
+            this.displacementScale = parameters.displacementScale;
+            this.displacementBias = parameters.displacementBias;
+            this.normalMapType = parameters.normalMapType;
             this.color.setHex(parameters.color);
             this.map = parameters.map;
             this.gradientMap = parameters.gradientMap;
@@ -70,5 +96,13 @@ export class MeshToonMaterial extends Material {
         u.textures[SLOT_AO] = this.aoMap;
         u.textures[SLOT_EMISSIVE] = this.emissiveMap;
         u.textures[SLOT_ALPHA] = this.alphaMap;
+        u.roles[ROLE_LIGHT] = this.lightMap;
+        u.lightMapIntensity = this.lightMapIntensity;
+        u.roles[ROLE_BUMP] = this.bumpMap;
+        u.bumpScale = this.bumpScale;
+        u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
+        u.displacementScale = this.displacementScale;
+        u.displacementBias = this.displacementBias;
+        u.normalMapType = this.normalMapType;
     }
 }

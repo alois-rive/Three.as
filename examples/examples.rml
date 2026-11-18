@@ -402,6 +402,22 @@
         </StateMachine>
     </Artboard>
 
+    <!-- MaterialsPlus: bump, displacement, light, normal (tangent and object
+         space), specular and env maps, clearcoat and sheen maps
+         (examples/materials_plus.as). -->
+    <Artboard defaultStateMachineId="0:1807" clip="true" x="1800" y="3500" width="800" height="600" styleId="0:1801" name="MaterialsPlus" id="0:1800">
+        <LayoutComponentStyle name="Artboard Style" id="0:1801"/>
+        <LayoutComponent width="800" height="600" styleId="0:1803" name="Root" id="0:1802">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1803"/>
+            <ScriptedLayout scriptAssetId="0:1890" name="Scene" id="0:1804"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1807">
+            <StateMachineLayer name="Layer 1" id="0:1808">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -427,6 +443,7 @@
     <BlobAsset file="examples/assets/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
     <BlobAsset file="examples/assets/studio_exr.exr" name="studio_exr" id="0:1698"/>
     <ScriptAsset file="examples/textures.as" name="textures" id="0:1790"/>
+    <ScriptAsset file="examples/materials_plus.as" name="materials_plus" id="0:1890"/>
     <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
 </Rive>

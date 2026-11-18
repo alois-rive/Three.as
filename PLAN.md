@@ -205,7 +205,7 @@ three.js lighting setups look the same.
 Goal: every three.js material option, so ported scenes and glTF assets
 render as authored.
 
-- **M8a, more maps.** `bumpMap`, `displacementMap` (vertex stage),
+- **M8a, more maps (done).** `bumpMap`, `displacementMap` (vertex stage),
   `lightMap`, `specularMap`, object-space normal maps (`normalMapType`),
   the `tangent` attribute (and `computeTangents`), Lambert/Phong `envMap`
   with `combine`, `reflectivity`, `refractionRatio`; clearcoat reflecting

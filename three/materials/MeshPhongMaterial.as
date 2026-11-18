@@ -1,8 +1,9 @@
 // three.js MeshPhongMaterial: Lambert diffuse with Blinn-Phong specular.
 
+import { MultiplyOperation, TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
 import {
-    MaterialUniforms, KIND_PHONG, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA,
+    MaterialUniforms, KIND_PHONG, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA, ROLE_BUMP, ROLE_DISPLACEMENT, ROLE_LIGHT, SLOT_ENV,
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -22,6 +23,18 @@ export class MeshPhongMaterialParameters extends MaterialParameters {
     aoMap: Texture? = null;
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
 }
 
 export class MeshPhongMaterial extends Material {
@@ -41,11 +54,36 @@ export class MeshPhongMaterial extends Material {
     aoMapIntensity: f64 = 1;
     alphaMap: Texture? = null;
 
+    lightMap: Texture? = null;
+    lightMapIntensity: f64 = 1;
+    bumpMap: Texture? = null;
+    bumpScale: f64 = 1;
+    displacementMap: Texture? = null;
+    displacementScale: f64 = 1;
+    displacementBias: f64 = 0;
+    normalMapType: i32 = TangentSpaceNormalMap;
+    envMap: Texture? = null;
+    combine: i32 = MultiplyOperation;
+    reflectivity: f64 = 1;
+    refractionRatio: f64 = 0.98;
+
     constructor(parameters: MeshPhongMaterialParameters? = null) {
         super();
         this.type = "MeshPhongMaterial";
         if (parameters != null) {
             this.setValues(parameters);
+            this.lightMap = parameters.lightMap;
+            this.lightMapIntensity = parameters.lightMapIntensity;
+            this.bumpMap = parameters.bumpMap;
+            this.bumpScale = parameters.bumpScale;
+            this.displacementMap = parameters.displacementMap;
+            this.displacementScale = parameters.displacementScale;
+            this.displacementBias = parameters.displacementBias;
+            this.normalMapType = parameters.normalMapType;
+            this.envMap = parameters.envMap;
+            this.combine = parameters.combine;
+            this.reflectivity = parameters.reflectivity;
+            this.refractionRatio = parameters.refractionRatio;
             this.color.setHex(parameters.color);
             this.specular.setHex(parameters.specular);
             this.shininess = parameters.shininess;
@@ -78,5 +116,17 @@ export class MeshPhongMaterial extends Material {
         u.textures[SLOT_AO] = this.aoMap;
         u.textures[SLOT_EMISSIVE] = this.emissiveMap;
         u.textures[SLOT_ALPHA] = this.alphaMap;
+        u.roles[ROLE_LIGHT] = this.lightMap;
+        u.lightMapIntensity = this.lightMapIntensity;
+        u.roles[ROLE_BUMP] = this.bumpMap;
+        u.bumpScale = this.bumpScale;
+        u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
+        u.displacementScale = this.displacementScale;
+        u.displacementBias = this.displacementBias;
+        u.normalMapType = this.normalMapType;
+        u.textures[SLOT_ENV] = this.envMap;
+        u.combine = this.combine;
+        u.reflectivity = this.reflectivity;
+        u.refractionRatio = this.refractionRatio;
     }
 }
