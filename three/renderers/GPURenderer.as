@@ -19,8 +19,9 @@
 //         }
 //     }
 //
-// Output is sRGB, premultiplied. Draw order: opaque front to back, then
-// transparent back to front, each by renderOrder first.
+// Output is tone mapped (toneMapping), sRGB, premultiplied. Draw order: the
+// background, opaque objects front to back, then transparent ones back to
+// front, each sorted by renderOrder first.
 
 import { Context } from "rive/host";
 import { Renderer } from "rive/renderer";
@@ -35,8 +36,8 @@ import {
     GPUPassDesc, GPUSampler, GPUShaderModule, GPUBlendState, GPURenderPass,
 } from "rive/gpu";
 import {
-    BufferUsage, TextureFormat, CompareFunction, CullMode, VertexFormat, LoadOp, StoreOp, Filter, WrapMode,
-    BlendFactor, FaceWinding,
+    BufferUsage, TextureFormat, CompareFunction, CullMode, VertexFormat, VertexStepMode, LoadOp, StoreOp, Filter,
+    WrapMode, BlendFactor, FaceWinding, PrimitiveTopology, ColorWriteMask,
 } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 
@@ -45,18 +46,19 @@ import { disposedGeometries } from "../core/BufferGeometry";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Scene } from "../scenes/Scene";
+import { Fog, FogExp2 } from "../scenes/Fog";
 import { Mesh } from "../objects/Mesh";
 import { Light } from "../lights/Light";
 import { AmbientLight } from "../lights/AmbientLight";
+import { HemisphereLight } from "../lights/HemisphereLight";
 import { DirectionalLight } from "../lights/DirectionalLight";
 import { PointLight } from "../lights/PointLight";
+import { SpotLight } from "../lights/SpotLight";
 import { Material } from "../materials/Material";
-import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
-import { MeshNormalMaterial } from "../materials/MeshNormalMaterial";
-import { MeshLambertMaterial } from "../materials/MeshLambertMaterial";
-import { MeshStandardMaterial } from "../materials/MeshStandardMaterial";
+import { MaterialUniforms, TEXTURE_SLOTS } from "../materials/MaterialUniforms";
 import { Texture, disposedTextures } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
+import { Euler } from "../math/Euler";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
 import { Matrix3 } from "../math/Matrix3";
@@ -65,48 +67,35 @@ import { Frustum } from "../math/Frustum";
 import { Sphere } from "../math/Sphere";
 import {
     BackSide, DoubleSide, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter,
-    RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace,
+    LinearMipmapLinearFilter, RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace, NoToneMapping,
+    NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
+    EquirectangularReflectionMapping, EquirectangularRefractionMapping,
 } from "../constants";
 import { GPUGeometries, GeometryGPU } from "./gpu/GPUGeometries";
+import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
+import {
+    MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
+    FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
+    FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES,
+    OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
+    OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
+    FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_STRIDE,
+} from "./gpu/Layout";
 
-// --- layout (mirrors three/shaders/three.wgsl) --------------------------------
-
-const MAX_LIGHTS: i32 = 8;
-const FRAME_VIEW_PROJ: i32 = 0;
-const FRAME_VIEW: i32 = 64;
-const FRAME_CAMERA_POS: i32 = 128;
-const FRAME_CAMERA_DIR: i32 = 144;
-const FRAME_AMBIENT: i32 = 160;
-const FRAME_LIGHTS: i32 = 176;
-const LIGHT_BYTES: i32 = 64;
-const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 688
-
-const OBJ_MODEL: i32 = 0;
-const OBJ_NORMAL: i32 = 64;
-const OBJ_COLOR: i32 = 128;
-const OBJ_EMISSIVE: i32 = 144;
-const OBJ_PBR: i32 = 160;
-const OBJ_UV: i32 = 176;
-const OBJ_FLAGS: i32 = 192;
-const OBJ_BYTES: i32 = 256;
-
-const KIND_BASIC: u32 = 0;
-const KIND_NORMAL: u32 = 1;
-const KIND_LAMBERT: u32 = 2;
-const KIND_STANDARD: u32 = 3;
-
-const MAP_ON: u32 = 1;
-const MAP_SRGB: u32 = 2;
-const MAP_FLIP_Y: u32 = 4;
-const MAP_PREMULTIPLIED: u32 = 8;
-
-const LIGHT_DIRECTIONAL: f32 = 0;
-const LIGHT_POINT: f32 = 1;
-
-// The shader asset: newer CLIs name it by path, 1.9.x by file name.
+// The main shader: newer CLIs name assets by path, 1.9.x by file name.
 const SHADER_NAMES: Array<string> = ["three/shaders/three", "shaders/three", "three"];
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
+
+// Pipeline key fields.
+const KEY_CULL_MASK: i32 = 3;            // 0 back, 1 none, 2 front
+const KEY_BLEND_SHIFT: i32 = 2;          // 3 bits: three.js blending (0 none)
+const KEY_DEPTH_TEST: i32 = 1 << 5;
+const KEY_DEPTH_WRITE: i32 = 1 << 6;
+const KEY_MIRRORED: i32 = 1 << 7;
+const KEY_COLOR_WRITE: i32 = 1 << 8;
+const KEY_BACKGROUND: i32 = 1 << 30;
 
 // -----------------------------------------------------------------------------
 
@@ -122,7 +111,7 @@ export class RenderInfo {
     frame: i32 = 0;
     calls: i32 = 0;
     triangles: i32 = 0;
-    /// Meshes skipped by frustum culling this frame (not in three.js).
+    /// Objects skipped by frustum culling this frame (not in three.js).
     culled: i32 = 0;
 }
 
@@ -130,11 +119,12 @@ export class RendererInfo {
     render: RenderInfo = new RenderInfo();
 }
 
-// One mesh's per-draw state, kept across frames.
+// One draw's state, kept across frames.
 class DrawState {
     ubo: GPUBuffer;
-    group: GPUBindGroup? = null;
-    view: GPUTextureView? = null;
+    objGroup: GPUBindGroup? = null;
+    matGroup: GPUBindGroup? = null;
+    views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     sampler: GPUSampler? = null;
     frame: i32 = -1;
 
@@ -145,18 +135,23 @@ class DrawState {
 
 // One draw of this frame.
 class DrawItem {
-    mesh: Mesh;
+    object: Object3D;
+    material: Material;
     geometry: GeometryGPU;
     state: DrawState;
     pipelineKey: i32 = 0;
     depth: f64 = 0;
     first: i32 = 0;
     count: i32 = 0;
+    instances: GPUBuffer;
+    instanceCount: u32 = 1;
 
-    constructor(mesh: Mesh, geometry: GeometryGPU, state: DrawState) {
-        this.mesh = mesh;
+    constructor(object: Object3D, material: Material, geometry: GeometryGPU, state: DrawState, instances: GPUBuffer) {
+        this.object = object;
+        this.material = material;
         this.geometry = geometry;
         this.state = state;
+        this.instances = instances;
     }
 }
 
@@ -166,6 +161,13 @@ export class GPURenderer {
     autoClear: bool = true;
     /// Sort draws (opaque front to back, transparent back to front).
     sortObjects: bool = true;
+    /// NoToneMapping, LinearToneMapping, ReinhardToneMapping,
+    /// CineonToneMapping, ACESFilmicToneMapping, AgXToneMapping or
+    /// NeutralToneMapping.
+    toneMapping: i32 = NoToneMapping;
+    toneMappingExposure: f64 = 1;
+    /// Always sRGB here.
+    readonly outputColorSpace: string = SRGBColorSpace;
     readonly info: RendererInfo = new RendererInfo();
 
     private canvas: GPUCanvas? = null;
@@ -176,10 +178,13 @@ export class GPURenderer {
     private clearAlpha: f64 = 1;
     private antialias: bool;
     private broken: bool = false;
+    private maxAnisotropy: i32 = 1;
 
     private module: GPUShaderModule? = null;
     private frameLayout: GPUBindGroupLayout? = null;
     private objLayout: GPUBindGroupLayout? = null;
+    private matLayout: GPUBindGroupLayout? = null;
+    private bgLayout: GPUBindGroupLayout? = null;
     private vertexBuffers: Array<GPUVertexBufferLayout> = [];
     private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private pipelineFormat: u32 = 0xFFFFFFFF;
@@ -190,7 +195,11 @@ export class GPURenderer {
     private frameStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
     private objStaging: ArrayBuffer = new ArrayBuffer(OBJ_BYTES);
     private white: GPUTextureView? = null;
+    private identityInstance: GPUBuffer? = null;
     private samplers: Map<i32, GPUSampler> = new Map<i32, GPUSampler>();
+    private bgGroup: GPUBindGroup? = null;
+    private bgView: GPUTextureView? = null;
+    private bgTexture: Texture? = null;
 
     private depthTex: GPUTexture? = null;
     private depthView: GPUTextureView? = null;
@@ -201,19 +210,23 @@ export class GPURenderer {
     private targetFormat: u32 = 0xFFFFFFFF;
 
     private geometries: GPUGeometries = new GPUGeometries();
+    private textures: GPUTextures;
     private states: Map<i32, DrawState> = new Map<i32, DrawState>();
-    private textureFrames: Map<i32, i32> = new Map<i32, i32>();
     private opaque: Array<DrawItem> = [];
     private transparent: Array<DrawItem> = [];
     private lights: Array<Light> = [];
     private stack: Array<Object3D> = [];
+    private uniforms: MaterialUniforms = new MaterialUniforms();
     private warnedLights: bool = false;
     private colorAttachment: GPUColorAttachment = new GPUColorAttachment();
     private passDesc: GPUPassDesc = new GPUPassDesc();
     private viewProj: Matrix4 = new Matrix4();
+    private invViewProj: Matrix4 = new Matrix4();
+    private overrideMaterial: Material? = null;
 
     constructor(context: Context, parameters: GPURendererParameters? = null) {
         this.context = context;
+        this.textures = new GPUTextures(context);
         this.antialias = parameters != null ? parameters.antialias : false;
         if (parameters != null && parameters.alpha) this.clearAlpha = 0;
     }
@@ -241,6 +254,11 @@ export class GPURenderer {
 
     getDrawingBufferSize(target: Vector2): Vector2 {
         return target.set(<f64>this.pixelWidth(), <f64>this.pixelHeight());
+    }
+
+    /// The highest anisotropy textures can use (1 without the feature).
+    getMaxAnisotropy(): i32 {
+        return this.context.features().anisotropicFiltering ? 16 : 1;
     }
 
     private pixelWidth(): u32 { return this.width > 0 ? <u32>Math.ceil(this.width * this.pixelRatio) : 0; }
@@ -290,17 +308,21 @@ export class GPURenderer {
         if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
         else camera.updateWorldMatrix(true, false);
         Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
-
-        // Collect lights and draws.
+        this.invViewProj.copy(this.viewProj).invert();
         _frustum.setFromProjectionMatrix(this.viewProj);
+
+        // Collect lights and draws (textures draw and upload here).
+        this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
         this.collect(scene, camera, info.frame);
-        this.writeFrame(camera);
+        const background = this.prepareBackground(scene, info.frame, canvas);
+        this.writeFrame(scene, camera);
         if (this.sortObjects) {
             this.opaque.sort(compareOpaque);
             this.transparent.sort(compareTransparent);
         }
-        this.writeDraws(this.opaque, info.frame);
-        this.writeDraws(this.transparent, info.frame);
+        // Per-draw blocks; mip chains render here, before the main pass.
+        this.writeDraws(this.opaque, info.frame, canvas);
+        this.writeDraws(this.transparent, info.frame, canvas);
 
         // The pass.
         const color = this.colorAttachment;
@@ -308,9 +330,10 @@ export class GPURenderer {
         let a = this.clearAlpha;
         if (scene instanceof Scene) {
             const bg = (scene as Scene).background;
-            if (bg != null) {
+            if (bg != null && bg instanceof Color) {
+                const c = bg as Color;
                 const k = (scene as Scene).backgroundIntensity;
-                r = bg.r * k; g = bg.g * k; b = bg.b * k; a = 1;
+                r = c.r * k; g = c.g * k; b = c.b * k; a = 1;
             }
         }
         color.clearR = <f32>(LinearToSRGB(r) * a);
@@ -338,6 +361,12 @@ export class GPURenderer {
         pd.depthStoreOp = StoreOp.discard;
         pd.depthClearValue = 1;
         const pass = canvas.beginRenderPass(pd);
+        if (background) {
+            pass.setPipeline(this.pipeline(KEY_BACKGROUND));
+            pass.setBindGroup(0, this.frameGroup!);
+            pass.setBindGroup(3, this.bgGroup!);
+            pass.draw(3);
+        }
         this.drawList(pass, this.opaque);
         this.drawList(pass, this.transparent);
         pass.finish();
@@ -399,17 +428,34 @@ export class GPURenderer {
             this.module = module;
             const g0 = GPUBindGroupLayout.fromShader(module, 0);
             const g1 = GPUBindGroupLayout.fromShader(module, 1);
-            if (g0 == null || g1 == null) return this.fail("bind group layouts rejected");
+            const g2 = GPUBindGroupLayout.fromShader(module, 2);
+            const g3 = GPUBindGroupLayout.fromShader(module, 3);
+            if (g0 == null || g1 == null || g2 == null || g3 == null) return this.fail("bind group layouts rejected");
             this.frameLayout = g0;
             this.objLayout = g1;
+            this.matLayout = g2;
+            this.bgLayout = g3;
 
+            const instance = new GPUVertexBufferLayout();
+            instance.stride = INSTANCE_STRIDE;
+            instance.stepMode = VertexStepMode.instance;
+            instance.attributes = [
+                new GPUVertexAttribute(VertexFormat.float4, 4, 0),
+                new GPUVertexAttribute(VertexFormat.float4, 5, 16),
+                new GPUVertexAttribute(VertexFormat.float4, 6, 32),
+                new GPUVertexAttribute(VertexFormat.float4, 7, 48),
+                new GPUVertexAttribute(VertexFormat.float4, 8, 64),
+            ];
             this.vertexBuffers = [
                 vertexLayout(12, VertexFormat.float3, 0),
                 vertexLayout(12, VertexFormat.float3, 1),
                 vertexLayout(8, VertexFormat.float2, 2),
+                vertexLayout(16, VertexFormat.float4, 3),
+                instance,
             ];
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
+            this.maxAnisotropy = features.anisotropicFiltering ? 16 : 1;
 
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.frameUbo = ubo;
@@ -424,6 +470,12 @@ export class GPURenderer {
             uploadRegion.width = 1; uploadRegion.height = 1;
             white.upload(uploadRegion, px.buffer);
             this.white = white.view();
+
+            // One identity instance (white) for every non-instanced draw.
+            const id = new Float32Array(20);
+            id[0] = 1; id[5] = 1; id[10] = 1; id[15] = 1;
+            id[16] = 1; id[17] = 1; id[18] = 1; id[19] = 1;
+            this.identityInstance = new GPUBuffer(BufferUsage.vertex, <u32>INSTANCE_STRIDE, id.buffer, true);
         }
         if (this.pipelineFormat != canvas.format) {
             this.pipelines.clear();
@@ -463,55 +515,71 @@ export class GPURenderer {
 
     private pipeline(key: i32): GPUPipeline {
         if (this.pipelines.has(key)) return this.pipelines.get(key);
-        const cull = key & 3;               // 0 back, 1 none, 2 front
-        const blend = (key & 4) != 0;
-        const depthTest = (key & 8) != 0;
-        const depthWrite = (key & 16) != 0;
-        const mirrored = (key & 32) != 0;
-
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
-        if (blend) {
-            const b = new GPUBlendState();   // premultiplied over
-            b.srcColor = BlendFactor.one;
-            b.dstColor = BlendFactor.oneMinusSrcAlpha;
-            b.srcAlpha = BlendFactor.one;
-            b.dstAlpha = BlendFactor.oneMinusSrcAlpha;
-            target.blend = b;
-        }
         const ds = new GPUDepthStencilDesc();
         ds.format = TextureFormat.depth32float;
-        ds.compare = depthTest ? CompareFunction.lessEqual : CompareFunction.always;
-        ds.write = depthWrite;
-
         const d = new GPUPipelineDesc();
         d.vertexModule = this.module;
-        d.vertexEntryPoint = "vs_main";
         d.fragmentModule = this.module;
-        d.fragmentEntryPoint = "fs_main";
-        d.colorTargets = [target];
-        d.vertexBuffers = this.vertexBuffers;
-        d.bindGroupLayouts = [this.frameLayout, this.objLayout];
-        d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
-        // three.js flips the front face of mirrored (negative determinant)
-        // objects, so front_facing stays true on their outside.
-        d.winding = mirrored ? FaceWinding.clockwise : FaceWinding.counterClockwise;
-        d.depthStencil = ds;
         d.sampleCount = this.samples;
+        d.depthStencil = ds;
+        if (key == KEY_BACKGROUND) {
+            d.vertexEntryPoint = "vs_background";
+            d.fragmentEntryPoint = "fs_background";
+            ds.compare = CompareFunction.always;
+            ds.write = false;
+            d.colorTargets = [target];
+            d.bindGroupLayouts = [this.frameLayout, null, null, this.bgLayout];
+        } else {
+            const cull = key & KEY_CULL_MASK;
+            const blending = (key >> KEY_BLEND_SHIFT) & 7;
+            const blend = blendState(blending);
+            if (blend != null) target.blend = blend;
+            if ((key & KEY_COLOR_WRITE) == 0) target.writeMask = <u32>ColorWriteMask.none;
+            ds.compare = (key & KEY_DEPTH_TEST) != 0 ? CompareFunction.lessEqual : CompareFunction.always;
+            ds.write = (key & KEY_DEPTH_WRITE) != 0;
+            d.vertexEntryPoint = "vs_main";
+            d.fragmentEntryPoint = "fs_main";
+            d.colorTargets = [target];
+            d.vertexBuffers = this.vertexBuffers;
+            d.bindGroupLayouts = [this.frameLayout, this.objLayout, this.matLayout];
+            d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
+            // three.js flips the front face of mirrored (negative determinant)
+            // objects, so front_facing stays true on their outside.
+            d.winding = (key & KEY_MIRRORED) != 0 ? FaceWinding.clockwise : FaceWinding.counterClockwise;
+            d.topology = PrimitiveTopology.triangleList;
+        }
         const p = new GPUPipeline(d);
         this.pipelines.set(key, p);
         return p;
     }
 
-    private sampler(t: Texture): GPUSampler {
-        const key = (t.wrapS - 1000) | ((t.wrapT - 1000) << 2)
-            | (isNearest(t.magFilter) ? 0 : 16) | (isNearest(t.minFilter) ? 0 : 32);
+    private sampler(t: Texture, mipmapped: bool): GPUSampler {
+        const linearMin = !isNearest(t.minFilter);
+        const linearMag = !isNearest(t.magFilter);
+        const mipLinear = t.minFilter == LinearMipmapLinearFilter || t.minFilter == NearestMipmapLinearFilter;
+        let aniso = min<i32>(max<i32>(1, t.anisotropy), this.maxAnisotropy);
+        if (!(linearMin && linearMag && (mipLinear || !mipmapped))) aniso = 1;
+        let a: u32 = 1;
+        while (a * 2 <= <u32>aniso) a *= 2;
+        const key = (t.wrapS - 1000) | ((t.wrapT - 1000) << 2) | (linearMag ? 16 : 0) | (linearMin ? 32 : 0)
+            | (mipLinear ? 64 : 0) | (mipmapped ? 128 : 0) | (<i32>a << 8);
         if (this.samplers.has(key)) return this.samplers.get(key);
         const s = new GPUSampler(
-            isNearest(t.minFilter) ? Filter.nearest : Filter.linear,
-            isNearest(t.magFilter) ? Filter.nearest : Filter.linear,
-            Filter.nearest,
-            wrapOf(t.wrapS), wrapOf(t.wrapT));
+            linearMin ? Filter.linear : Filter.nearest,
+            linearMag ? Filter.linear : Filter.nearest,
+            mipLinear ? Filter.linear : Filter.nearest,
+            wrapOf(t.wrapS), wrapOf(t.wrapT),
+            <CompareFunction>0xFFFFFFFF, a, 0, mipmapped ? 32 : 0);
+        this.samplers.set(key, s);
+        return s;
+    }
+
+    private defaultSampler(): GPUSampler {
+        const key = -1;
+        if (this.samplers.has(key)) return this.samplers.get(key);
+        const s = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest, WrapMode.clampToEdge, WrapMode.clampToEdge);
         this.samplers.set(key, s);
         return s;
     }
@@ -519,7 +587,7 @@ export class GPURenderer {
     private drainDisposed(): void {
         for (let i = 0; i < disposedGeometries.length; i++) this.geometries.dispose(disposedGeometries[i]);
         disposedGeometries.length = 0;
-        for (let i = 0; i < disposedTextures.length; i++) this.textureFrames.delete(disposedTextures[i]);
+        for (let i = 0; i < disposedTextures.length; i++) this.textures.dispose(disposedTextures[i]);
         disposedTextures.length = 0;
     }
 
@@ -558,52 +626,102 @@ export class GPURenderer {
     }
 
     private collectMesh(mesh: Mesh, frame: i32): void {
-        const material = mesh.material;
-        if (!material.visible) return;
         const g = this.geometries.get(mesh.geometry);
         if (g == null) return;
+        const range = mesh.geometry.drawRange;
+        const rangeStart = max<i32>(0, range.start);
+        const rangeEnd = range.count < 0 ? g.count : min<i32>(g.count, rangeStart + range.count);
+        const override = this.overrideMaterial;
+        const groups = mesh.geometry.groups;
+        if (override == null && mesh.materials.length > 0 && groups.length > 0) {
+            for (let i = 0; i < groups.length; i++) {
+                const group = groups[i];
+                const mi = group.materialIndex;
+                if (mi < 0 || mi >= mesh.materials.length) continue;
+                const start = max<i32>(rangeStart, group.start);
+                const end = min<i32>(rangeEnd, group.start + group.count);
+                this.addDraw(mesh, mesh.materials[mi], g, i + 1, start, end, frame);
+            }
+        } else {
+            this.addDraw(mesh, override != null ? override : mesh.material, g, 0, rangeStart, rangeEnd, frame);
+        }
+    }
+
+    private addDraw(object: Object3D, material: Material, g: GeometryGPU, part: i32, start: i32, end: i32,
+                    frame: i32): void {
+        if (!material.visible || end <= start) return;
+        const stateKey = object.id * 64 + part;
         let state: DrawState;
-        if (this.states.has(mesh.id)) state = this.states.get(mesh.id);
+        if (this.states.has(stateKey)) state = this.states.get(stateKey);
         else {
             state = new DrawState();
-            this.states.set(mesh.id, state);
+            this.states.set(stateKey, state);
         }
-        const map = mapOf(material);
-        if (map != null) this.updateTexture(map, frame);
+        // Textures draw and upload now, before any pass.
+        const u = this.uniforms;
+        material.fillUniforms(u);
+        for (let i = 0; i < TEXTURE_SLOTS; i++) {
+            const t = u.textures[i];
+            if (t != null) this.textures.update(t, frame);
+        }
 
-        const item = new DrawItem(mesh, g, state);
-        const range = mesh.geometry.drawRange;
-        const start = max<i32>(0, range.start);
-        const end = range.count < 0 ? g.count : min<i32>(g.count, start + range.count);
+        const item = new DrawItem(object, material, g, state, this.identityInstance!);
         item.first = start;
-        item.count = max<i32>(0, end - start);
-        if (item.count == 0) return;
-
+        item.count = end - start;
         const side = material.side;
         const cull = side == DoubleSide ? 1 : side == BackSide ? 2 : 0;
-        const mirrored = mesh.matrixWorld.determinant() < 0;
-        item.pipelineKey = cull | (material.transparent ? 4 : 0) | (material.depthTest ? 8 : 0)
-            | (material.depthWrite ? 16 : 0) | (mirrored ? 32 : 0);
-        const e = mesh.matrixWorld.elements;
+        const mirrored = object.matrixWorld.determinant() < 0;
+        let blending = material.blending;
+        if (blending == NormalBlending && !material.transparent) blending = NoBlending;
+        item.pipelineKey = cull | (blending << KEY_BLEND_SHIFT)
+            | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
+            | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0);
+        const e = object.matrixWorld.elements;
         _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
         item.depth = _pos.z;
         if (material.transparent) this.transparent.push(item);
         else this.opaque.push(item);
     }
 
-    private updateTexture(t: Texture, frame: i32): void {
-        if (this.textureFrames.has(t.id) && this.textureFrames.get(t.id) == frame) return;
-        this.textureFrames.set(t.id, frame);
-        t.update(this.context);
+    /// Prepares the background texture's bind group; true when there is
+    /// one to draw.
+    private prepareBackground(scene: Object3D, frame: i32, canvas: GPUCanvas): bool {
+        this.bgTexture = null;
+        if (!(scene instanceof Scene)) return false;
+        const bg = (scene as Scene).background;
+        if (bg == null || !(bg instanceof Texture)) return false;
+        const t = bg as Texture;
+        this.textures.update(t, frame);
+        const view = this.textures.view(t, canvas);
+        if (view == null) return false;
+        this.bgTexture = t;
+        if (this.bgGroup == null || this.bgView !== view) {
+            const mipmapped = wantsMipmaps(t);
+            this.bgGroup = new GPUBindGroup(this.bgLayout!, [],
+                [new GPUBindGroupTexture(0, view)], [new GPUBindGroupSampler(1, this.backgroundSampler(mipmapped))]);
+            this.bgView = view;
+        }
+        return true;
+    }
+
+    private backgroundSampler(mipmapped: bool): GPUSampler {
+        const key = mipmapped ? -3 : -2;
+        if (this.samplers.has(key)) return this.samplers.get(key);
+        const s = new GPUSampler(Filter.linear, Filter.linear, Filter.linear, WrapMode.repeat, WrapMode.clampToEdge,
+            <CompareFunction>0xFFFFFFFF, 1, 0, mipmapped ? 32 : 0);
+        this.samplers.set(key, s);
+        return s;
     }
 
     // ------------------------------------------------------------- uniforms
 
-    private writeFrame(camera: Camera): void {
+    private writeFrame(scene: Object3D, camera: Camera): void {
         const buf = this.frameStaging;
         const f = Float32Array.wrap(buf);
+        const u = Uint32Array.wrap(buf);
         this.viewProj.mat4.writeToBuffer(buf, FRAME_VIEW_PROJ);
         camera.matrixWorldInverse.mat4.writeToBuffer(buf, FRAME_VIEW);
+        this.invViewProj.mat4.writeToBuffer(buf, FRAME_INV_VIEW_PROJ);
         const cw = camera.matrixWorld.elements;
         let o = FRAME_CAMERA_POS >> 2;
         f[o] = cw[12]; f[o + 1] = cw[13]; f[o + 2] = cw[14];
@@ -612,7 +730,10 @@ export class GPURenderer {
         o = FRAME_CAMERA_DIR >> 2;
         f[o] = <f32>_dir.x; f[o + 1] = <f32>_dir.y; f[o + 2] = <f32>_dir.z; f[o + 3] = 0;
 
+        // Lights.
         let ar: f64 = 0, ag: f64 = 0, ab: f64 = 0;
+        let sr: f64 = 0, sg: f64 = 0, sb: f64 = 0, gr: f64 = 0, gg: f64 = 0, gb: f64 = 0;
+        let hemi = false;
         let count = 0;
         const lights = this.lights;
         for (let i = 0; i < lights.length; i++) {
@@ -622,7 +743,20 @@ export class GPURenderer {
                 ar += light.color.r * k; ag += light.color.g * k; ab += light.color.b * k;
                 continue;
             }
-            if (!(light instanceof DirectionalLight) && !(light instanceof PointLight)) continue;
+            if (light instanceof HemisphereLight) {
+                const h = light as HemisphereLight;
+                sr += h.color.r * k; sg += h.color.g * k; sb += h.color.b * k;
+                gr += h.groundColor.r * k; gg += h.groundColor.g * k; gb += h.groundColor.b * k;
+                if (!hemi) {
+                    h.getWorldPosition(_hemiDir);
+                    _hemiDir.normalize();
+                    hemi = true;
+                }
+                continue;
+            }
+            const directional = light instanceof DirectionalLight;
+            const spot = light instanceof SpotLight;
+            if (!directional && !spot && !(light instanceof PointLight)) continue;
             if (count >= MAX_LIGHTS) {
                 if (!this.warnedLights) {
                     this.context.log("three: more than " + MAX_LIGHTS.toString() + " lights; the rest are ignored");
@@ -636,17 +770,28 @@ export class GPURenderer {
             f[base + 8] = <f32>(light.color.r * k);
             f[base + 9] = <f32>(light.color.g * k);
             f[base + 10] = <f32>(light.color.b * k);
-            if (light instanceof DirectionalLight) {
+            f[base + 13] = 0; f[base + 14] = 0; f[base + 15] = 0;
+            if (directional) {
                 f[base + 3] = LIGHT_DIRECTIONAL;
                 (light as DirectionalLight).target.getWorldPosition(_dir);
                 _dir.subVectors(_pos, _dir).normalize();
-                f[base + 4] = <f32>_dir.x; f[base + 5] = <f32>_dir.y; f[base + 6] = <f32>_dir.z;
+                f[base + 4] = <f32>_dir.x; f[base + 5] = <f32>_dir.y; f[base + 6] = <f32>_dir.z; f[base + 7] = 0;
                 f[base + 11] = 0;
                 f[base + 12] = 0;
+            } else if (spot) {
+                const s = light as SpotLight;
+                f[base + 3] = LIGHT_SPOT;
+                s.target.getWorldPosition(_dir);
+                _dir.subVectors(_pos, _dir).normalize();
+                f[base + 4] = <f32>_dir.x; f[base + 5] = <f32>_dir.y; f[base + 6] = <f32>_dir.z;
+                f[base + 7] = <f32>Math.cos(s.angle);
+                f[base + 11] = <f32>s.distance;
+                f[base + 12] = <f32>s.decay;
+                f[base + 13] = <f32>Math.cos(s.angle * (1 - s.penumbra));
             } else {
                 const p = light as PointLight;
                 f[base + 3] = LIGHT_POINT;
-                f[base + 4] = 0; f[base + 5] = 0; f[base + 6] = 0;
+                f[base + 4] = 0; f[base + 5] = 0; f[base + 6] = 0; f[base + 7] = 0;
                 f[base + 11] = <f32>p.distance;
                 f[base + 12] = <f32>p.decay;
             }
@@ -654,23 +799,71 @@ export class GPURenderer {
         }
         o = FRAME_AMBIENT >> 2;
         f[o] = <f32>ar; f[o + 1] = <f32>ag; f[o + 2] = <f32>ab; f[o + 3] = <f32>count;
+        o = FRAME_HEMI_SKY >> 2;
+        f[o] = <f32>sr; f[o + 1] = <f32>sg; f[o + 2] = <f32>sb; f[o + 3] = 0;
+        o = FRAME_HEMI_GROUND >> 2;
+        f[o] = <f32>gr; f[o + 1] = <f32>gg; f[o + 2] = <f32>gb; f[o + 3] = 0;
+        o = FRAME_HEMI_DIR >> 2;
+        f[o] = <f32>_hemiDir.x; f[o + 1] = <f32>_hemiDir.y; f[o + 2] = <f32>_hemiDir.z; f[o + 3] = hemi ? 1 : 0;
+
+        // Fog.
+        o = FRAME_FOG_COLOR >> 2;
+        f[o + 3] = 0;
+        if (scene instanceof Scene) {
+            const fog = (scene as Scene).fog;
+            if (fog != null) {
+                f[o] = <f32>fog.color.r; f[o + 1] = <f32>fog.color.g; f[o + 2] = <f32>fog.color.b;
+                const p = FRAME_FOG_PARAMS >> 2;
+                if (fog instanceof Fog) {
+                    f[o + 3] = FOG_LINEAR;
+                    f[p] = <f32>(fog as Fog).near; f[p + 1] = <f32>(fog as Fog).far; f[p + 2] = 0;
+                } else if (fog instanceof FogExp2) {
+                    f[o + 3] = FOG_EXP2;
+                    f[p] = 0; f[p + 1] = 0; f[p + 2] = <f32>(fog as FogExp2).density;
+                }
+            }
+        }
+
+        // Output and background.
+        o = FRAME_OUTPUT >> 2;
+        f[o] = <f32>this.toneMapping;
+        f[o + 1] = <f32>this.toneMappingExposure;
+        const bt = this.bgTexture;
+        if (bt != null && scene instanceof Scene) {
+            const s = scene as Scene;
+            f[o + 2] = <f32>s.backgroundIntensity;
+            const levels = this.textures.levels(bt);
+            f[o + 3] = <f32>(Math.max(0, Math.min(1, s.backgroundBlurriness)) * <f64>(levels - 1));
+            _euler.set(-s.backgroundRotation.x, -s.backgroundRotation.y, -s.backgroundRotation.z,
+                s.backgroundRotation.order);
+            _bgRotation.makeRotationFromEuler(_euler);
+            _bgRotation.mat4.writeToBuffer(buf, FRAME_BG_ROTATION);
+            const b = FRAME_BG_FLAGS >> 2;
+            const equirect = bt.mapping == EquirectangularReflectionMapping
+                || bt.mapping == EquirectangularRefractionMapping;
+            u[b] = equirect ? <u32>EquirectangularReflectionMapping : 0;
+            u[b + 1] = bt.colorSpace == SRGBColorSpace ? 1 : 0;
+            u[b + 2] = bt.flipY ? 1 : 0;
+            u[b + 3] = bt.premultiplyAlpha ? 1 : 0;
+        }
         this.frameUbo!.update(0, buf);
     }
 
-    private writeDraws(list: Array<DrawItem>, frame: i32): void {
+    private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
         const buf = this.objStaging;
         const f = Float32Array.wrap(buf);
         const u = Uint32Array.wrap(buf);
+        const mu = this.uniforms;
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             const state = item.state;
-            if (state.frame == frame) continue;   // a mesh drawn twice (not in M1)
+            if (state.frame == frame) continue;
             state.frame = frame;
-            const mesh = item.mesh;
-            const material = mesh.material;
+            const object = item.object;
+            item.material.fillUniforms(mu);
 
-            mesh.matrixWorld.mat4.writeToBuffer(buf, OBJ_MODEL);
-            _normal.getNormalMatrix(mesh.matrixWorld);
+            object.matrixWorld.mat4.writeToBuffer(buf, OBJ_MODEL);
+            _normal.getNormalMatrix(object.matrixWorld);
             const ne = _normal.elements;
             let o = OBJ_NORMAL >> 2;
             for (let c = 0; c < 3; c++) {
@@ -680,81 +873,75 @@ export class GPURenderer {
                 f[o + c * 4 + 3] = 0;
             }
             f[o + 12] = 0; f[o + 13] = 0; f[o + 14] = 0; f[o + 15] = 1;
+            put4(f, OBJ_COLOR, mu.r, mu.g, mu.b, mu.opacity);
+            put4(f, OBJ_EMISSIVE, mu.emissiveR, mu.emissiveG, mu.emissiveB, mu.alphaTest);
+            put4(f, OBJ_PBR, mu.roughness, mu.metalness, mu.flatShading ? 1 : 0, mu.aoMapIntensity);
+            put4(f, OBJ_SPECULAR, mu.specularR, mu.specularG, mu.specularB, mu.shininess);
+            put4(f, OBJ_EXTRA, mu.normalScaleX, mu.normalScaleY, mu.envMapIntensity, mu.ior);
+            put4(f, OBJ_PHYSICAL0, mu.clearcoat, mu.clearcoatRoughness, mu.sheenRoughness, mu.specularIntensity);
+            put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
+            put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
+            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.pixelHeight() * 0.5);
+            put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, 0);
 
-            let kind = KIND_BASIC;
-            let cr: f64 = 1, cg: f64 = 1, cb: f64 = 1;
-            let er: f64 = 0, eg: f64 = 0, eb: f64 = 0;
-            let roughness: f64 = 1, metalness: f64 = 0, flat: f32 = 0;
-            if (material instanceof MeshStandardMaterial) {
-                const m = material as MeshStandardMaterial;
-                kind = KIND_STANDARD;
-                cr = m.color.r; cg = m.color.g; cb = m.color.b;
-                er = m.emissive.r * m.emissiveIntensity; eg = m.emissive.g * m.emissiveIntensity;
-                eb = m.emissive.b * m.emissiveIntensity;
-                roughness = m.roughness; metalness = m.metalness;
-                flat = m.flatShading ? 1 : 0;
-            } else if (material instanceof MeshLambertMaterial) {
-                const m = material as MeshLambertMaterial;
-                kind = KIND_LAMBERT;
-                cr = m.color.r; cg = m.color.g; cb = m.color.b;
-                er = m.emissive.r * m.emissiveIntensity; eg = m.emissive.g * m.emissiveIntensity;
-                eb = m.emissive.b * m.emissiveIntensity;
-            } else if (material instanceof MeshBasicMaterial) {
-                const m = material as MeshBasicMaterial;
-                cr = m.color.r; cg = m.color.g; cb = m.color.b;
-            } else if (material instanceof MeshNormalMaterial) {
-                kind = KIND_NORMAL;
-            }
-            o = OBJ_COLOR >> 2;
-            f[o] = <f32>cr; f[o + 1] = <f32>cg; f[o + 2] = <f32>cb; f[o + 3] = <f32>material.opacity;
-            o = OBJ_EMISSIVE >> 2;
-            f[o] = <f32>er; f[o + 1] = <f32>eg; f[o + 2] = <f32>eb; f[o + 3] = <f32>material.alphaTest;
-            o = OBJ_PBR >> 2;
-            f[o] = <f32>roughness; f[o + 1] = <f32>metalness; f[o + 2] = flat; f[o + 3] = 0;
-
-            // The map, its flags and the bind group.
-            let mapFlags: u32 = 0;
-            let view = this.white!;
-            let sampler: GPUSampler;
-            const map = mapOf(material);
-            o = OBJ_UV >> 2;
-            if (map != null) {
-                const v = map.getView();
-                sampler = this.sampler(map);
-                if (v != null) {
-                    view = v;
-                    mapFlags = MAP_ON;
-                    if (map.colorSpace == SRGBColorSpace) mapFlags |= MAP_SRGB;
-                    if (map.flipY) mapFlags |= MAP_FLIP_Y;
-                    if (map.premultiplyAlpha) mapFlags |= MAP_PREMULTIPLIED;
+            // Textures: views, flags, the shared sampler and UV transform
+            // (from the first texture present, `map` first).
+            let present: u32 = 0, srgb: u32 = 0, flip: u32 = 0, premul: u32 = 0;
+            let first: Texture? = null;
+            let firstMipmapped = false;
+            const views = _views;
+            for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                views[s] = this.white;
+                const t = mu.textures[s];
+                if (t == null) continue;
+                const v = this.textures.view(t, canvas);
+                if (v == null) continue;
+                views[s] = v;
+                const bit: u32 = 1 << <u32>s;
+                present |= bit;
+                if (t.colorSpace == SRGBColorSpace) srgb |= bit;
+                if (t.flipY) flip |= bit;
+                if (t.premultiplyAlpha) premul |= bit;
+                if (first == null) {
+                    first = t;
+                    firstMipmapped = this.textures.levels(t) > 1;
                 }
-                f[o] = <f32>map.offset.x; f[o + 1] = <f32>map.offset.y;
-                f[o + 2] = <f32>map.repeat.x; f[o + 3] = <f32>map.repeat.y;
+            }
+            let sampler: GPUSampler;
+            if (first != null) {
+                sampler = this.sampler(first, firstMipmapped);
+                put4(f, OBJ_UV, first.offset.x, first.offset.y, first.repeat.x, first.repeat.y);
             } else {
                 sampler = this.defaultSampler();
-                f[o] = 0; f[o + 1] = 0; f[o + 2] = 1; f[o + 3] = 1;
+                put4(f, OBJ_UV, 0, 0, 1, 1);
             }
+            o = OBJ_TEX_FLAGS >> 2;
+            u[o] = <u32>mu.kind; u[o + 1] = present; u[o + 2] = srgb; u[o + 3] = flip;
+            let flags: u32 = 0;
+            if (mu.vertexColors) flags |= FLAG_VERTEX_COLORS;
+            if (mu.fog) flags |= FLAG_FOG;
+            if (item.material.transparent) flags |= FLAG_TRANSPARENT;
+            if (item.material.toneMapped && this.toneMapping != NoToneMapping) flags |= FLAG_TONE_MAPPED;
             o = OBJ_FLAGS >> 2;
-            u[o] = kind; u[o + 1] = mapFlags; u[o + 2] = 0; u[o + 3] = material.transparent ? 1 : 0;
+            u[o] = premul; u[o + 1] = flags; u[o + 2] = 0; u[o + 3] = 0;
             state.ubo.update(0, buf);
 
-            if (state.group == null || state.view !== view || state.sampler !== sampler) {
-                state.group = new GPUBindGroup(this.objLayout!,
-                    [new GPUBindGroupUBO(0, state.ubo)],
-                    [new GPUBindGroupTexture(1, view)],
-                    [new GPUBindGroupSampler(2, sampler)]);
-                state.view = view;
+            if (state.objGroup == null) {
+                state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, state.ubo)]);
+            }
+            let changed = state.matGroup == null || state.sampler !== sampler;
+            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.views[s] !== views[s];
+            if (changed) {
+                const entries: Array<GPUBindGroupTexture> = [];
+                for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                    entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
+                    state.views[s] = views[s];
+                }
+                state.matGroup = new GPUBindGroup(this.matLayout!, [], entries,
+                    [new GPUBindGroupSampler(<u32>TEXTURE_SLOTS, sampler)]);
                 state.sampler = sampler;
             }
         }
-    }
-
-    private defaultSampler(): GPUSampler {
-        const key = -1;
-        if (this.samplers.has(key)) return this.samplers.get(key);
-        const s = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest, WrapMode.clampToEdge, WrapMode.clampToEdge);
-        this.samplers.set(key, s);
-        return s;
     }
 
     // ------------------------------------------------------------------ draw
@@ -765,46 +952,68 @@ export class GPURenderer {
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             const g = item.geometry;
-            const group = item.state.group;
-            if (group == null) continue;
+            const state = item.state;
+            if (state.objGroup == null || state.matGroup == null) continue;
             if (item.pipelineKey != lastKey) {
                 pass.setPipeline(this.pipeline(item.pipelineKey));
                 pass.setBindGroup(0, this.frameGroup!);
                 lastKey = item.pipelineKey;
             }
-            pass.setBindGroup(1, group);
+            pass.setBindGroup(1, state.objGroup!);
+            pass.setBindGroup(2, state.matGroup!);
             pass.setVertexBuffer(0, g.position!);
             pass.setVertexBuffer(1, g.normal!);
             pass.setVertexBuffer(2, g.uv!);
+            pass.setVertexBuffer(3, g.color!);
+            pass.setVertexBuffer(4, item.instances);
             if (g.indexed) {
                 pass.setIndexBuffer(g.index!, <u32>g.indexFormat);
-                pass.drawIndexed(<u32>item.count, 1, <u32>item.first);
+                pass.drawIndexed(<u32>item.count, item.instanceCount, <u32>item.first);
             } else {
-                pass.draw(<u32>item.count, 1, <u32>item.first);
+                pass.draw(<u32>item.count, item.instanceCount, <u32>item.first);
             }
             info.calls++;
-            info.triangles += item.count / 3;
+            info.triangles += (item.count / 3) * <i32>item.instanceCount;
         }
     }
 }
 
+function put4(f: Float32Array, byteOffset: i32, x: f64, y: f64, z: f64, w: f64): void {
+    const o = byteOffset >> 2;
+    f[o] = <f32>x; f[o + 1] = <f32>y; f[o + 2] = <f32>z; f[o + 3] = <f32>w;
+}
+
+function blendState(blending: i32): GPUBlendState? {
+    if (blending == NoBlending) return null;
+    // Premultiplied colour, as three.js with premultipliedAlpha.
+    const b = new GPUBlendState();
+    if (blending == AdditiveBlending) {
+        b.srcColor = BlendFactor.one; b.dstColor = BlendFactor.one;
+        b.srcAlpha = BlendFactor.one; b.dstAlpha = BlendFactor.one;
+    } else if (blending == SubtractiveBlending) {
+        b.srcColor = BlendFactor.zero; b.dstColor = BlendFactor.oneMinusSrcColor;
+        b.srcAlpha = BlendFactor.zero; b.dstAlpha = BlendFactor.one;
+    } else if (blending == MultiplyBlending) {
+        b.srcColor = BlendFactor.zero; b.dstColor = BlendFactor.srcColor;
+        b.srcAlpha = BlendFactor.zero; b.dstAlpha = BlendFactor.srcAlpha;
+    } else {
+        b.srcColor = BlendFactor.one; b.dstColor = BlendFactor.oneMinusSrcAlpha;
+        b.srcAlpha = BlendFactor.one; b.dstAlpha = BlendFactor.oneMinusSrcAlpha;
+    }
+    return b;
+}
+
 function compareOpaque(a: DrawItem, b: DrawItem): i32 {
-    const ro = a.mesh.renderOrder - b.mesh.renderOrder;
+    const ro = a.object.renderOrder - b.object.renderOrder;
     if (ro != 0) return ro;
-    return a.depth < b.depth ? -1 : a.depth > b.depth ? 1 : a.mesh.id - b.mesh.id;
+    if (a.pipelineKey != b.pipelineKey) return a.pipelineKey - b.pipelineKey;
+    return a.depth < b.depth ? -1 : a.depth > b.depth ? 1 : a.object.id - b.object.id;
 }
 
 function compareTransparent(a: DrawItem, b: DrawItem): i32 {
-    const ro = a.mesh.renderOrder - b.mesh.renderOrder;
+    const ro = a.object.renderOrder - b.object.renderOrder;
     if (ro != 0) return ro;
-    return a.depth > b.depth ? -1 : a.depth < b.depth ? 1 : a.mesh.id - b.mesh.id;
-}
-
-function mapOf(material: Material): Texture? {
-    if (material instanceof MeshStandardMaterial) return (material as MeshStandardMaterial).map;
-    if (material instanceof MeshLambertMaterial) return (material as MeshLambertMaterial).map;
-    if (material instanceof MeshBasicMaterial) return (material as MeshBasicMaterial).map;
-    return null;
+    return a.depth > b.depth ? -1 : a.depth < b.depth ? 1 : a.object.id - b.object.id;
 }
 
 function isNearest(filter: i32): bool {
@@ -829,7 +1038,11 @@ function releaseTex(t: GPUTexture?): void {
 }
 
 const _pos: Vector3 = new Vector3();
+const _dir: Vector3 = new Vector3();
+const _hemiDir: Vector3 = new Vector3(0, 1, 0);
+const _normal: Matrix3 = new Matrix3();
 const _frustum: Frustum = new Frustum();
 const _sphere: Sphere = new Sphere();
-const _dir: Vector3 = new Vector3();
-const _normal: Matrix3 = new Matrix3();
+const _euler: Euler = new Euler();
+const _bgRotation: Matrix4 = new Matrix4();
+const _views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);

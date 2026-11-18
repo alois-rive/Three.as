@@ -4,12 +4,14 @@
 
 import { Light } from "./Light";
 import { Object3D } from "../core/Object3D";
+import { DirectionalLightShadow } from "./LightShadow";
 
 export class DirectionalLight extends Light {
     readonly isDirectionalLight: bool = true;
     /// The light points at this object's world position. Add it to the
     /// scene to move it with a parent.
     target: Object3D = new Object3D();
+    shadow: DirectionalLightShadow = new DirectionalLightShadow();
 
     constructor(color: u32 = 0xFFFFFF, intensity: f64 = 1) {
         super(color, intensity);

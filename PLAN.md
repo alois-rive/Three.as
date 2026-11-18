@@ -90,7 +90,7 @@ In steps, each committed with tests and a screenshot check:
 - **M2b, geometries (done).** Circle, Ring, Cylinder, Cone, Torus, TorusKnot,
   Capsule, Lathe, Polyhedron/Icosahedron/Octahedron/Tetrahedron/
   Dodecahedron, EdgesGeometry, WireframeGeometry.
-- **M2c, shading.** Geometry groups with material arrays, vertexColors,
+- **M2c, shading (done; tone mapping from M5 came along).** Geometry groups with material arrays, vertexColors,
   MeshPhongMaterial, MeshToonMaterial, MeshMatcapMaterial,
   MeshDepthMaterial; `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`,
   `emissiveMap`, `alphaMap`; SpotLight, HemisphereLight; Fog, FogExp2;

@@ -12,6 +12,8 @@ export class GeometryGPU {
     position: GPUBuffer? = null;
     normal: GPUBuffer? = null;
     uv: GPUBuffer? = null;
+    /// RGBA per vertex (white when the geometry has no "color").
+    color: GPUBuffer? = null;
     index: GPUBuffer? = null;
     indexFormat: IndexFormat = IndexFormat.none;
     /// Indices when indexed, else vertices.
@@ -22,15 +24,18 @@ export class GeometryGPU {
     positionVersion: i32 = -1;
     normalVersion: i32 = -1;
     uvVersion: i32 = -1;
+    colorVersion: i32 = -1;
     indexVersion: i32 = -1;
     positionAttr: BufferAttribute? = null;
     normalAttr: BufferAttribute? = null;
     uvAttr: BufferAttribute? = null;
+    colorAttr: BufferAttribute? = null;
 
     release(): void {
         releaseBuffer(this.position); this.position = null;
         releaseBuffer(this.normal); this.normal = null;
         releaseBuffer(this.uv); this.uv = null;
+        releaseBuffer(this.color); this.color = null;
         releaseBuffer(this.index); this.index = null;
     }
 }
@@ -83,6 +88,20 @@ export class GPUGeometries {
             g.uvAttr = null;
         }
 
+        const color = geometry.getAttribute("color");
+        if (color != null && color.count == vertexCount && (color.itemSize == 3 || color.itemSize == 4)) {
+            if (resized || g.colorAttr !== color || g.colorVersion != color.version) {
+                g.color = upload(g.color, toRGBA(color, vertexCount));
+                g.colorAttr = color;
+                g.colorVersion = color.version;
+            }
+        } else if (resized || g.color == null || g.colorAttr != null) {
+            const white = new Float32Array(vertexCount * 4);
+            white.fill(1);
+            g.color = upload(g.color, white);
+            g.colorAttr = null;
+        }
+
         const index = geometry.index;
         if (index != null && index.count > 0) {
             if (!g.indexed || g.indexVersion != index.version || g.count != index.count) {
@@ -127,6 +146,20 @@ export class GPUGeometries {
         for (let i = 0; i < values.length; i++) values[i].release();
         this.map.clear();
     }
+}
+
+/// A colour attribute as RGBA floats (alpha 1 for RGB).
+function toRGBA(color: BufferAttribute, count: i32): Float32Array {
+    if (color.itemSize == 4) return color.array;
+    const out = new Float32Array(count * 4);
+    const src = color.array;
+    for (let i = 0; i < count; i++) {
+        out[i * 4] = src[i * 3];
+        out[i * 4 + 1] = src[i * 3 + 1];
+        out[i * 4 + 2] = src[i * 3 + 2];
+        out[i * 4 + 3] = 1;
+    }
+    return out;
 }
 
 function upload(existing: GPUBuffer?, data: Float32Array): GPUBuffer {

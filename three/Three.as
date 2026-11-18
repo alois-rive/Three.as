@@ -29,12 +29,14 @@ export * from "./math/Cylindrical";
 
 export * from "./core/Object3D";
 export * from "./core/Layers";
+export * from "./core/ColorOrTexture";
 export * from "./core/BufferAttribute";
 export * from "./core/BufferGeometry";
 
 export * from "./objects/Group";
 export * from "./objects/Mesh";
 export * from "./scenes/Scene";
+export * from "./scenes/Fog";
 
 export * from "./cameras/Camera";
 export * from "./cameras/PerspectiveCamera";
@@ -44,12 +46,20 @@ export * from "./lights/Light";
 export * from "./lights/AmbientLight";
 export * from "./lights/DirectionalLight";
 export * from "./lights/PointLight";
+export * from "./lights/SpotLight";
+export * from "./lights/HemisphereLight";
+export * from "./lights/LightShadow";
 
 export * from "./materials/Material";
 export * from "./materials/MeshBasicMaterial";
 export * from "./materials/MeshNormalMaterial";
 export * from "./materials/MeshLambertMaterial";
 export * from "./materials/MeshStandardMaterial";
+export * from "./materials/MeshPhysicalMaterial";
+export * from "./materials/MeshPhongMaterial";
+export * from "./materials/MeshToonMaterial";
+export * from "./materials/MeshMatcapMaterial";
+export * from "./materials/MeshDepthMaterial";
 
 export * from "./geometries/BoxGeometry";
 export * from "./geometries/PlaneGeometry";

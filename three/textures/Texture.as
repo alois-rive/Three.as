@@ -11,6 +11,7 @@ import { Context } from "rive/host";
 import { Image } from "rive/image";
 import { GPUTextureView } from "rive/gpu";
 import { Vector2 } from "../math/Vector2";
+import { ColorOrTexture } from "../core/ColorOrTexture";
 import {
     ClampToEdgeWrapping, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, SRGBColorSpace,
     RGBAFormat, UnsignedByteType, UVMapping,
@@ -21,7 +22,7 @@ let _textureId: i32 = 0;
 /// Textures disposed since the renderer last looked (ids). Internal.
 export const disposedTextures: Array<i32> = [];
 
-export class Texture {
+export class Texture extends ColorOrTexture {
     readonly isTexture: bool = true;
     id: i32;
     name: string = "";
@@ -61,6 +62,7 @@ export class Texture {
     private cachedH: u32 = 0;
 
     constructor(image: Image? = null) {
+        super();
         this.id = _textureId++;
         this.image = image;
         if (image != null) {

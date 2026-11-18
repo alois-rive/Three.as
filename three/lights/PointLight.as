@@ -2,11 +2,13 @@
 // 1 / distance^decay, cut off smoothly at `distance` (0: no cut off).
 
 import { Light } from "./Light";
+import { PointLightShadow } from "./LightShadow";
 
 export class PointLight extends Light {
     readonly isPointLight: bool = true;
     distance: f64;
     decay: f64;
+    shadow: PointLightShadow = new PointLightShadow();
 
     constructor(color: u32 = 0xFFFFFF, intensity: f64 = 1, distance: f64 = 0, decay: f64 = 2) {
         super(color, intensity);

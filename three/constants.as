@@ -33,3 +33,49 @@ export const UnsignedByteType: i32 = 1009;
 
 // Texture.mapping
 export const UVMapping: i32 = 300;
+export const CubeReflectionMapping: i32 = 301;
+export const CubeRefractionMapping: i32 = 302;
+export const EquirectangularReflectionMapping: i32 = 303;
+export const EquirectangularRefractionMapping: i32 = 304;
+
+// Material.blending
+export const NoBlending: i32 = 0;
+export const NormalBlending: i32 = 1;
+export const AdditiveBlending: i32 = 2;
+export const SubtractiveBlending: i32 = 3;
+export const MultiplyBlending: i32 = 4;
+export const CustomBlending: i32 = 5;
+
+// GPURenderer.toneMapping
+export const NoToneMapping: i32 = 0;
+export const LinearToneMapping: i32 = 1;
+export const ReinhardToneMapping: i32 = 2;
+export const CineonToneMapping: i32 = 3;
+export const ACESFilmicToneMapping: i32 = 4;
+export const CustomToneMapping: i32 = 5;
+export const AgXToneMapping: i32 = 6;
+export const NeutralToneMapping: i32 = 7;
+
+// GPURenderer.shadowMap.type
+export const BasicShadowMap: i32 = 0;
+export const PCFShadowMap: i32 = 1;
+export const PCFSoftShadowMap: i32 = 2;
+export const VSMShadowMap: i32 = 3;
+
+// MeshDepthMaterial.depthPacking
+export const BasicDepthPacking: i32 = 3200;
+export const RGBADepthPacking: i32 = 3201;
+
+// Material.normalMapType
+export const TangentSpaceNormalMap: i32 = 0;
+export const ObjectSpaceNormalMap: i32 = 1;
+
+// AnimationAction.loop
+export const LoopOnce: i32 = 2200;
+export const LoopRepeat: i32 = 2201;
+export const LoopPingPong: i32 = 2202;
+
+// KeyframeTrack interpolation
+export const InterpolateDiscrete: i32 = 2300;
+export const InterpolateLinear: i32 = 2301;
+export const InterpolateSmooth: i32 = 2302;

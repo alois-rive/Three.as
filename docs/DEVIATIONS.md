@@ -66,7 +66,8 @@ export class Demo extends Layout {
 | `setSize(w, h, updateStyle)` | `setSize(w, h)` in points; there is no style |
 | `setAnimationLoop(fn)` | the script's `advance(seconds)` |
 | `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
-| `outputColorSpace`, `toneMapping` | fixed: sRGB output, no tone mapping (M5) |
+| `outputColorSpace` | read-only, always sRGB |
+| `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
 | `info.render.calls/triangles` | same, plus `info.render.culled` (meshes frustum culled); `info.memory` is missing |
 
@@ -86,7 +87,14 @@ export class Demo extends Layout {
   - **Light and Color constructors take a hex number.** `new Color(0xff0000)`
     or linear components `new Color(1, 0, 0)`; for a CSS string use
     `Color.fromStyle("#f00")` or `new Color().set("#f00")`.
-  - `scene.background` is a `Color` (or null); textures come in M2.
+  - Where three.js types a field as a union of classes, ThreeAS adds a
+    small base class: `scene.background` is a `ColorOrTexture?` (assign a
+    `Color` or a `Texture`, read back with `instanceof`), `scene.fog` a
+    `FogBase?` (`Fog` or `FogExp2`).
+  - **A mesh's material array is `mesh.materials`** (one per geometry
+    group, by `materialIndex`); `mesh.material` stays a single material.
+    `new Mesh(geometry, [a, b])` becomes
+    `const m = new Mesh(geometry); m.materials = [a, b];`.
 - **`Object3D.add` / `remove` take one object** (three.js is variadic): call
   them once per object.
 - **No closures.** A function passed to `traverse`, `traverseVisible` or
@@ -151,13 +159,36 @@ export class Demo extends Layout {
   `geometries/PolyhedronGeometry.as` rather than a file each; through the
   `THREE` namespace nothing changes.
 
+## Materials
+
+- **All the maps of a material share one sampler and one UV transform**,
+  taken from the first map present (`map` first). three.js gives each map
+  its own (`offset`, `repeat`, `wrapS`/`wrapT`, filters, `channel`). Use
+  the same settings on every map of a material.
+- Normal maps are tangent space, with the tangent frame built from screen
+  derivatives (three.js's path without a `tangent` attribute);
+  `normalMapType` and `bumpMap` are not supported.
+- `MeshToonMaterial.gradientMap` is always read nearest (as three.js
+  recommends setting it); without one the two tones step sharply.
+- `MeshDepthMaterial` supports `BasicDepthPacking` only.
+- `MeshPhysicalMaterial` supports clearcoat, sheen, ior, specularIntensity
+  and specularColor; transmission, thickness, iridescence, anisotropy,
+  dispersion and the physical maps are not ported.
+- `flatShading` is on the `Material` base (ignored by unlit materials).
+- Fog is mixed in linear space after tone mapping and before the sRGB
+  encode, so a fully fogged surface matches a background of the fog colour.
+- `envMap` / `envMapIntensity` exist but do nothing until environment maps
+  land (M5).
+
 ## Lighting
 
 - Intensities are three.js's physically based ones (r155+, no legacy
   lights): diffuse is `irradiance * albedo / PI`. Sources written for
   `useLegacyLights = true` need their intensities multiplied by PI.
-- At most **8** directional and point lights reach the shader (the rest are
-  ignored, with one log line). Ambient lights are summed, without limit.
+- At most **8** directional, point and spot lights reach the shader (the
+  rest are ignored, with one log line). Ambient lights are summed, without
+  limit. Hemisphere lights are summed too, all along the first one's
+  direction.
 - Without an environment map, metals reflect only direct lights and look
   dark, as in three.js.
 
@@ -179,7 +210,14 @@ export class Demo extends Layout {
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),
   not an HTML canvas.
 - UV transform: `offset` and `repeat` work; `rotation` and `center` are
-  ignored for now. No mipmaps yet (M2): mipmap filters sample level 0.
+  ignored for now.
+- Mipmaps: a texture with `generateMipmaps` and a mipmap `minFilter` (the
+  default) is copied into a mipmapped texture, redone when its source
+  changes (a Rive image that decoded, `needsUpdate`, an ArtboardTexture
+  redraw). `anisotropy` works up to 16 where the device supports it.
+- Background textures: UV-mapped ones fill the view (stretched);
+  `EquirectangularReflectionMapping` ones surround it, with
+  `backgroundRotation` and `backgroundBlurriness` (a mip level).
 
 ## Rive-only additions
 
@@ -194,11 +232,9 @@ export class Demo extends Layout {
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): Line/Points/Sprite/
 InstancedMesh (so EdgesGeometry and WireframeGeometry build but cannot be
-drawn yet), material arrays and geometry groups, Shape/ShapeGeometry/
-ExtrudeGeometry/TubeGeometry, Phong/Physical/Toon/Matcap/Depth/line/points materials,
-maps other than `map`, `wireframe`, `vertexColors`, SpotLight,
-HemisphereLight, RectAreaLight, fog, background textures, shadows,
-environment maps, tone mapping, ShaderMaterial, render targets,
+drawn yet), Shape/ShapeGeometry/ExtrudeGeometry/TubeGeometry, line and
+points materials, `wireframe`, RectAreaLight, cube textures, shadows,
+environment maps, ShaderMaterial, render targets,
 Raycaster, curves, loaders other
 than TextureLoader, animation (AnimationMixer), skinning, controls,
 post-processing, `EventDispatcher` events (`dispose` events are internal).

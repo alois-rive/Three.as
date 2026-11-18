@@ -1,0 +1,56 @@
+// Byte layouts of the uniform blocks in three/shaders/three.wgsl (FrameU,
+// ObjU, Light). Keep in sync with the shader.
+
+export const MAX_LIGHTS: i32 = 8;
+
+export const FRAME_VIEW_PROJ: i32 = 0;
+export const FRAME_VIEW: i32 = 64;
+export const FRAME_INV_VIEW_PROJ: i32 = 128;
+export const FRAME_CAMERA_POS: i32 = 192;
+export const FRAME_CAMERA_DIR: i32 = 208;
+export const FRAME_AMBIENT: i32 = 224;
+export const FRAME_HEMI_SKY: i32 = 240;
+export const FRAME_HEMI_GROUND: i32 = 256;
+export const FRAME_HEMI_DIR: i32 = 272;
+export const FRAME_FOG_COLOR: i32 = 288;
+export const FRAME_FOG_PARAMS: i32 = 304;
+export const FRAME_OUTPUT: i32 = 320;
+export const FRAME_BG_ROTATION: i32 = 336;
+export const FRAME_BG_FLAGS: i32 = 400;
+export const FRAME_LIGHTS: i32 = 416;
+export const LIGHT_BYTES: i32 = 64;
+export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 928
+
+export const OBJ_MODEL: i32 = 0;
+export const OBJ_NORMAL: i32 = 64;
+export const OBJ_COLOR: i32 = 128;
+export const OBJ_EMISSIVE: i32 = 144;
+export const OBJ_PBR: i32 = 160;
+export const OBJ_UV: i32 = 176;
+export const OBJ_SPECULAR: i32 = 192;
+export const OBJ_EXTRA: i32 = 208;
+export const OBJ_PHYSICAL0: i32 = 224;
+export const OBJ_PHYSICAL1: i32 = 240;
+export const OBJ_PHYSICAL2: i32 = 256;
+export const OBJ_TEX_FLAGS: i32 = 272;
+export const OBJ_FLAGS: i32 = 288;
+export const OBJ_POINTS: i32 = 304;
+export const OBJ_DASH: i32 = 320;
+export const OBJ_USED: i32 = 336;
+/// The per-draw buffer size (room to grow).
+export const OBJ_BYTES: i32 = 512;
+
+export const FLAG_VERTEX_COLORS: u32 = 1;
+export const FLAG_FOG: u32 = 2;
+export const FLAG_TRANSPARENT: u32 = 4;
+export const FLAG_TONE_MAPPED: u32 = 8;
+
+export const LIGHT_DIRECTIONAL: f32 = 0;
+export const LIGHT_POINT: f32 = 1;
+export const LIGHT_SPOT: f32 = 2;
+
+export const FOG_LINEAR: f32 = 1;
+export const FOG_EXP2: f32 = 2;
+
+/// Instance buffer stride: a mat4 then an RGBA colour.
+export const INSTANCE_STRIDE: u32 = 80;

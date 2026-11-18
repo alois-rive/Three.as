@@ -6,7 +6,9 @@
 // `Color` script input) passes to `setHex`/`set`, which ignore alpha. Its
 // alpha is `Color.alphaOf(argb)`.
 
-export class Color {
+import { ColorOrTexture } from "../core/ColorOrTexture";
+
+export class Color extends ColorOrTexture {
     r: f64 = 1;
     g: f64 = 1;
     b: f64 = 1;
@@ -15,6 +17,7 @@ export class Color {
     /// components `new Color(1, 0.5, 0)`. For a CSS string or another
     /// Color, use `Color.fromStyle(s)` / `c.clone()` or `new Color().set(x)`.
     constructor(r: f64 = <f64>0xFFFFFF, g: f64 = -1, b: f64 = -1) {
+        super();
         if (g < 0 && b < 0) this.setHex(<u32>r);
         else this.setRGB(r, g, b);
     }
