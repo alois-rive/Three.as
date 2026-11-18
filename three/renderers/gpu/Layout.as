@@ -65,7 +65,9 @@ export const OBJ_PHYSICAL6: i32 = 1072;  // anisotropy direction (cos, sin of an
 export const OBJ_CLIP_PLANES: i32 = 1088;   // 8 planes: xyz normal, w constant (world)
 export const OBJ_CLIP: i32 = 1216;          // x union count, y total count
 export const MAX_CLIP_PLANES: i32 = 8;
-export const OBJ_USED: i32 = 1232;
+export const OBJ_MISC0: i32 = 1232;   // MeshDistanceMaterial referencePosition xyz, nearDistance
+export const OBJ_MISC1: i32 = 1248;   // farDistance, alphaHash
+export const OBJ_USED: i32 = 1264;
 
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384

@@ -104,7 +104,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -127,6 +127,7 @@ const KEY_MSAA: i32 = 1 << 11;
 const KEY_SKINNED: i32 = 1 << 12;
 const KEY_DISPLACED: i32 = 1 << 13;      // displacementMap: the vs_*_displaced entry points
 const KEY_CLIP_SHADOW: i32 = 1 << 14;    // shadow passes: clip casters (clipShadows)
+const KEY_CUTOUT_SHADOW: i32 = 1 << 15;  // shadow passes: alphaTest / alphaHash cut-outs
 const KEY_STATE_SHIFT: i32 = 21;         // 9 bits: a depthFunc/stencil/polygonOffset state (0: default)
 const KEY_STATE_MASK: i32 = 511;
 // The colour passes' depth (and stencil) format.
@@ -1811,7 +1812,7 @@ export class GPURenderer {
                 }
                 this.dynamicOffset[0] = state.objOffset;
                 pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
-                if ((key & KEY_DISPLACED) != 0) {
+                if ((key & (KEY_DISPLACED | KEY_CUTOUT_SHADOW)) != 0) {
                     if (state.matGroup == null || state.samplerGroup == null) continue;
                     pass.setBindGroup(2, state.matGroup!);
                     pass.setBindGroup(3, state.samplerGroup!);
@@ -1844,7 +1845,10 @@ export class GPURenderer {
         const geometry = mesh.geometry;
         const g = this.geometries.get(geometry);
         if (g == null) return;
-        const material = mesh.material;
+        // customDepthMaterial (or customDistanceMaterial) stands in.
+        let custom = mesh.customDepthMaterial;
+        if (custom == null) custom = mesh.customDistanceMaterial;
+        const material = custom != null ? custom! : mesh.material;
         let instances = this.identityInstance!;
         let colors = this.identityColor!;
         let instanceCount: u32 = 1;
@@ -1856,7 +1860,20 @@ export class GPURenderer {
             colors = ig.colors!;
             instanceCount = <u32>im.count;
         }
-        const stateKey = mesh.id * 64;
+        // Its own object block when another material stands in.
+        const stateKey = mesh.id * 64 + (custom != null ? 63 : 0);
+        if (custom != null) {
+            const u = this.uniforms;
+            custom.fillUniforms(u);
+            for (let i = 0; i < TEXTURE_SLOTS; i++) {
+                const t = u.textures[i];
+                if (t != null) this.textures.update(t, frame);
+            }
+            for (let i = 0; i < ROLE_COUNT; i++) {
+                const t = u.roles[i];
+                if (t != null) this.textures.update(t, frame);
+            }
+        }
         let state: DrawState;
         if (this.states.has(stateKey)) state = this.states.get(stateKey);
         else {
@@ -1871,9 +1888,14 @@ export class GPURenderer {
             item.index = g.index;
             item.indexFormat = <u32>g.indexFormat;
         }
-        // three.js renders back faces of front-sided casters.
+        // three.js renders back faces of front-sided casters (shadowSide
+        // picks the side itself).
         const side = material.side;
-        item.pipelineKey = side == DoubleSide ? 1 : side == BackSide ? 0 : 2;
+        const shadowSide = material.shadowSide;
+        if (shadowSide >= 0) item.pipelineKey = shadowSide == DoubleSide ? 1 : shadowSide == BackSide ? 2 : 0;
+        else item.pipelineKey = side == DoubleSide ? 1 : side == BackSide ? 0 : 2;
+        if (material.alphaTest > 0 || material.alphaHash || material.alphaToCoverage) item.pipelineKey |= KEY_CUTOUT_SHADOW;
+        if (material.displacementMapOf() != null) item.pipelineKey |= KEY_DISPLACED;
         const clips = material.clipShadows && ((this.localClippingEnabled && material.clippingPlanes != null
             && material.clippingPlanes!.length > 0) || this.clippingPlanes.length > 0);
         if (clips) item.pipelineKey |= KEY_CLIP_SHADOW;
@@ -1895,12 +1917,16 @@ export class GPURenderer {
         const displaced = (key & KEY_DISPLACED) != 0;
         d.vertexEntryPoint = (skinned ? "vs_skinned" : "vs_main") + (displaced ? "_displaced" : "");
         d.colorTargets = [];
-        if ((key & KEY_CLIP_SHADOW) != 0) {
+        const cutout = (key & KEY_CUTOUT_SHADOW) != 0;
+        if (cutout) {
+            d.fragmentModule = this.module;
+            d.fragmentEntryPoint = "fs_shadow_cutout";
+        } else if ((key & KEY_CLIP_SHADOW) != 0) {
             d.fragmentModule = this.module;
             d.fragmentEntryPoint = "fs_clip";
         }
         d.vertexBuffers = skinned ? this.skinBuffers : this.vertexBuffers;
-        d.bindGroupLayouts = displaced ? [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout]
+        d.bindGroupLayouts = displaced || cutout ? [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout]
             : [this.frameLayout, this.objLayout];
         const cull = key & KEY_CULL_MASK;
         d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
@@ -2316,6 +2342,8 @@ export class GPURenderer {
                 mu.anisotropy);
             put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
             this.writeClipping(f, item.material);
+            put4(f, OBJ_MISC0, mu.referenceX, mu.referenceY, mu.referenceZ, mu.nearDistance);
+            put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, 0, 0);
             if (object instanceof Sprite) {
                 const c = (object as Sprite).center;
                 put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);

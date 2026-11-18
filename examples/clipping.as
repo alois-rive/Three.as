@@ -102,7 +102,13 @@ export class Clipping extends THREE.ThreeLayout {
         ball.castShadow = true;
         scene.add(ball);
 
-        const ground = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.MeshStandardMaterial({ color: 0x37474f, roughness: 0.9 }));
+        const grid = new THREE.Mesh(new THREE.PlaneGeometry(9, 9, 18, 18), new THREE.MeshBasicMaterial({
+            color: 0x37474f, wireframe: true,
+        }));
+        grid.rotation.x = -Math.PI / 2;
+        grid.position.y = -1.001;
+        scene.add(grid);
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.35 }));
         ground.rotation.x = -Math.PI / 2;
         ground.position.y = -1;
         ground.receiveShadow = true;

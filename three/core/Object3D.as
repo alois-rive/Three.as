@@ -1,6 +1,7 @@
 // three.js Object3D: a transform with children. Y up, right handed;
 // cameras and lights look down their -Z.
 
+import { Material } from "../materials/Material";
 import { Vector3 } from "../math/Vector3";
 import { Quaternion } from "../math/Quaternion";
 import { Euler } from "../math/Euler";
@@ -46,6 +47,12 @@ export class Object3D {
     visible: bool = true;
     castShadow: bool = false;
     receiveShadow: bool = false;
+    /// The material shadow passes use instead of the object's (its map,
+    /// alphaTest, displacement and clipping): customDepthMaterial, or
+    /// customDistanceMaterial when only that is set (one material serves
+    /// every light here).
+    customDepthMaterial: Material? = null;
+    customDistanceMaterial: Material? = null;
     frustumCulled: bool = true;
     /// Draws sort by renderOrder first (lower first), then by depth.
     renderOrder: i32 = 0;

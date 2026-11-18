@@ -6,9 +6,11 @@ import {
     FrontSide, NormalBlending, LessEqualDepth, AlwaysStencilFunc, KeepStencilOp,
 } from "../constants";
 import { Plane } from "../math/Plane";
-import { MaterialUniforms } from "./MaterialUniforms";
+import { MaterialUniforms, ROLE_DISPLACEMENT } from "./MaterialUniforms";
+import { Texture } from "../textures/Texture";
 
 let _materialId: i32 = 0;
+const _scratch = new MaterialUniforms();
 
 export class MaterialParameters {
     name: string = "";
@@ -41,6 +43,9 @@ export class MaterialParameters {
     clippingPlanes: Array<Plane>? = null;
     clipIntersection: bool = false;
     clipShadows: bool = false;
+    alphaHash: bool = false;
+    alphaToCoverage: bool = false;
+    shadowSide: i32 = -1;
 }
 
 export class Material {
@@ -90,6 +95,13 @@ export class Material {
     clippingPlanes: Array<Plane>? = null;
     clipIntersection: bool = false;
     clipShadows: bool = false;
+    /// Stochastic (hashed) alpha cut-out, as three.js's alphaHash.
+    alphaHash: bool = false;
+    /// Rive pipelines have no alpha to coverage: renders as alphaHash.
+    alphaToCoverage: bool = false;
+    /// The side shadow passes render (-1, three.js's null: the opposite of
+    /// `side`, or both for DoubleSide).
+    shadowSide: i32 = -1;
     version: i32 = 0;
 
     constructor() {
@@ -131,6 +143,16 @@ export class Material {
         this.clippingPlanes = p.clippingPlanes;
         this.clipIntersection = p.clipIntersection;
         this.clipShadows = p.clipShadows;
+        this.alphaHash = p.alphaHash;
+        this.alphaToCoverage = p.alphaToCoverage;
+        this.shadowSide = p.shadowSide;
+    }
+
+    /// The displacementMap, if the material has one (internal: shadow passes).
+    displacementMapOf(): Texture? {
+        const u = _scratch;
+        this.fillUniforms(u);
+        return u.roles[ROLE_DISPLACEMENT];
     }
 
     /// Fills what the renderer needs (internal). Subclasses call super first.
@@ -141,6 +163,7 @@ export class Material {
         u.vertexColors = this.vertexColors;
         u.fog = this.fog;
         u.flatShading = this.flatShading;
+        u.alphaHash = this.alphaHash || this.alphaToCoverage;
     }
 
     /// Copies the shared state of `source`.

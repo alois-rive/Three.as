@@ -26,6 +26,8 @@ const KIND_MATCAP: u32 = 6u;
 const KIND_DEPTH: u32 = 7u;
 const KIND_PHYSICAL: u32 = 8u;
 const KIND_LINE_DASHED: u32 = 9u;
+const KIND_SHADOW: u32 = 10u;
+const KIND_DISTANCE: u32 = 11u;
 
 const SLOT_MAP: u32 = 0u;
 const SLOT_NORMAL: u32 = 1u;
@@ -135,6 +137,8 @@ struct ObjU {
     physical6: vec4<f32>,    // anisotropy direction (cos, sin of anisotropyRotation)
     clip_planes: array<vec4<f32>, 8>,  // world: xyz normal, w constant (clipped where n.p + w < 0)
     clip: vec4<f32>,         // x union count, y total count
+    misc0: vec4<f32>,        // MeshDistanceMaterial referencePosition xyz, nearDistance
+    misc1: vec4<f32>,        // farDistance, y 1: alphaHash
 };
 
 const ROLE_LIGHT: u32 = 0u;
@@ -218,6 +222,7 @@ struct VsOut {
     @location(4) view_depth: f32,
     @location(5) uv1: vec2<f32>,
     @location(6) tangent: vec4<f32>,   // world xyz, w handedness
+    @location(7) local: vec3<f32>,     // object-space position (alphaHash)
 };
 
 fn has_flag(bits: u32, slot: u32) -> bool {
@@ -286,6 +291,7 @@ fn transform_vertex(position: vec3<f32>, normal: vec3<f32>, in: VsIn, inst: Inst
     let n = im3 * (normal / vec3<f32>(dot(im3[0], im3[0]), dot(im3[1], im3[1]), dot(im3[2], im3[2])));
     out.normal = (O.normal_matrix * vec4<f32>(n, 0.0)).xyz;
     out.tangent = vec4<f32>((O.model * (im * vec4<f32>(in.tangent.xyz, 0.0))).xyz, in.tangent.w);
+    out.local = position;
     out.uv = in.uv;
     out.uv1 = in.uv1;
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
@@ -327,6 +333,7 @@ fn vs_points(p: PointIn, @builtin(vertex_index) vi: u32) -> VsOut {
     out.uv = corner * 0.5 + vec2<f32>(0.5);
     out.uv1 = out.uv;
     out.tangent = vec4<f32>(0.0);
+    out.local = p.position;
     out.color = select(vec4<f32>(1.0), p.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.view_depth = -view_z;
     return out;
@@ -354,6 +361,7 @@ fn vs_sprite(@builtin(vertex_index) vi: u32) -> VsOut {
     out.uv = corner + vec2<f32>(0.5);
     out.uv1 = out.uv;
     out.tangent = vec4<f32>(0.0);
+    out.local = vec3<f32>(corner, 0.0);
     out.color = vec4<f32>(1.0);
     out.view_depth = -mv.z;
     return out;
@@ -499,6 +507,64 @@ fn clipped(world: vec3<f32>) -> bool {
         return all;
     }
     return false;
+}
+
+// three.js's alphahash_pars_fragment.
+fn hash2d(v: vec2<f32>) -> f32 {
+    return fract(1.0e4 * sin(17.0 * v.x + 0.1 * v.y) * (0.1 + abs(sin(13.0 * v.y + v.x))));
+}
+
+fn hash3d(v: vec3<f32>) -> f32 {
+    return hash2d(vec2<f32>(hash2d(v.xy), v.z));
+}
+
+/// The alpha hash threshold at `p` (object space), from its screen
+/// derivatives (call in uniform control flow).
+fn alpha_hash_threshold(p: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
+    let max_deriv = max(length(dx), length(dy));
+    let pix_scale = 1.0 / (0.05 * max(max_deriv, 1e-8));
+    let scales = vec2<f32>(exp2(floor(log2(pix_scale))), exp2(ceil(log2(pix_scale))));
+    let a2 = vec2<f32>(hash3d(floor(scales.x * p)), hash3d(floor(scales.y * p)));
+    let lerp_factor = fract(log2(pix_scale));
+    let xv = (1.0 - lerp_factor) * a2.x + lerp_factor * a2.y;
+    let a = max(min(lerp_factor, 1.0 - lerp_factor), 1e-6);
+    let cases = vec3<f32>(xv * xv / (2.0 * a * (1.0 - a)), (xv - 0.5 * a) / (1.0 - a),
+        1.0 - ((1.0 - xv) * (1.0 - xv) / (2.0 * a * (1.0 - a))));
+    var threshold = cases.z;
+    if (xv < 1.0 - a) {
+        threshold = select(cases.y, cases.x, xv < a);
+    }
+    return clamp(threshold, 1.0e-6, 1.0);
+}
+
+/// three.js's getShadowMask: the product of every shadow on this point
+/// (1: lit), for ShadowMaterial.
+fn shadow_mask(world: vec3<f32>, normal: vec3<f32>) -> f32 {
+    var mask = 1.0;
+    let count = min(u32(F.ambient.w), MAX_LIGHTS);
+    for (var i = 0u; i < count; i++) {
+        mask *= shadow_factor(F.lights[i], world, normal);
+    }
+    return mask;
+}
+
+/// Shadow passes of cut-out casters (alphaTest, alphaHash), clipped too.
+@fragment
+fn fs_shadow_cutout(in: VsOut) {
+    let threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
+    let present = O.tex_flags.y;
+    var a = O.color.a;
+    let c_map = sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP);
+    let c_alpha = sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA);
+    if (has_flag(present, SLOT_MAP)) {
+        a *= c_map.a;
+    }
+    if (has_flag(present, SLOT_ALPHA)) {
+        a *= c_alpha.g;
+    }
+    if (a < O.emissive.w || (O.misc1.y > 0.5 && a < threshold) || clipped(in.world)) {
+        discard;
+    }
 }
 
 /// Shadow passes of clipShadows casters.
@@ -920,6 +986,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let dny = dpdy(in.normal);
     let duv0x = dpdx(in.uv);
     let duv0y = dpdy(in.uv);
+    let hash_threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
     var x: ExtraUVs;
     for (var s = 0u; s < 5u; s++) {
         let xuv = x_slot_uv(s, in.uv, in.uv1);
@@ -966,8 +1033,22 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if (has_flag(present, SLOT_ALPHA)) {
         diffuse.a *= c_alpha.g;
     }
-    if (diffuse.a < O.emissive.w || clipped(in.world)) {
+    if (diffuse.a < O.emissive.w || clipped(in.world) || (O.misc1.y > 0.5 && diffuse.a < hash_threshold)) {
         discard;
+    }
+    if (kind == KIND_SHADOW) {
+        // ShadowMaterial: colour where the shadows are.
+        var mask = 1.0;
+        if ((flags & FLAG_RECEIVE_SHADOW) != 0u) {
+            mask = shadow_mask(in.world, normalize(in.normal) * face);
+        }
+        let sa = O.color.a * (1.0 - mask);
+        let sc = select(linear_to_srgb(O.color.rgb), O.color.rgb, F.shadow_params.z > 0.5);
+        return vec4<f32>(sc * sa, sa);
+    }
+    if (kind == KIND_DISTANCE) {
+        let dist = saturate((length(in.world - O.misc0.xyz) - O.misc0.w) / (O.misc1.x - O.misc0.w));
+        return vec4<f32>(vec3<f32>(dist) * diffuse.a, diffuse.a);
     }
     if (kind == KIND_LINE_DASHED) {
         let total = O.dash.x + O.dash.y;

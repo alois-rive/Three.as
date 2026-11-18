@@ -1,6 +1,7 @@
 // Shadows: shadow maps from a directional sun (PCF soft), a spot light and
 // a point light (six faces), cast by moving objects onto the floor and
-// each other.
+// each other. A lattice (alphaMap + alphaTest) casts a cut-out shadow; a
+// sphere with alphaHash is stochastically see-through, shadow included.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
@@ -75,6 +76,30 @@ export class Shadows extends THREE.ThreeLayout {
             scene.add(m);
             this.movers.push(m);
         }
+
+        // A lattice: an alphaMap cut out by alphaTest, in the shadows too.
+        const holes = new Uint8Array(32 * 32 * 4);
+        for (let y = 0; y < 32; y++) {
+            for (let x = 0; x < 32; x++) {
+                const on: u8 = ((x / 4) % 2 == 0 || (y / 4) % 2 == 0) ? 255 : 0;
+                const o = (y * 32 + x) * 4;
+                holes[o] = on; holes[o + 1] = on; holes[o + 2] = on; holes[o + 3] = 255;
+            }
+        }
+        const alphaMap = new THREE.DataTexture(holes, 32, 32);
+        const lattice = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshStandardMaterial({
+            color: 0xc0c4cc, alphaMap: alphaMap, alphaTest: 0.5, side: THREE.DoubleSide,
+        }));
+        lattice.position.set(-3.2, 1.6, 1.4);
+        lattice.rotation.set(-0.5, 0.6, 0);
+        lattice.castShadow = true;
+        scene.add(lattice);
+        const ghost = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 16), new THREE.MeshStandardMaterial({
+            color: 0x9b5de5, opacity: 0.5, alphaHash: true,
+        }));
+        ghost.position.set(3.0, 1.0, 1.6);
+        ghost.castShadow = true;
+        scene.add(ghost);
 
         this.camera.position.set(0, 4.2, 7.5);
         const controls = new OrbitControls(this.camera, this.renderer);

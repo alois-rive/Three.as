@@ -15,6 +15,8 @@ export const KIND_MATCAP: i32 = 6;
 export const KIND_DEPTH: i32 = 7;
 export const KIND_PHYSICAL: i32 = 8;
 export const KIND_LINE_DASHED: i32 = 9;
+export const KIND_SHADOW: i32 = 10;
+export const KIND_DISTANCE: i32 = 11;
 
 // Texture slots (the material bind group's bindings 0..6).
 export const SLOT_MAP: i32 = 0;
@@ -107,6 +109,11 @@ export class MaterialUniforms {
     iridescenceThicknessMax: f64 = 400;
     anisotropy: f64 = 0;
     anisotropyRotation: f64 = 0;
+    // alphaHash (and alphaToCoverage, emulated by it); MeshDistanceMaterial.
+    alphaHash: bool = false;
+    referenceX: f64 = 0; referenceY: f64 = 0; referenceZ: f64 = 0;
+    nearDistance: f64 = 1;
+    farDistance: f64 = 1000;
     textures: StaticArray<Texture?> = new StaticArray<Texture?>(TEXTURE_SLOTS);
     roles: StaticArray<Texture?> = new StaticArray<Texture?>(ROLE_COUNT);
 
@@ -139,6 +146,8 @@ export class MaterialUniforms {
         this.attenuationR = 1; this.attenuationG = 1; this.attenuationB = 1; this.dispersion = 0;
         this.iridescence = 0; this.iridescenceIOR = 1.3; this.iridescenceThicknessMin = 100;
         this.iridescenceThicknessMax = 400; this.anisotropy = 0; this.anisotropyRotation = 0;
+        this.alphaHash = false; this.referenceX = 0; this.referenceY = 0; this.referenceZ = 0;
+        this.nearDistance = 1; this.farDistance = 1000;
         for (let i = 0; i < TEXTURE_SLOTS; i++) this.textures[i] = null;
         for (let i = 0; i < ROLE_COUNT; i++) this.roles[i] = null;
     }

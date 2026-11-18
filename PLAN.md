@@ -219,7 +219,7 @@ render as authored.
   `localClippingEnabled`, `material.clippingPlanes`, `clipIntersection`,
   `clipShadows`; material stencil state (`stencilWrite`, `stencilFunc`,
   `stencilRef`, masks and ops) on Rive's stencil pipelines.
-- **M8d, shadow and alpha options.** ShadowMaterial, MeshDistanceMaterial,
+- **M8d, shadow and alpha options (done; alphaToCoverage as alphaHash).** ShadowMaterial, MeshDistanceMaterial,
   alpha-tested shadows and `customDepthMaterial` /
   `customDistanceMaterial`, `shadowSide`, `alphaHash`, `alphaToCoverage`.
 - **M8e, shader material reach.** A WGSL chunk library (three.js's

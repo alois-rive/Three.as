@@ -236,6 +236,17 @@ export class Demo extends Layout {
   `extensions`, `lights`, `fog`, `wireframe` and custom points/lines are not
   supported for shader materials.
 
+## ShadowMaterial, MeshDistanceMaterial, alpha hashing
+
+- `ShadowMaterial({ color, opacity })` is transparent except where the
+  mesh (with `receiveShadow`) is in shadow, as three.js.
+- `MeshDistanceMaterial` draws the normalised distance to
+  `referencePosition` as grey (three.js packs it to RGBA for its point
+  light shadows, which this renderer does not need).
+- `alphaHash` as three.js (hashed threshold on the object-space position).
+  **`alphaToCoverage` renders as `alphaHash`**: Rive pipelines have no
+  alpha to coverage.
+
 ## Clipping, stencil and depth state
 
 - `renderer.clippingPlanes` (global, always a union),
@@ -387,9 +398,13 @@ export class Demo extends Layout {
   largest `mapSize` (256 to 2048). Lights beyond 12 layers cast no shadow.
 - `VSMShadowMap` renders as `PCFSoftShadowMap` (PCF 5x5); `shadow.radius`
   scales the PCF step.
-- Casters always render their back faces (`shadowSide` is not read) and
-  ignore `alphaTest`/`alphaMap` (no cut-out shadows) and
-  `customDepthMaterial`. Point light faces are rendered at 98 degrees so
+- Casters render the side three.js picks (`shadowSide`, else the
+  opposite of `side`); casters with `alphaTest`, `alphaHash` or
+  `alphaToCoverage` cut their shadows with their `map` alpha and
+  `alphaMap`, displacement maps displace them, and
+  `object.customDepthMaterial` (else `customDistanceMaterial`; one
+  material serves every light) stands in for the material in shadow
+  passes. Point light faces are rendered at 98 degrees so
   filtering stays inside a face.
 - Directional shadow cameras are not fitted automatically, as in three.js:
   set `shadow.camera.left/right/top/bottom/near/far` and call
