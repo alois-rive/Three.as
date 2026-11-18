@@ -1,19 +1,21 @@
-// three.js DataTexture: raw RGBA8 texels, bottom row first (flipY false),
-// nearest filtering, as three.js. Set `needsUpdate = true` after changing
-// `data`.
+// three.js DataTexture: raw texels, bottom row first (flipY false), nearest
+// filtering, as three.js. `data` is a Uint8Array (UnsignedByteType), a
+// Uint16Array of half floats (HalfFloatType) or a Float32Array (FloatType,
+// uploaded as half floats), in RGBAFormat, RGBFormat (widened to RGBA),
+// RGFormat or RedFormat. Set `needsUpdate = true` after changing `data`.
 
 import { Context } from "rive/host";
 import { GPUTexture, GPUTextureDesc, GPUTextureView } from "rive/gpu";
-import { TextureFormat } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { Texture } from "./Texture";
-import { NearestFilter, RGBAFormat } from "../constants";
+import { gpuFormat, isFloatType, uploadBytes } from "./DataUpload";
+import { NearestFilter, RGBAFormat, UnsignedByteType } from "../constants";
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
 
 export class DataTexture extends Texture {
     readonly isDataTexture: bool = true;
-    data: Uint8Array;
+    data: ArrayBufferView;
     dataWidth: u32;
     dataHeight: u32;
 
@@ -21,13 +23,14 @@ export class DataTexture extends Texture {
     private gpuView: GPUTextureView? = null;
     private uploadedVersion: i32 = -1;
 
-    /// `data` holds width x height RGBA8 texels (format must be RGBAFormat).
-    constructor(data: Uint8Array, width: u32, height: u32, format: i32 = RGBAFormat) {
+    constructor(data: ArrayBufferView, width: u32, height: u32, format: i32 = RGBAFormat,
+                type: i32 = UnsignedByteType) {
         super(null);
         this.data = data;
         this.dataWidth = width;
         this.dataHeight = height;
         this.format = format;
+        this.type = type;
         this.magFilter = NearestFilter;
         this.minFilter = NearestFilter;
         this.generateMipmaps = false;
@@ -37,27 +40,27 @@ export class DataTexture extends Texture {
 
     override get width(): u32 { return this.dataWidth; }
     override get height(): u32 { return this.dataHeight; }
+    override get isHDRSource(): bool { return isFloatType(this.type); }
 
     override update(context: Context): void {
         if (this.uploadedVersion == this.version) return;
         if (this.dataWidth == 0 || this.dataHeight == 0) return;
+        const format = gpuFormat(this.format, this.type);
         let tex = this.gpuTexture;
-        if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight) {
+        if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight || tex.format != format) {
             if (tex != null) tex.release();
             const desc = new GPUTextureDesc();
             desc.width = this.dataWidth;
             desc.height = this.dataHeight;
-            desc.format = TextureFormat.rgba8unorm;
+            desc.format = format;
             tex = new GPUTexture(desc);
             this.gpuTexture = tex;
             this.gpuView = tex.view();
         }
-        const data = this.data;
-        const bytes = data.byteOffset == 0 && data.byteLength == data.buffer.byteLength
-            ? data.buffer : data.slice().buffer;
         uploadRegion.width = this.dataWidth;
         uploadRegion.height = this.dataHeight;
-        tex.upload(uploadRegion, bytes);
+        tex.upload(uploadRegion, uploadBytes(this.data, this.format, this.type,
+            <i32>(this.dataWidth * this.dataHeight)));
         this.uploadedVersion = this.version;
     }
 

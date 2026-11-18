@@ -1,12 +1,17 @@
-// Environments: a cube map (six image assets, CubeTextureLoader) as the
-// background and the environment, a roughness sweep lit by it, and a
-// mirror sphere reflecting the moving scene through a CubeCamera.
+// Environments: an environment from a cube map (six image assets,
+// CubeTextureLoader), a Radiance .hdr (RGBELoader) or an OpenEXR file
+// (EXRLoader), as the background and the light of a roughness sweep; a
+// mirror sphere reflects the moving scene through a CubeCamera.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
+import { RGBELoader } from "../three/addons/loaders/RGBELoader";
+import { EXRLoader } from "../three/addons/loaders/EXRLoader";
 import { Context } from "rive/host";
 
 export class Environments extends THREE.ThreeLayout {
+    /// 0: cube map (PNG faces), 1: Radiance .hdr, 2: OpenEXR.
+    @input source: i32 = 0;
     cubeTarget: THREE.WebGLCubeRenderTarget = new THREE.WebGLCubeRenderTarget(128);
     cubeCamera: THREE.CubeCamera = new THREE.CubeCamera(0.1, 50, new THREE.WebGLCubeRenderTarget(1));
     mirror: THREE.Mesh = new THREE.Mesh();
@@ -19,8 +24,17 @@ export class Environments extends THREE.ThreeLayout {
         const sky = new THREE.CubeTextureLoader(context).setPath("studio_")
             .load(["px", "nx", "py", "ny", "pz", "nz"]);
         const scene = this.scene;
-        scene.background = sky;
-        scene.environment = sky;
+        let env: THREE.Texture = sky;
+        if (this.source == 1 || this.source == 2) {
+            const hdr = this.source == 1 ? new RGBELoader(context).load("studio_rgbe")
+                : new EXRLoader(context).load("studio_exr");
+            if (hdr != null) {
+                hdr.mapping = THREE.EquirectangularReflectionMapping;
+                env = hdr;
+            }
+        }
+        scene.background = env;
+        scene.environment = env;
 
         // Roughness sweep, lit by the cube map alone.
         const sphere = new THREE.SphereGeometry(0.32, 48, 24);

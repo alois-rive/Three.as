@@ -13,3 +13,6 @@ export * from "./postprocessing/FXAAPass";
 export * from "./postprocessing/UnrealBloomPass";
 export * from "./shaders/PostShaders";
 export * from "./environments/RoomEnvironment";
+export * from "./loaders/RGBELoader";
+export * from "./loaders/EXRLoader";
+export * from "./libs/fflate";

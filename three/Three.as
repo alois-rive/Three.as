@@ -107,6 +107,8 @@ export * from "./extras/PMREMGenerator";
 
 export * from "./textures/Texture";
 export * from "./textures/DataTexture";
+export * from "./textures/DataArrayTexture";
+export { toHalf, fromHalf } from "./textures/DataUpload";
 export * from "./textures/CanvasTexture";
 export * from "./textures/CubeTexture";
 export * from "./loaders/CubeTextureLoader";

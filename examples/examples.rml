@@ -409,4 +409,6 @@
     <ImageAsset file="examples/assets/studio_ny.png" name="studio_ny" id="0:1694"/>
     <ImageAsset file="examples/assets/studio_pz.png" name="studio_pz" id="0:1695"/>
     <ImageAsset file="examples/assets/studio_nz.png" name="studio_nz" id="0:1696"/>
+    <BlobAsset file="examples/assets/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
+    <BlobAsset file="examples/assets/studio_exr.exr" name="studio_exr" id="0:1698"/>
 </Rive>

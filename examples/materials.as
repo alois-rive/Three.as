@@ -106,7 +106,7 @@ export class Materials extends Layout {
         matcap.colorSpace = THREE.SRGBColorSpace;
         const alphaMap = texture(8, 64, stripes);
         const gradient = new THREE.DataTexture(new Uint8Array(12), 3, 1);
-        const g = gradient.data;
+        const g = gradient.data as Uint8Array;
         g[0] = 70; g[1] = 70; g[2] = 70; g[3] = 255;
         g[4] = 160; g[5] = 160; g[6] = 160; g[7] = 255;
         g[8] = 255; g[9] = 255; g[10] = 255; g[11] = 255;

@@ -377,7 +377,24 @@ export class Demo extends Layout {
   images, canvases and artboards), and the shader unpremultiplies. In
   three.js it asks the upload to premultiply.
 - `flipY` is honoured in the shader (true: v = 0 is the image's bottom row).
-- `DataTexture(data: Uint8Array, width, height)` takes RGBA8 only.
+- `DataTexture(data, width, height, format, type)`: `data` is an
+  `ArrayBufferView` (cast it to index: `t.data as Uint8Array`): a
+  Uint8Array (UnsignedByteType), a Uint16Array of half floats
+  (HalfFloatType) or a Float32Array (FloatType). Formats: RGBAFormat,
+  RGBFormat (widened to RGBA), RGFormat, RedFormat. **FloatType uploads as
+  half floats** (rgba16float; 32-bit float filtering is optional in
+  WebGPU). `toHalf` / `fromHalf` convert (three.js's DataUtils).
+- `DataArrayTexture` / `Data3DTexture` (same data rules) are for
+  ShaderMaterials declaring `texture_2d_array<f32>` / `texture_3d<f32>`;
+  built-in materials do not read them; `addLayerUpdate` is not ported.
+- `RGBELoader` (alias `HDRLoader`) and `EXRLoader` read BlobAssets (`load(name)`,
+  or `parse(bytes)` without a Context), returning a DataTexture with
+  `flipY` true (rows top first). EXR: scanline files with NO, RLE, ZIPS or
+  ZIP compression only (no PIZ, PXR24, B44, DWA; no tiled, deep or
+  multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
+  `decompressSync` (no compression).
+- Note for test suites: `rive --test` names blobs by file stem, so give
+  blob files distinct stems (`studio_rgbe.hdr`, `studio_exr.exr`).
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),
   not an HTML canvas.
 - UV transforms as three.js: each map has its own `offset`, `repeat`,

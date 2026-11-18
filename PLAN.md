@@ -189,10 +189,10 @@ three.js lighting setups look the same.
   importance-sampled blur passes): `fromEquirectangular`, `fromCubemap`,
   `fromScene`; RoomEnvironment (addon). Rough reflections then match
   three.js; the mip-chain approximation goes away.
-- **M7d, HDR and data textures.** Float/half-float DataTexture
-  (`rgba16float`, `rgba32float`), RGBELoader / HDRLoader (Radiance .hdr
-  from a BlobAsset) and EXRLoader (uncompressed and ZIP/PIZ later),
-  DataArrayTexture, Data3DTexture, DepthTexture on render targets.
+- **M7d, HDR and data textures (done).** Float/half-float DataTexture
+  (both upload as `rgba16float`), RGBELoader / HDRLoader (Radiance .hdr
+  from a BlobAsset) and EXRLoader (NO/RLE/ZIPS/ZIP; PIZ later),
+  DataArrayTexture, Data3DTexture. DepthTexture moved to M12b.
 - **M7e, compressed textures.** CompressedTexture with BC, ETC2 and ASTC
   (Rive's `bc` / `etc2` / `astc` features), KTX2Loader for KTX2 files that
   hold those formats directly (Basis transcoding later, if feasible in a
