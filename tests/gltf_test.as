@@ -3,7 +3,7 @@
 
 import { Tests } from "rive/test";
 import * as THREE from "../three/Three";
-import { GLTFLoader } from "../three/addons/loaders/GLTFLoader";
+import { GLTFLoader, GLTFData, decodeGLTF } from "../three/addons/loaders/GLTFLoader";
 import { MeshoptDecoder } from "../three/addons/libs/meshopt_decoder";
 
 function find(root: THREE.Object3D, name: string): THREE.Object3D? {
@@ -138,6 +138,30 @@ export class GLTFTests extends Tests {
                 expect.that(Math.abs(track.values[5] - Math.SQRT1_2) < 1e-3).is(true);
                 expect.that(Math.abs(track.values[7] - Math.SQRT1_2) < 1e-3).is(true);
                 expect.that(Math.abs(track.values[4]) < 1e-3).is(true);
+            });
+            test("decodeGLTF (the loadAsync job) matches parse", (expect) => {
+                const bytes = this.blob("features");
+                if (bytes == null) return;
+                const decoded = decodeGLTF(bytes!, true);
+                expect.that(decoded.error).is("");
+                expect.that(decoded.offsets.length > 10).is(true);
+                const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+                const gd = new GLTFData(bytes!, null);   // no decoder: everything comes decoded
+                gd.decoded = decoded.floats;
+                gd.decodedOffsets = decoded.offsets;
+                gd.decodedLengths = decoded.lengths;
+                const a = loader.parseData(gd);
+                expect.that(loader.error).is("");
+                const b = loader.parse(bytes!);
+                if (a == null || b == null) return;
+                const pa = (find(a.scene, "Glass") as THREE.Mesh).geometry.getAttribute("position")!;
+                const pb = (find(b.scene, "Glass") as THREE.Mesh).geometry.getAttribute("position")!;
+                let same = pa.count == pb.count;
+                for (let i = 0; i < pa.array.length && same; i++) if (pa.array[i] != pb.array[i]) same = false;
+                expect.that(same).is(true);
+                const ia = (find(a.scene, "Glass") as THREE.Mesh).geometry.index!;
+                expect.that(ia.count).is(576 * 3);
+                expect.that(a.animations[0].tracks[0].values.length).is(20);
             });
             test(".gltf JSON with a base64 buffer", (expect) => {
                 const bytes = this.blob("features_embedded");

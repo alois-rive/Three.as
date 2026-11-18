@@ -25,8 +25,10 @@
 
 import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { parseJson } from "rive/json";
+import { Jobs } from "rive/jobs";
+import { Promise } from "rive/promise";
 import { Dynamic } from "rive/dynamic";
-import { MeshoptDecoderModule } from "../libs/meshopt_decoder";
+import { MeshoptDecoderModule, MeshoptDecoder } from "../libs/meshopt_decoder";
 import { InstancedMesh } from "../../objects/InstancedMesh";
 import { Vector3 } from "../../math/Vector3";
 import { Quaternion } from "../../math/Quaternion";
@@ -153,15 +155,289 @@ export class GLTFLoader {
 
     /// Parses .glb bytes, or .gltf JSON text as bytes.
     parse(data: ArrayBuffer): GLTF? {
-        const parser = new GLTFParser(this.context, data);
-        parser.meshoptDecoder = this.meshoptDecoder;
+        return this.parseData(new GLTFData(data, this.meshoptDecoder));
+    }
+
+    /// As load, with the decoding (container, meshopt, accessors) in a Rive
+    /// job off the main lane; the scene is built when the job is done, on a
+    /// later frame. Rejects with the reason `load` would log.
+    loadAsync(name: string): Promise<GLTF> {
+        const context = this.context;
+        const bytes = context != null ? context.blob(name) : null;
+        if (bytes == null) {
+            this.error = "no blob asset named '" + name + "'";
+            return Promise.reject<GLTF>(this.error);
+        }
+        return parseInJob(this, bytes!);
+    }
+
+    /// As parse, decoding in a job (see loadAsync).
+    parseAsync(data: ArrayBuffer): Promise<GLTF> {
+        return parseInJob(this, data);
+    }
+
+    /// Builds the scene from bytes already decoded or to decode now.
+    parseData(gd: GLTFData): GLTF? {
+        const parser = new GLTFParser(this.context, gd);
         const gltf = parser.parse();
         this.error = parser.error;
-        this.warnings = parser.warnings;
+        const warnings: Array<string> = [];
+        for (let i = 0; i < gd.warnings.length; i++) warnings.push(gd.warnings[i]);
+        for (let i = 0; i < parser.warnings.length; i++) warnings.push(parser.warnings[i]);
+        this.warnings = warnings;
         const context = this.context;
-        if (gltf == null && context != null) context.log("three: GLTFLoader: " + parser.error);
+        if (context != null) {
+            for (let i = 0; i < gd.warnings.length; i++) context.log("three: GLTFLoader: " + gd.warnings[i]);
+            if (gltf == null) context.log("three: GLTFLoader: " + parser.error);
+        }
         return gltf;
     }
+}
+
+async function parseInJob(loader: GLTFLoader, data: ArrayBuffer): Promise<GLTF> {
+    const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null);
+    const decoded = await job.promise();
+    if (decoded.error.length > 0) {
+        loader.error = decoded.error;
+        return await Promise.reject<GLTF>(decoded.error);
+    }
+    const gd = new GLTFData(data, loader.meshoptDecoder);
+    gd.decoded = decoded.floats;
+    gd.decodedOffsets = decoded.offsets;
+    gd.decodedLengths = decoded.lengths;
+    const gltf = loader.parseData(gd);
+    if (gltf == null) return await Promise.reject<GLTF>(loader.error);
+    return gltf!;
+}
+
+/// The container, buffers, views and accessors of a glTF: pure code, so a
+/// job can decode them (decodeGLTF) while the main lane builds the scene.
+export class GLTFData {
+    data: ArrayBuffer;
+    bytes: Uint8Array;
+    error: string = "";
+    warnings: Array<string> = [];
+    json: Dynamic? = null;
+    meshoptDecoder: MeshoptDecoderModule? = null;
+    /// The GLB binary chunk (buffer 0 without a uri), when there is one.
+    bin: Uint8Array? = null;
+    buffers: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    views: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    /// Accessors decoded ahead (by a job): floats from offsets[i], lengths[i]
+    /// long; offset -1 when not decoded.
+    decoded: Float32Array? = null;
+    decodedOffsets: Int32Array? = null;
+    decodedLengths: Int32Array? = null;
+
+    constructor(data: ArrayBuffer, meshoptDecoder: MeshoptDecoderModule? = null) {
+        this.data = data;
+        this.bytes = Uint8Array.wrap(data);
+        this.meshoptDecoder = meshoptDecoder;
+    }
+
+    /// Accessor `index` as floats, decoded ahead or now.
+    accessor(index: i32): Float32Array {
+        const d = this.decoded;
+        const offsets = this.decodedOffsets;
+        const lengths = this.decodedLengths;
+        if (d != null && offsets != null && lengths != null && index >= 0 && index < offsets.length && offsets[index] >= 0) {
+            return d.slice(offsets[index], offsets[index] + lengths[index]);
+        }
+        return this.floats(index);
+    }
+
+
+    /// A .glb, or .gltf JSON (starting with "{" after any whitespace).
+    readContainer(): bool {
+        const b = this.bytes;
+        let first = 0;
+        while (first < b.length && (b[first] == 32 || b[first] == 9 || b[first] == 10 || b[first] == 13
+            || b[first] == 0xEF || b[first] == 0xBB || b[first] == 0xBF)) first++;
+        if (first < b.length && b[first] == 123) {
+            const result = parseJson(String.UTF8.decode(this.data));
+            if (!result.ok || result.value == null) {
+                this.error = "bad JSON";
+                return false;
+            }
+            this.json = result.value;
+            return true;
+        }
+        return this.readGlb();
+    }
+
+    private readGlb(): bool {
+        const b = this.bytes;
+        if (b.length < 20 || u32At(b, 0) != 0x46546C67) {
+            this.error = "not a .glb (binary glTF) nor .gltf JSON";
+            return false;
+        }
+        let offset = 12;
+        let jsonText = "";
+        while (offset + 8 <= b.length) {
+            const length = <i32>u32At(b, offset);
+            const type = u32At(b, offset + 4);
+            const start = offset + 8;
+            if (type == 0x4E4F534A) {
+                jsonText = String.UTF8.decode(this.data.slice(start, start + length));
+            } else if (type == 0x004E4942) {
+                this.bin = b.subarray(start, start + length);
+            }
+            offset = start + ((length + 3) & ~3);
+        }
+        const result = parseJson(jsonText);
+        if (!result.ok || result.value == null) {
+            this.error = "bad JSON chunk";
+            return false;
+        }
+        this.json = result.value;
+        return true;
+    }
+
+    /// Buffer `index`: the GLB chunk, or a base64 data: URI; null for
+    /// external files (not read) and fallback buffers.
+    buffer(index: i32): Uint8Array? {
+        if (this.buffers.has(index)) return this.buffers.get(index);
+        const def = dat(dget(this.json, "buffers"), index);
+        if (def == null) return null;
+        const uri = str(def, "uri", "");
+        let out: Uint8Array? = null;
+        if (uri.length == 0) {
+            if (index == 0) out = this.bin;
+        } else if (uri.startsWith("data:")) {
+            out = decodeDataUri(uri);
+        } else if (this.error.length == 0) {
+            this.warnings.push("external buffer '" + uri + "' is not supported (embed it, or use a .glb)");
+        }
+        if (out != null) this.buffers.set(index, out!);
+        return out;
+    }
+
+    /// The bytes of bufferView `index` (decoded, for meshopt views); empty
+    /// when unavailable.
+    viewBytes(index: i32): Uint8Array {
+        if (this.views.has(index)) return this.views.get(index);
+        const v = dat(dget(this.json, "bufferViews"), index);
+        let out = new Uint8Array(0);
+        const meshopt = dget(dget(v, "extensions"), "EXT_meshopt_compression");
+        const decoder = this.meshoptDecoder;
+        if (meshopt != null && decoder != null) {
+            const source = this.buffer(<i32>num(meshopt, "buffer", 0));
+            if (source != null) {
+                const offset = <i32>num(meshopt, "byteOffset", 0);
+                const compressed = source.subarray(offset, offset + <i32>num(meshopt, "byteLength", 0));
+                const count = <i32>num(meshopt, "count", 0);
+                const stride = <i32>num(meshopt, "byteStride", 0);
+                const decoded = new Uint8Array(count * stride);
+                if (decoder.decodeGltfBuffer(decoded, count, stride, compressed, str(meshopt, "mode", ""),
+                        str(meshopt, "filter", "NONE"))) {
+                    out = decoded;
+                } else {
+                    this.warnings.push("meshopt: " + decoder.error);
+                }
+            }
+        } else {
+            const b = this.buffer(<i32>num(v, "buffer", 0));
+            if (b != null) {
+                const offset = <i32>num(v, "byteOffset", 0);
+                out = b.subarray(offset, offset + <i32>num(v, "byteLength", 0));
+            }
+        }
+        this.views.set(index, out);
+        return out;
+    }
+
+    viewStride(index: i32): i32 {
+        return <i32>num(dat(dget(this.json, "bufferViews"), index), "byteStride", 0);
+    }
+
+    /// Accessor `index` as floats (normalized integers scaled to [0, 1] or
+    /// [-1, 1]).
+    floats(index: i32): Float32Array {
+        const accessors = arr(this.json, "accessors");
+        if (index < 0 || index >= accessors.length) return new Float32Array(0);
+        const a = accessors[index];
+        const count = <i32>num(a, "count", 0);
+        const n = components(str(a, "type", "SCALAR"));
+        const ct = <i32>num(a, "componentType", 5126);
+        const normalized = dbool(dget(a, "normalized"));
+        const out = new Float32Array(count * n);
+        const size = componentSize(ct);
+        const bv = <i32>num(a, "bufferView", -1);
+        if (bv >= 0) {
+            const b = this.viewBytes(bv);
+            const vs = this.viewStride(bv);
+            const stride = vs > 0 ? vs : size * n;
+            const base = <i32>num(a, "byteOffset", 0);
+            for (let i = 0; i < count; i++) {
+                const at = base + i * stride;
+                if (at + size * n > b.length) break;
+                for (let c = 0; c < n; c++) out[i * n + c] = <f32>readComponent(b, at + c * size, ct, normalized);
+            }
+        }
+        // Sparse: values replacing some elements (of zeros without a view).
+        const sparse = dget(a, "sparse");
+        if (sparse != null) {
+            const sc = <i32>num(sparse, "count", 0);
+            const ind = dget(sparse, "indices");
+            const val = dget(sparse, "values");
+            const ib = this.viewBytes(<i32>num(ind, "bufferView", -1));
+            const ibase = <i32>num(ind, "byteOffset", 0);
+            const ict = <i32>num(ind, "componentType", 5125);
+            const isize = componentSize(ict);
+            const vb = this.viewBytes(<i32>num(val, "bufferView", -1));
+            const vbase = <i32>num(val, "byteOffset", 0);
+            for (let i = 0; i < sc; i++) {
+                if (ibase + (i + 1) * isize > ib.length || vbase + (i + 1) * size * n > vb.length) break;
+                const target = <i32>readComponent(ib, ibase + i * isize, ict, false);
+                if (target < 0 || target >= count) continue;
+                for (let c = 0; c < n; c++) {
+                    out[target * n + c] = <f32>readComponent(vb, vbase + (i * n + c) * size, ct, normalized);
+                }
+            }
+        }
+        return out;
+    }
+
+}
+
+/// What decodeGLTF hands back to the main lane: every accessor as floats,
+/// back to back (crossing lanes as one block).
+export class GLTFDecoded {
+    error: string = "";
+    floats: Float32Array = new Float32Array(0);
+    offsets: Int32Array = new Int32Array(0);
+    lengths: Int32Array = new Int32Array(0);
+}
+
+/// The job behind loadAsync / parseAsync: parses the container, decodes
+/// meshopt views and every accessor, off the main lane.
+@job export function decodeGLTF(data: ArrayBuffer, meshopt: bool): GLTFDecoded {
+    const out = new GLTFDecoded();
+    const gd = new GLTFData(data, meshopt ? MeshoptDecoder : null);
+    if (!gd.readContainer()) {
+        out.error = gd.error;
+        return out;
+    }
+    const accessors = arr(gd.json, "accessors");
+    const n = accessors.length;
+    const parts: Array<Float32Array> = [];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+        const f = gd.floats(i);
+        parts.push(f);
+        total += f.length;
+    }
+    out.floats = new Float32Array(total);
+    out.offsets = new Int32Array(n);
+    out.lengths = new Int32Array(n);
+    let at = 0;
+    for (let i = 0; i < n; i++) {
+        out.floats.set(parts[i], at);
+        out.offsets[i] = at;
+        out.lengths[i] = parts[i].length;
+        at += parts[i].length;
+    }
+    return out;
 }
 
 const MODE_POINTS: i32 = 0;
@@ -175,15 +451,9 @@ const MODE_TRIANGLE_FAN: i32 = 6;
 class GLTFParser {
     context: Context?;
     warnings: Array<string> = [];
-    data: ArrayBuffer;
-    bytes: Uint8Array;
+    gd: GLTFData;
     error: string = "";
     json: Dynamic? = null;
-    meshoptDecoder: MeshoptDecoderModule? = null;
-    /// The GLB binary chunk (buffer 0 without a uri), when there is one.
-    bin: Uint8Array? = null;
-    buffers: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
-    views: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     textures: Map<string, DataTexture> = new Map<string, DataTexture>();
     decodes: Map<i32, TextureDecode> = new Map<i32, TextureDecode>();
     materials: Map<i32, Material> = new Map<i32, Material>();
@@ -194,11 +464,14 @@ class GLTFParser {
     meshesOf: Array<Array<Mesh>> = [];
     cameras: Array<Camera> = [];
 
-    constructor(context: Context?, data: ArrayBuffer) {
+    constructor(context: Context?, gd: GLTFData) {
         this.context = context;
-        this.data = data;
-        this.bytes = Uint8Array.wrap(data);
+        this.gd = gd;
     }
+
+    private floats(index: i32): Float32Array { return this.gd.accessor(index); }
+
+    private viewBytes(index: i32): Uint8Array { return this.gd.viewBytes(index); }
 
     warn(message: string): void {
         this.warnings.push(message);
@@ -207,7 +480,12 @@ class GLTFParser {
     }
 
     parse(): GLTF? {
-        if (!this.readContainer()) return null;
+        const gd = this.gd;
+        if (gd.json == null && !gd.readContainer()) {
+            this.error = gd.error;
+            return null;
+        }
+        this.json = gd.json;
         const json = this.json;
         if (json == null) return null;
         const required = arr(json, "extensionsRequired");
@@ -220,7 +498,7 @@ class GLTFParser {
                 this.error = "required extension " + name + " is not supported";
                 return null;
             }
-            if (name == "EXT_meshopt_compression" && this.meshoptDecoder == null) {
+            if (name == "EXT_meshopt_compression" && gd.meshoptDecoder == null && gd.decoded == null) {
                 this.error = "setMeshoptDecoder must be called before loading compressed files";
                 return null;
             }
@@ -299,159 +577,6 @@ class GLTFParser {
         }
         gltf.cameras = this.cameras;
         return gltf;
-    }
-
-    // ------------------------------------------------------------- binary
-
-    /// A .glb, or .gltf JSON (starting with "{" after any whitespace).
-    private readContainer(): bool {
-        const b = this.bytes;
-        let first = 0;
-        while (first < b.length && (b[first] == 32 || b[first] == 9 || b[first] == 10 || b[first] == 13
-            || b[first] == 0xEF || b[first] == 0xBB || b[first] == 0xBF)) first++;
-        if (first < b.length && b[first] == 123) {
-            const result = parseJson(String.UTF8.decode(this.data));
-            if (!result.ok || result.value == null) {
-                this.error = "bad JSON";
-                return false;
-            }
-            this.json = result.value;
-            return true;
-        }
-        return this.readGlb();
-    }
-
-    private readGlb(): bool {
-        const b = this.bytes;
-        if (b.length < 20 || u32At(b, 0) != 0x46546C67) {
-            this.error = "not a .glb (binary glTF) nor .gltf JSON";
-            return false;
-        }
-        let offset = 12;
-        let jsonText = "";
-        while (offset + 8 <= b.length) {
-            const length = <i32>u32At(b, offset);
-            const type = u32At(b, offset + 4);
-            const start = offset + 8;
-            if (type == 0x4E4F534A) {
-                jsonText = String.UTF8.decode(this.data.slice(start, start + length));
-            } else if (type == 0x004E4942) {
-                this.bin = b.subarray(start, start + length);
-            }
-            offset = start + ((length + 3) & ~3);
-        }
-        const result = parseJson(jsonText);
-        if (!result.ok || result.value == null) {
-            this.error = "bad JSON chunk";
-            return false;
-        }
-        this.json = result.value;
-        return true;
-    }
-
-    /// Buffer `index`: the GLB chunk, or a base64 data: URI; null for
-    /// external files (not read) and fallback buffers.
-    private buffer(index: i32): Uint8Array? {
-        if (this.buffers.has(index)) return this.buffers.get(index);
-        const def = dat(dget(this.json, "buffers"), index);
-        if (def == null) return null;
-        const uri = str(def, "uri", "");
-        let out: Uint8Array? = null;
-        if (uri.length == 0) {
-            if (index == 0) out = this.bin;
-        } else if (uri.startsWith("data:")) {
-            out = decodeDataUri(uri);
-        } else if (this.error.length == 0) {
-            this.warn("external buffer '" + uri + "' is not supported (embed it, or use a .glb)");
-        }
-        if (out != null) this.buffers.set(index, out!);
-        return out;
-    }
-
-    /// The bytes of bufferView `index` (decoded, for meshopt views); empty
-    /// when unavailable.
-    private viewBytes(index: i32): Uint8Array {
-        if (this.views.has(index)) return this.views.get(index);
-        const v = dat(dget(this.json, "bufferViews"), index);
-        let out = new Uint8Array(0);
-        const meshopt = dget(dget(v, "extensions"), "EXT_meshopt_compression");
-        const decoder = this.meshoptDecoder;
-        if (meshopt != null && decoder != null) {
-            const source = this.buffer(<i32>num(meshopt, "buffer", 0));
-            if (source != null) {
-                const offset = <i32>num(meshopt, "byteOffset", 0);
-                const compressed = source.subarray(offset, offset + <i32>num(meshopt, "byteLength", 0));
-                const count = <i32>num(meshopt, "count", 0);
-                const stride = <i32>num(meshopt, "byteStride", 0);
-                const decoded = new Uint8Array(count * stride);
-                if (decoder.decodeGltfBuffer(decoded, count, stride, compressed, str(meshopt, "mode", ""),
-                        str(meshopt, "filter", "NONE"))) {
-                    out = decoded;
-                } else {
-                    this.warn("meshopt: " + decoder.error);
-                }
-            }
-        } else {
-            const b = this.buffer(<i32>num(v, "buffer", 0));
-            if (b != null) {
-                const offset = <i32>num(v, "byteOffset", 0);
-                out = b.subarray(offset, offset + <i32>num(v, "byteLength", 0));
-            }
-        }
-        this.views.set(index, out);
-        return out;
-    }
-
-    private viewStride(index: i32): i32 {
-        return <i32>num(dat(dget(this.json, "bufferViews"), index), "byteStride", 0);
-    }
-
-    /// Accessor `index` as floats (normalized integers scaled to [0, 1] or
-    /// [-1, 1]).
-    private floats(index: i32): Float32Array {
-        const accessors = arr(this.json, "accessors");
-        if (index < 0 || index >= accessors.length) return new Float32Array(0);
-        const a = accessors[index];
-        const count = <i32>num(a, "count", 0);
-        const n = components(str(a, "type", "SCALAR"));
-        const ct = <i32>num(a, "componentType", 5126);
-        const normalized = dbool(dget(a, "normalized"));
-        const out = new Float32Array(count * n);
-        const size = componentSize(ct);
-        const bv = <i32>num(a, "bufferView", -1);
-        if (bv >= 0) {
-            const b = this.viewBytes(bv);
-            const vs = this.viewStride(bv);
-            const stride = vs > 0 ? vs : size * n;
-            const base = <i32>num(a, "byteOffset", 0);
-            for (let i = 0; i < count; i++) {
-                const at = base + i * stride;
-                if (at + size * n > b.length) break;
-                for (let c = 0; c < n; c++) out[i * n + c] = <f32>readComponent(b, at + c * size, ct, normalized);
-            }
-        }
-        // Sparse: values replacing some elements (of zeros without a view).
-        const sparse = dget(a, "sparse");
-        if (sparse != null) {
-            const sc = <i32>num(sparse, "count", 0);
-            const ind = dget(sparse, "indices");
-            const val = dget(sparse, "values");
-            const ib = this.viewBytes(<i32>num(ind, "bufferView", -1));
-            const ibase = <i32>num(ind, "byteOffset", 0);
-            const ict = <i32>num(ind, "componentType", 5125);
-            const isize = componentSize(ict);
-            const vb = this.viewBytes(<i32>num(val, "bufferView", -1));
-            const vbase = <i32>num(val, "byteOffset", 0);
-            for (let i = 0; i < sc; i++) {
-                if (ibase + (i + 1) * isize > ib.length || vbase + (i + 1) * size * n > vb.length) break;
-                const target = <i32>readComponent(ib, ibase + i * isize, ict, false);
-                if (target < 0 || target >= count) continue;
-                for (let c = 0; c < n; c++) {
-                    out[target * n + c] = <f32>readComponent(vb, vbase + (i * n + c) * size, ct, normalized);
-                }
-            }
-        }
-        return out;
     }
 
     private ints(index: i32): Array<i32> {

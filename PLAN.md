@@ -285,7 +285,8 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   accessors, multiple UV sets, texture samplers per texture,
   EXT_meshopt_compression (meshopt decoder ported to AnimaScript).
   Draco and Basis later (decoder size and speed to be measured).
-- **M11b, loading off the main lane.** Parsing and decoding in Rive jobs
+- **M11b, loading off the main lane (done: decoding in a job; Blob
+  uploads left for later).** Parsing and decoding in Rive jobs
   (`rive/jobs`), vertex and index buffers created from Blobs
   (`GPUBuffer.fromBlob`), `loadAsync` returning a Rive `Promise`, so big
   models stay within the init budget and never stall a frame.

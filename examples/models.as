@@ -13,6 +13,7 @@ import { GLTFLoader } from "../three/addons/loaders/GLTFLoader";
 import { MeshoptDecoder } from "../three/addons/libs/meshopt_decoder";
 import { RoomEnvironment } from "../three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
+import { Promise } from "rive/promise";
 
 export class Models extends THREE.ThreeLayout {
     mixer: THREE.AnimationMixer? = null;
@@ -32,14 +33,8 @@ export class Models extends THREE.ThreeLayout {
         stripes.position.set(0, 0.5, -2.5);
         scene.add(stripes);
 
-        const loader = new GLTFLoader(context).setMeshoptDecoder(MeshoptDecoder);
-        const gltf = loader.load("features");
-        if (gltf != null) {
-            scene.add(gltf.scene);
-            const mixer = new THREE.AnimationMixer(gltf.scene);
-            for (let i = 0; i < gltf.animations.length; i++) mixer.clipAction(gltf.animations[i]).play();
-            this.mixer = mixer;
-        }
+        // Decoded in a Rive job; the scene fills in a frame or two later.
+        this.load(new GLTFLoader(context).setMeshoptDecoder(MeshoptDecoder));
 
         this.camera.position.set(0, 3.2, 6.2);
         const controls = new OrbitControls(this.camera, this.renderer);
@@ -48,6 +43,19 @@ export class Models extends THREE.ThreeLayout {
         controls.update();
         this.controls = controls;
         return true;
+    }
+
+    async load(loader: GLTFLoader): Promise<void> {
+        const settled = await loader.loadAsync("features").settled();
+        if (!settled.ok) {
+            this.context!.log("features.glb: " + settled.error);
+            return;
+        }
+        const gltf = settled.value;
+        this.scene.add(gltf.scene);
+        const mixer = new THREE.AnimationMixer(gltf.scene);
+        for (let i = 0; i < gltf.animations.length; i++) mixer.clipAction(gltf.animations[i]).play();
+        this.mixer = mixer;
     }
 
     private stripes(): THREE.DataTexture {

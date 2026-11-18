@@ -462,6 +462,13 @@ export class Demo extends Layout {
   `setMeshoptDecoder`, as three.js's module. It reads the attribute codec
   version 0 (meshoptimizer's default for EXT_meshopt_compression), the
   triangle and index codecs and the three filters.
+- **`loadAsync(name)` / `parseAsync(bytes)` return a Rive `Promise<GLTF>`**
+  and decode in a Rive job (`decodeGLTF`: the container, meshopt views and
+  every accessor, handed back as one Float32Array); the scene is built on
+  the main lane when the job is done. Images decode asynchronously either
+  way. Await it in an `async` method, or use the promise's `andThen`. The
+  scene's objects are still created in one main-lane call, and vertex data
+  is uploaded from the decoded arrays (not from Blobs).
 - `GLTFLoader`'s context is optional: without one, `parse` still builds
   the scene (no images; warnings in `loader.warnings`, the failure in
   `loader.error`).
