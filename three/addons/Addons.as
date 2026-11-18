@@ -17,3 +17,5 @@ export * from "./loaders/RGBELoader";
 export * from "./loaders/EXRLoader";
 export * from "./libs/fflate";
 export * from "./loaders/KTX2Loader";
+export * from "./lights/LightProbeGenerator";
+export * from "./lights/RectAreaLightUniformsLib";

@@ -25,12 +25,13 @@ export const FRAME_ENV: i32 = 496;
 export const FRAME_ENV_ROTATION: i32 = 512;
 export const FRAME_ENV_FLAGS: i32 = 576;
 export const FRAME_SHADOW_PARAMS: i32 = 592;
-export const FRAME_LIGHTS: i32 = 608;
+export const FRAME_PROBE: i32 = 608;     // 9 vec4: summed LightProbe SH coefficients
+export const FRAME_LIGHTS: i32 = 752;
 export const LIGHT_BYTES: i32 = 96;
-export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 3680
+export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 3824
 export const SHADOW_TILE_BYTES: i32 = 80;
 export const MAX_SHADOW_TILES: i32 = 12;
-export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 4640
+export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 4784
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;
@@ -86,6 +87,7 @@ export const FLAG_RECEIVE_SHADOW: u32 = 16;
 export const LIGHT_DIRECTIONAL: f32 = 0;
 export const LIGHT_POINT: f32 = 1;
 export const LIGHT_SPOT: f32 = 2;
+export const LIGHT_RECT: f32 = 3;
 
 export const FOG_LINEAR: f32 = 1;
 export const FOG_EXP2: f32 = 2;

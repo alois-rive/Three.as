@@ -434,6 +434,17 @@ export class Demo extends Layout {
   direction.
 - Without an environment map, metals reflect only direct lights and look
   dark, as in three.js.
+- **RectAreaLight** works without `RectAreaLightUniformsLib.init()` (kept
+  as a no-op): its LTC tables are built into the renderer, **resampled
+  from three.js's 64 x 64 to 32 x 32** half floats so both fit one 16 KB
+  uniform block (the shader is at the web's 16-texture limit). It lights
+  MeshStandard/Physical only and casts no shadow, as three.js. It counts
+  toward the 32 lights.
+- `LightProbe` (any number, summed) with `SphericalHarmonics3`.
+  **`LightProbeGenerator.fromEquirectangular(dataTexture, step)`** replaces
+  `fromCubeTexture` / `fromCubeRenderTarget`: Rive images cannot be read
+  back, so probes come from CPU data (RGBELoader / EXRLoader / DataTexture
+  equirectangular maps).
 
 ## Textures
 
@@ -540,5 +551,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
-RectAreaLight (not planned: it needs three.js's LTC tables),
 ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), `EventDispatcher` events (`dispose` events are internal).

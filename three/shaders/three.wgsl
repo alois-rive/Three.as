@@ -51,6 +51,7 @@ const FLAG_RECEIVE_SHADOW: u32 = 16u;
 const LIGHT_DIRECTIONAL: f32 = 0.0;
 const LIGHT_POINT: f32 = 1.0;
 const LIGHT_SPOT: f32 = 2.0;
+const LIGHT_RECT: f32 = 3.0;   // direction.xyz half width, params.xyz half height
 
 const FOG_LINEAR: f32 = 1.0;
 const FOG_EXP2: f32 = 2.0;
@@ -101,6 +102,7 @@ struct FrameU {
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
+    probe: array<vec4<f32>, 9>,  // summed LightProbe SH coefficients (rgb)
     lights: array<Light, 32>,
     shadow_tiles: array<ShadowTile, 12>,
 };
@@ -184,6 +186,12 @@ struct BonesU {
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
 @group(0) @binding(4) var s_shadow: sampler_comparison;
+// RectAreaLight's LTC tables: 32 x 32 texels, four pack2x16float words
+// each (LTC_MAT_1 xy zw, LTC_MAT_2 xy zw).
+struct LtcTable {
+    t: array<vec4<u32>, 1024>,
+};
+@group(0) @binding(7) var<uniform> LTC: LtcTable;
 // The opaque scene (linear HDR, mipmapped) for transmissive materials.
 @group(0) @binding(5) var t_transmission: texture_2d<f32>;
 @group(0) @binding(6) var s_transmission: sampler;
@@ -914,6 +922,103 @@ fn env_combine(outgoing: vec3<f32>, world: vec3<f32>, n: vec3<f32>, specular_str
     return mix(outgoing, outgoing * env, k);
 }
 
+// ---------------------------------------------------------------- area lights and probes
+
+struct LtcSample {
+    m1: vec4<f32>,
+    m2: vec4<f32>,
+};
+
+/// A half float's value (unpack2x16float needs a capability Rive's
+/// validator does not enable).
+fn half_bits(h: u32) -> f32 {
+    let sign = (h >> 15u) & 1u;
+    let e = (h >> 10u) & 0x1fu;
+    let m = h & 0x3ffu;
+    var v: f32;
+    if (e == 0u) {
+        v = f32(m) * 5.960464477539063e-8;
+    } else if (e == 31u) {
+        v = 65504.0;
+    } else {
+        v = bitcast<f32>(((e + 112u) << 23u) | (m << 13u));
+    }
+    return select(v, -v, sign == 1u);
+}
+
+fn halves(w: u32) -> vec2<f32> {
+    return vec2<f32>(half_bits(w & 0xffffu), half_bits(w >> 16u));
+}
+
+fn ltc_texel(x: i32, y: i32) -> LtcSample {
+    let w = LTC.t[clamp(y, 0, 31) * 32 + clamp(x, 0, 31)];
+    var s: LtcSample;
+    s.m1 = vec4<f32>(halves(w.x), halves(w.y));
+    s.m2 = vec4<f32>(halves(w.z), halves(w.w));
+    return s;
+}
+
+/// The LTC fit at (roughness, sqrt(1 - n.v)), bilinear (three.js's LTC_Uv
+/// and texture lookups).
+fn ltc_lookup(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> LtcSample {
+    let p = vec2<f32>(roughness, sqrt(1.0 - saturate(dot(N, V)))) * 31.0;
+    let i = vec2<i32>(floor(p));
+    let f = p - floor(p);
+    let a = ltc_texel(i.x, i.y);
+    let b = ltc_texel(i.x + 1, i.y);
+    let c = ltc_texel(i.x, i.y + 1);
+    let d = ltc_texel(i.x + 1, i.y + 1);
+    var s: LtcSample;
+    s.m1 = mix(mix(a.m1, b.m1, f.x), mix(c.m1, d.m1, f.x), f.y);
+    s.m2 = mix(mix(a.m2, b.m2, f.x), mix(c.m2, d.m2, f.x), f.y);
+    return s;
+}
+
+fn ltc_edge(v1: vec3<f32>, v2: vec3<f32>) -> vec3<f32> {
+    let x = dot(v1, v2);
+    let y = abs(x);
+    let a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    let b = 3.4175940 + (4.1616724 + y) * y;
+    let v = a / b;
+    let theta_sintheta = select(0.5 * inverseSqrt(max(1.0 - x * x, 1e-7)) - v, v, x > 0.0);
+    return cross(v1, v2) * theta_sintheta;
+}
+
+/// three.js's LTC_Evaluate: the polygon's form factor through `m_inv`.
+fn ltc_evaluate(N: vec3<f32>, V: vec3<f32>, P: vec3<f32>, m_inv: mat3x3<f32>, c0: vec3<f32>, c1: vec3<f32>,
+                c2: vec3<f32>, c3: vec3<f32>) -> f32 {
+    let v1 = c1 - c0;
+    let v2 = c3 - c0;
+    if (dot(cross(v1, v2), P - c0) < 0.0) {
+        return 0.0;
+    }
+    let T1 = normalize(V - N * dot(V, N));
+    let T2 = -cross(N, T1);
+    let m = m_inv * transpose(mat3x3<f32>(T1, T2, N));
+    let p0 = normalize(m * (c0 - P));
+    let p1 = normalize(m * (c1 - P));
+    let p2 = normalize(m * (c2 - P));
+    let p3 = normalize(m * (c3 - P));
+    let f = ltc_edge(p0, p1) + ltc_edge(p1, p2) + ltc_edge(p2, p3) + ltc_edge(p3, p0);
+    let l = length(f);
+    return max((l * l + f.z) / (l + 1.0), 0.0);
+}
+
+/// three.js's shGetIrradianceAt over the summed light probes.
+fn probe_irradiance(n: vec3<f32>) -> vec3<f32> {
+    let c = F.probe;
+    var r = c[0].rgb * 0.886227;
+    r += c[1].rgb * 2.0 * 0.511664 * n.y;
+    r += c[2].rgb * 2.0 * 0.511664 * n.z;
+    r += c[3].rgb * 2.0 * 0.511664 * n.x;
+    r += c[4].rgb * 2.0 * 0.429043 * n.x * n.y;
+    r += c[5].rgb * 2.0 * 0.429043 * n.y * n.z;
+    r += c[6].rgb * (0.743125 * n.z * n.z - 0.247708);
+    r += c[7].rgb * 2.0 * 0.429043 * n.x * n.z;
+    r += c[8].rgb * 0.429043 * (n.x * n.x - n.y * n.y);
+    return r;
+}
+
 /// three.js's DFGApprox.
 fn dfg_approx(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> vec2<f32> {
     let dotNV = saturate(dot(N, V));
@@ -1227,7 +1332,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         }
 
         // Indirect: ambient, hemisphere and lightMap light, occluded by the aoMap.
-        var indirect = F.ambient.rgb + light_map;
+        var indirect = F.ambient.rgb + light_map + probe_irradiance(N);
         if (F.hemi_dir.w > 0.5) {
             let w = 0.5 * dot(N, F.hemi_dir.xyz) + 0.5;
             indirect += mix(F.hemi_ground.rgb, F.hemi_sky.rgb, w);
@@ -1261,6 +1366,29 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         let count = object_light_count();
         for (var k = 0u; k < count; k++) {
             let light = F.lights[object_light(k)];
+            if (light.position.w == LIGHT_RECT) {
+                // RectAreaLight (three.js's RE_Direct_RectArea_Physical):
+                // physically based materials only.
+                if (pbr) {
+                    let hw = light.direction.xyz;
+                    let hh = light.params.xyz;
+                    let lp = light.position.xyz;
+                    let c0 = lp + hw - hh;
+                    let c1 = lp - hw - hh;
+                    let c2 = lp - hw + hh;
+                    let c3 = lp + hw + hh;
+                    let t = ltc_lookup(N, V, roughness);
+                    let m_inv = mat3x3<f32>(vec3<f32>(t.m1.x, 0.0, t.m1.y), vec3<f32>(0.0, 1.0, 0.0),
+                        vec3<f32>(t.m1.z, 0.0, t.m1.w));
+                    let fresnel = f0 * t.m2.x + (vec3<f32>(1.0) - f0) * t.m2.y;
+                    specular += light.color.rgb * fresnel * ltc_evaluate(N, V, in.world, m_inv, c0, c1, c2, c3);
+                    // diffuse_light is multiplied by diffuse_color / PI below.
+                    diffuse_light += light.color.rgb * PI * ltc_evaluate(N, V, in.world,
+                        mat3x3<f32>(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 0.0, 1.0)),
+                        c0, c1, c2, c3);
+                }
+                continue;
+            }
             var L: vec3<f32>;
             var radiance = light.color.rgb;
             if (light.position.w == LIGHT_DIRECTIONAL) {

@@ -88,6 +88,9 @@ import {
 } from "../constants";
 import { Plane } from "../math/Plane";
 import { LightShadow } from "../lights/LightShadow";
+import { RectAreaLight } from "../lights/RectAreaLight";
+import { LightProbe } from "../lights/LightProbe";
+import { LTC_TABLE } from "../lights/RectAreaLightTables";
 import { CubeTexture } from "../textures/CubeTexture";
 import { CubeCamera } from "../cameras/CubeCamera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
@@ -103,7 +106,7 @@ import {
     MAX_SHADOW_TILES, FLAG_RECEIVE_SHADOW,
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
-    FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
+    FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT, LIGHT_RECT, FRAME_PROBE,
     FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
 } from "./gpu/Layout";
 
@@ -394,6 +397,7 @@ export class GPURenderer {
     private samples: u32 = 1;
 
     private frameUbo: GPUBuffer? = null;
+    private ltcUbo: GPUBuffer? = null;
     private frameGroup: GPUBindGroup? = null;
     private frameStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
     private objStaging: ArrayBuffer = new ArrayBuffer(OBJ_BYTES);
@@ -846,6 +850,10 @@ export class GPURenderer {
 
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.frameUbo = ubo;
+            // The RectAreaLight LTC tables, once.
+            const ltc = new Uint32Array(LTC_TABLE.length);
+            for (let i = 0; i < LTC_TABLE.length; i++) ltc[i] = LTC_TABLE[i];
+            this.ltcUbo = new GPUBuffer(BufferUsage.uniform, <u32>ltc.byteLength, ltc.buffer, true);
 
             const wd = new GPUTextureDesc();
             wd.width = 1; wd.height = 1;
@@ -1002,11 +1010,7 @@ export class GPURenderer {
         // `lights: true` binds every frame texture (placeholders here; the
         // real ones per render, customFullGroup).
         const frameGroup = material.lights
-            ? new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
-                    new GPUBindGroupTexture(5, this.white!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                    new GPUBindGroupSampler(6, this.backgroundSampler(true))])
+            ? this.makeFrameGroup(g0, this.frameUbo!, this.white!, this.dummyShadowView!, this.white!)
             : new GPUBindGroup(g0, [new GPUBindGroupUBO(0, this.frameUbo!)]);
         const cp = new CustomPipeline(p, g0, g1, frameGroup);
         cp.lights = material.lights;
@@ -1544,6 +1548,16 @@ export class GPURenderer {
         return true;
     }
 
+    /// A group 0 over `ubo`: the frame block, its textures and samplers, and
+    /// the RectAreaLight tables.
+    private makeFrameGroup(layout: GPUBindGroupLayout, ubo: GPUBuffer, env: GPUTextureView, shadow: GPUTextureView,
+                           tr: GPUTextureView): GPUBindGroup {
+        return new GPUBindGroup(layout, [new GPUBindGroupUBO(0, ubo), new GPUBindGroupUBO(7, this.ltcUbo!)],
+            [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
+            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
+                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+    }
+
     /// The frame bind group: the frame block, the environment, the shadow
     /// maps and the transmission texture (rebuilt when one changes).
     private ensureFrameGroup(): void {
@@ -1552,10 +1566,7 @@ export class GPURenderer {
         const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
         if (this.frameGroup != null && this.frameGroupView === env && this.frameGroupShadow === shadow
                 && this.frameGroupTransmission === tr) return;
-        this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
-            [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
-            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+        this.frameGroup = this.makeFrameGroup(this.frameLayout!, this.frameUbo!, env, shadow, tr);
         this.frameGroupView = env;
         this.frameGroupShadow = shadow;
         this.frameGroupTransmission = tr;
@@ -1591,10 +1602,7 @@ export class GPURenderer {
         f[flag] = was;
         const env = this.frameEnvView != null ? this.frameEnvView! : this.white!;
         const shadow = this.frameShadowView != null ? this.frameShadowView! : this.dummyShadowView!;
-        const group = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
-            [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, this.white!)],
-            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+        const group = this.makeFrameGroup(this.frameLayout!, ubo, env, shadow, this.white!);
         this.ensureTargets(this.transmissionTargets, <u32>TextureFormat.rgba16float, pw, ph, 1);
         const depth = this.transmissionTargets.depthView;
         if (depth == null) return;
@@ -1799,11 +1807,7 @@ export class GPURenderer {
         while (this.tileUbos.length < this.tileCount) {
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.tileUbos.push(ubo);
-            this.tileGroups.push(new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
-                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!),
-                    new GPUBindGroupTexture(5, this.white!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]));
+            this.tileGroups.push(this.makeFrameGroup(this.frameLayout!, ubo, this.white!, this.dummyShadowView!, this.white!));
         }
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
@@ -1985,6 +1989,8 @@ export class GPURenderer {
         f[o] = <f32>_dir.x; f[o + 1] = <f32>_dir.y; f[o + 2] = <f32>_dir.z; f[o + 3] = 0;
 
         // Lights.
+        const probe = _probe;
+        probe.fill(0);
         let ar: f64 = 0, ag: f64 = 0, ab: f64 = 0;
         let sr: f64 = 0, sg: f64 = 0, sb: f64 = 0, gr: f64 = 0, gg: f64 = 0, gb: f64 = 0;
         let hemi = false;
@@ -2008,9 +2014,19 @@ export class GPURenderer {
                 }
                 continue;
             }
+            if (light instanceof LightProbe) {
+                const c = (light as LightProbe).sh.coefficients;
+                for (let j = 0; j < 9; j++) {
+                    const pb = (FRAME_PROBE >> 2) + j * 4;
+                    probe[j * 3] += c[j].x * k; probe[j * 3 + 1] += c[j].y * k; probe[j * 3 + 2] += c[j].z * k;
+                    f[pb + 3] = 0;
+                }
+                continue;
+            }
             const directional = light instanceof DirectionalLight;
             const spot = light instanceof SpotLight;
-            if (!directional && !spot && !(light instanceof PointLight)) continue;
+            const rect = light instanceof RectAreaLight;
+            if (!directional && !spot && !rect && !(light instanceof PointLight)) continue;
             if (count >= MAX_LIGHTS) {
                 if (!this.warnedLights) {
                     this.context.log("three: more than " + MAX_LIGHTS.toString() + " lights; the rest are ignored");
@@ -2025,7 +2041,7 @@ export class GPURenderer {
             // brightness to rank by.
             const fl = this.frameLights;
             fl[count * 5] = _pos.x; fl[count * 5 + 1] = _pos.y; fl[count * 5 + 2] = _pos.z;
-            const reach = directional ? -1 : spot ? (light as SpotLight).distance : (light as PointLight).distance;
+            const reach = directional || rect ? -1 : spot ? (light as SpotLight).distance : (light as PointLight).distance;
             fl[count * 5 + 3] = reach > 0 ? reach : -1;
             fl[count * 5 + 4] = k * Math.max(light.color.r, Math.max(light.color.g, light.color.b));
             if (directional) fl[count * 5 + 4] = Infinity;
@@ -2034,7 +2050,18 @@ export class GPURenderer {
             f[base + 9] = <f32>(light.color.g * k);
             f[base + 10] = <f32>(light.color.b * k);
             f[base + 13] = 0; f[base + 14] = 0; f[base + 15] = 0;
-            if (directional) {
+            if (rect) {
+                // Half extents along the light's world axes (three.js's
+                // halfWidth / halfHeight, rotation only).
+                const ra = light as RectAreaLight;
+                _rectRot.extractRotation(light.matrixWorld);
+                _dir.set(ra.width * 0.5, 0, 0).applyMatrix4(_rectRot);
+                f[base + 3] = LIGHT_RECT;
+                f[base + 4] = <f32>_dir.x; f[base + 5] = <f32>_dir.y; f[base + 6] = <f32>_dir.z; f[base + 7] = 0;
+                _dir.set(0, ra.height * 0.5, 0).applyMatrix4(_rectRot);
+                f[base + 11] = 0;
+                f[base + 12] = <f32>_dir.x; f[base + 13] = <f32>_dir.y; f[base + 14] = <f32>_dir.z; f[base + 15] = 0;
+            } else if (directional) {
                 f[base + 3] = LIGHT_DIRECTIONAL;
                 (light as DirectionalLight).target.getWorldPosition(_dir);
                 _dir.subVectors(_pos, _dir).normalize();
@@ -2063,6 +2090,10 @@ export class GPURenderer {
         o = FRAME_AMBIENT >> 2;
         f[o] = <f32>ar; f[o + 1] = <f32>ag; f[o + 2] = <f32>ab; f[o + 3] = <f32>count;
         this.frameLightCount = count;
+        for (let j = 0; j < 9; j++) {
+            const pb = (FRAME_PROBE >> 2) + j * 4;
+            f[pb] = <f32>probe[j * 3]; f[pb + 1] = <f32>probe[j * 3 + 1]; f[pb + 2] = <f32>probe[j * 3 + 2]; f[pb + 3] = 0;
+        }
         o = FRAME_HEMI_SKY >> 2;
         f[o] = <f32>sr; f[o + 1] = <f32>sg; f[o + 2] = <f32>sb; f[o + 3] = 0;
         o = FRAME_HEMI_GROUND >> 2;
@@ -2225,10 +2256,7 @@ export class GPURenderer {
         const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
         const v = cp.fullViews;
         if (cp.fullGroup == null || v[0] !== env || v[1] !== shadow || v[2] !== tr) {
-            cp.fullGroup = new GPUBindGroup(cp.layout0, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                    new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+            cp.fullGroup = this.makeFrameGroup(cp.layout0, this.frameUbo!, env, shadow, tr);
             v[0] = env; v[1] = shadow; v[2] = tr;
         }
         return cp.fullGroup!;
@@ -2832,6 +2860,8 @@ function stencilOp(op: i32): StencilOp {
 }
 
 const _lightSphere: Sphere = new Sphere();
+const _probe: Float64Array = new Float64Array(27);
+const _rectRot: Matrix4 = new Matrix4();
 
 /// `o`'s world bounding sphere into `out`; false when unknown (posed
 /// skins without bounds, morphed meshes, objects without geometry).

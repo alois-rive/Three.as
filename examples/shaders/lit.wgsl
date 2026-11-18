@@ -60,6 +60,7 @@ struct FrameU {
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
     shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size, z 1: linear HDR output
+    probe: array<vec4<f32>, 9>,  // summed LightProbe SH coefficients (rgb)
     lights: array<Light, 32>,
     shadow_tiles: array<ShadowTile, 12>,
 };
@@ -105,11 +106,16 @@ struct ObjU {
     light_list: vec4<u32>,   // bytes: the count, then frame light indices
 };
 
+struct LtcTable {
+    t: array<vec4<u32>, 1024>,
+};
+
 @group(0) @binding(0) var<uniform> F: FrameU;
 @group(0) @binding(1) var t_env: texture_2d<f32>;
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
 @group(0) @binding(4) var s_shadow: sampler_comparison;
+@group(0) @binding(7) var<uniform> LTC: LtcTable;
 @group(0) @binding(5) var t_transmission: texture_2d<f32>;
 @group(0) @binding(6) var s_transmission: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
@@ -336,7 +342,8 @@ fn three_keep_frame_bindings() -> f32 {
     let e = textureSampleLevel(t_env, s_env, vec2<f32>(0.0), 0.0).r;
     let s = textureSampleCompareLevel(t_shadow, s_shadow, vec2<f32>(0.0), 0, 1.0);
     let t = textureSampleLevel(t_transmission, s_transmission, vec2<f32>(0.0), 0.0).r;
-    return (e + s + t) * 0.0;
+    let l = f32(LTC.t[0].x & 1u);
+    return (e + s + t + l) * 0.0;
 }
 
 // ---------------------------------------------------------------- the material

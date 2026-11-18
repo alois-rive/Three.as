@@ -25,6 +25,7 @@ export * from "./math/Ray";
 export * from "./math/Triangle";
 export * from "./math/Frustum";
 export * from "./math/Spherical";
+export * from "./math/SphericalHarmonics3";
 export * from "./math/Cylindrical";
 
 export * from "./core/Object3D";
@@ -57,6 +58,8 @@ export * from "./lights/AmbientLight";
 export * from "./lights/DirectionalLight";
 export * from "./lights/PointLight";
 export * from "./lights/SpotLight";
+export * from "./lights/RectAreaLight";
+export * from "./lights/LightProbe";
 export * from "./lights/HemisphereLight";
 export * from "./lights/LightShadow";
 

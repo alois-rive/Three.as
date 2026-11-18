@@ -235,7 +235,8 @@ render as authored.
 
 - **M9a, many lights (done: 32 a render, 15 per draw, culled by range).** Lift the 8-light cap (light data in a storage or
   larger uniform buffer, per-object light lists or clustered lighting).
-- **M9b, area and probe lights.** RectAreaLight with three.js's LTC tables
+- **M9b, area and probe lights (done; LTC tables at 32 x 32; probes from
+  equirectangular data).** RectAreaLight with three.js's LTC tables
   shipped as a blob asset (RectAreaLightUniformsLib), LightProbe,
   SphericalHarmonics3, LightProbeGenerator, HemisphereLightProbe.
 - **M9c, shadows at scale.** More than 12 shadow layers (atlas sizing per
