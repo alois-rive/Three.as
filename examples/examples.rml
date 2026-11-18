@@ -476,6 +476,21 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Models: glTF extensions, other formats (examples/models.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2307" clip="true" x="0" y="5600" width="800" height="600" styleId="0:2311" name="Models" id="0:2300">
+        <LayoutComponentStyle name="Artboard Style" id="0:2311"/>
+        <LayoutComponent width="800" height="600" styleId="0:2303" name="Root" id="0:2312">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2303"/>
+            <ScriptedLayout scriptAssetId="0:2390" name="Scene" id="0:2304"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2307">
+            <StateMachineLayer name="Layer 1" id="0:2308">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
@@ -506,6 +521,9 @@
     <ScriptAsset file="examples/lights.as" name="lights" id="0:2090"/>
     <ScriptAsset file="examples/editor.as" name="editor" id="0:2190"/>
     <ScriptAsset file="examples/batched.as" name="batched" id="0:2290"/>
+    <ScriptAsset file="examples/models.as" name="models" id="0:2390"/>
     <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
+    <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
+    <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
 </Rive>

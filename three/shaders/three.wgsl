@@ -1401,6 +1401,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
                     T0 *= sc;
                     B0 *= sc;
                 }
+                if (dot(T0, T0) < 1e-12 || dot(B0, B0) < 1e-12) {
+                    // No uvs (or degenerate ones): any frame around the normal.
+                    let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(N.y) > 0.99);
+                    T0 = normalize(cross(up, N));
+                    B0 = cross(N, T0);
+                }
                 aniso_t = T0 * dir.x + B0 * dir.y;
                 aniso_b = B0 * dir.x - T0 * dir.y;
             }

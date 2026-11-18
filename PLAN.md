@@ -279,7 +279,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 
 ### M11: loaders and formats
 
-- **M11a, glTF breadth.** KHR_texture_transform, KHR_materials_*
+- **M11a, glTF breadth (done; Draco, Basis and variants left out).** KHR_texture_transform, KHR_materials_*
   (transmission, volume, ior, specular, iridescence, anisotropy,
   emissive_strength, dispersion, unlit), KHR_mesh_quantization, sparse
   accessors, multiple UV sets, texture samplers per texture,

@@ -1,5 +1,6 @@
-// three.js's GLTFLoader addon, for Rive: reads a binary glTF 2.0 (.glb)
-// from a BlobAsset and builds the scene, as three.js would.
+// three.js's GLTFLoader addon, for Rive: reads a glTF 2.0 (.glb, or .gltf
+// JSON with embedded data: URIs) from a BlobAsset and builds the scene, as
+// three.js would.
 //
 //     const gltf = new GLTFLoader(context).load("robot");   // the BlobAsset's name
 //     if (gltf != null) {
@@ -13,15 +14,23 @@
 //
 // Read: the node hierarchy (TRS or matrix), meshes (triangles, strips, fans,
 // lines, points; positions, normals, uvs, colours, skinning, morph targets),
-// PBR materials (KHR_materials_unlit, emissive_strength, clearcoat, sheen,
-// ior, specular; KHR_texture_transform), embedded PNG/JPEG/WebP textures and
-// samplers, skins, animations (LINEAR, STEP, CUBICSPLINE), cameras and
-// KHR_lights_punctual. Not read: .gltf with external files, Draco,
-// meshopt, KTX2, sparse accessors, other extensions.
+// sparse accessors, PBR materials (KHR_materials_unlit, emissive_strength,
+// clearcoat, sheen, ior, specular, transmission, volume, iridescence,
+// anisotropy, dispersion; KHR_texture_transform), embedded PNG/JPEG/WebP
+// textures (EXT_texture_webp) and samplers, skins, animations (LINEAR, STEP,
+// CUBICSPLINE), cameras, KHR_lights_punctual, KHR_mesh_quantization,
+// EXT_mesh_gpu_instancing and EXT_meshopt_compression (setMeshoptDecoder).
+// Not read: external files, Draco, KTX2 / Basis textures,
+// KHR_materials_variants.
 
 import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { parseJson } from "rive/json";
 import { Dynamic } from "rive/dynamic";
+import { MeshoptDecoderModule } from "../libs/meshopt_decoder";
+import { InstancedMesh } from "../../objects/InstancedMesh";
+import { Vector3 } from "../../math/Vector3";
+import { Quaternion } from "../../math/Quaternion";
+import { Color } from "../../math/Color";
 import { Object3D } from "../../core/Object3D";
 import { BufferGeometry } from "../../core/BufferGeometry";
 import { BufferAttribute } from "../../core/BufferAttribute";
@@ -99,29 +108,58 @@ class TextureDecode extends ImageDecodeListener {
 // Images still decoding (kept alive until they report).
 const pendingDecodes: Array<TextureDecode> = [];
 
-export class GLTFLoader {
-    context: Context;
+/// Extensions this loader reads (a file requiring another one fails).
+const SUPPORTED_EXTENSIONS: StaticArray<string> = [
+    "KHR_materials_unlit", "KHR_materials_emissive_strength", "KHR_materials_clearcoat", "KHR_materials_sheen",
+    "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_transmission", "KHR_materials_volume",
+    "KHR_materials_iridescence", "KHR_materials_anisotropy", "KHR_materials_dispersion", "KHR_texture_transform",
+    "KHR_lights_punctual", "KHR_mesh_quantization", "EXT_texture_webp", "EXT_mesh_gpu_instancing",
+    "EXT_meshopt_compression",
+];
 
-    constructor(context: Context) {
+export class GLTFLoader {
+    /// Loads blob assets, decodes images and logs; without one, `parse`
+    /// still builds the scene (images stay empty, errors go to `error`).
+    context: Context?;
+    meshoptDecoder: MeshoptDecoderModule? = null;
+    /// Why the last load or parse returned null, or a warning.
+    error: string = "";
+    /// Warnings of the last parse (unsupported features met).
+    warnings: Array<string> = [];
+
+    constructor(context: Context? = null) {
         this.context = context;
+    }
+
+    /// The decoder for EXT_meshopt_compression (MeshoptDecoder from
+    /// three/addons/libs/meshopt_decoder), as three.js.
+    setMeshoptDecoder(decoder: MeshoptDecoderModule?): GLTFLoader {
+        this.meshoptDecoder = decoder;
+        return this;
     }
 
     /// Loads the .glb BlobAsset called `name`; null (and a log line) when it
     /// is missing or not a glb this loader reads.
     load(name: string): GLTF? {
-        const bytes = this.context.blob(name);
+        const context = this.context;
+        const bytes = context != null ? context.blob(name) : null;
         if (bytes == null) {
-            this.context.log("three: GLTFLoader: no blob asset named '" + name + "'");
+            this.error = "no blob asset named '" + name + "'";
+            if (context != null) context.log("three: GLTFLoader: " + this.error);
             return null;
         }
         return this.parse(bytes);
     }
 
-    /// Parses .glb bytes.
+    /// Parses .glb bytes, or .gltf JSON text as bytes.
     parse(data: ArrayBuffer): GLTF? {
         const parser = new GLTFParser(this.context, data);
+        parser.meshoptDecoder = this.meshoptDecoder;
         const gltf = parser.parse();
-        if (gltf == null) this.context.log("three: GLTFLoader: " + parser.error);
+        this.error = parser.error;
+        this.warnings = parser.warnings;
+        const context = this.context;
+        if (gltf == null && context != null) context.log("three: GLTFLoader: " + parser.error);
         return gltf;
     }
 }
@@ -135,13 +173,17 @@ const MODE_TRIANGLE_STRIP: i32 = 5;
 const MODE_TRIANGLE_FAN: i32 = 6;
 
 class GLTFParser {
-    context: Context;
+    context: Context?;
+    warnings: Array<string> = [];
     data: ArrayBuffer;
     bytes: Uint8Array;
     error: string = "";
     json: Dynamic? = null;
-    binOffset: i32 = 0;
-    binLength: i32 = 0;
+    meshoptDecoder: MeshoptDecoderModule? = null;
+    /// The GLB binary chunk (buffer 0 without a uri), when there is one.
+    bin: Uint8Array? = null;
+    buffers: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
+    views: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     textures: Map<string, DataTexture> = new Map<string, DataTexture>();
     decodes: Map<i32, TextureDecode> = new Map<i32, TextureDecode>();
     materials: Map<i32, Material> = new Map<i32, Material>();
@@ -152,16 +194,37 @@ class GLTFParser {
     meshesOf: Array<Array<Mesh>> = [];
     cameras: Array<Camera> = [];
 
-    constructor(context: Context, data: ArrayBuffer) {
+    constructor(context: Context?, data: ArrayBuffer) {
         this.context = context;
         this.data = data;
         this.bytes = Uint8Array.wrap(data);
     }
 
+    warn(message: string): void {
+        this.warnings.push(message);
+        const context = this.context;
+        if (context != null) context.log("three: GLTFLoader: " + message);
+    }
+
     parse(): GLTF? {
-        if (!this.readGlb()) return null;
+        if (!this.readContainer()) return null;
         const json = this.json;
         if (json == null) return null;
+        const required = arr(json, "extensionsRequired");
+        for (let i = 0; i < required.length; i++) {
+            const name = Dynamic.asStringOrNull(required[i]);
+            if (name == null) continue;
+            let known = false;
+            for (let k = 0; k < SUPPORTED_EXTENSIONS.length; k++) if (SUPPORTED_EXTENSIONS[k] == name) known = true;
+            if (!known) {
+                this.error = "required extension " + name + " is not supported";
+                return null;
+            }
+            if (name == "EXT_meshopt_compression" && this.meshoptDecoder == null) {
+                this.error = "setMeshoptDecoder must be called before loading compressed files";
+                return null;
+            }
+        }
         const gltf = new GLTF();
         const asset = dget(json, "asset");
         gltf.version = str(asset, "version", "");
@@ -240,10 +303,28 @@ class GLTFParser {
 
     // ------------------------------------------------------------- binary
 
+    /// A .glb, or .gltf JSON (starting with "{" after any whitespace).
+    private readContainer(): bool {
+        const b = this.bytes;
+        let first = 0;
+        while (first < b.length && (b[first] == 32 || b[first] == 9 || b[first] == 10 || b[first] == 13
+            || b[first] == 0xEF || b[first] == 0xBB || b[first] == 0xBF)) first++;
+        if (first < b.length && b[first] == 123) {
+            const result = parseJson(String.UTF8.decode(this.data));
+            if (!result.ok || result.value == null) {
+                this.error = "bad JSON";
+                return false;
+            }
+            this.json = result.value;
+            return true;
+        }
+        return this.readGlb();
+    }
+
     private readGlb(): bool {
         const b = this.bytes;
         if (b.length < 20 || u32At(b, 0) != 0x46546C67) {
-            this.error = "not a .glb (binary glTF)";
+            this.error = "not a .glb (binary glTF) nor .gltf JSON";
             return false;
         }
         let offset = 12;
@@ -255,8 +336,7 @@ class GLTFParser {
             if (type == 0x4E4F534A) {
                 jsonText = String.UTF8.decode(this.data.slice(start, start + length));
             } else if (type == 0x004E4942) {
-                this.binOffset = start;
-                this.binLength = length;
+                this.bin = b.subarray(start, start + length);
             }
             offset = start + ((length + 3) & ~3);
         }
@@ -269,16 +349,61 @@ class GLTFParser {
         return true;
     }
 
-    /// The bytes of bufferView `index` as [offset, length, stride].
-    private view(index: i32): StaticArray<i32> {
-        const views = arr(this.json, "bufferViews");
-        const out = new StaticArray<i32>(3);
-        if (index < 0 || index >= views.length) return out;
-        const v = views[index];
-        out[0] = this.binOffset + <i32>num(v, "byteOffset", 0);
-        out[1] = <i32>num(v, "byteLength", 0);
-        out[2] = <i32>num(v, "byteStride", 0);
+    /// Buffer `index`: the GLB chunk, or a base64 data: URI; null for
+    /// external files (not read) and fallback buffers.
+    private buffer(index: i32): Uint8Array? {
+        if (this.buffers.has(index)) return this.buffers.get(index);
+        const def = dat(dget(this.json, "buffers"), index);
+        if (def == null) return null;
+        const uri = str(def, "uri", "");
+        let out: Uint8Array? = null;
+        if (uri.length == 0) {
+            if (index == 0) out = this.bin;
+        } else if (uri.startsWith("data:")) {
+            out = decodeDataUri(uri);
+        } else if (this.error.length == 0) {
+            this.warn("external buffer '" + uri + "' is not supported (embed it, or use a .glb)");
+        }
+        if (out != null) this.buffers.set(index, out!);
         return out;
+    }
+
+    /// The bytes of bufferView `index` (decoded, for meshopt views); empty
+    /// when unavailable.
+    private viewBytes(index: i32): Uint8Array {
+        if (this.views.has(index)) return this.views.get(index);
+        const v = dat(dget(this.json, "bufferViews"), index);
+        let out = new Uint8Array(0);
+        const meshopt = dget(dget(v, "extensions"), "EXT_meshopt_compression");
+        const decoder = this.meshoptDecoder;
+        if (meshopt != null && decoder != null) {
+            const source = this.buffer(<i32>num(meshopt, "buffer", 0));
+            if (source != null) {
+                const offset = <i32>num(meshopt, "byteOffset", 0);
+                const compressed = source.subarray(offset, offset + <i32>num(meshopt, "byteLength", 0));
+                const count = <i32>num(meshopt, "count", 0);
+                const stride = <i32>num(meshopt, "byteStride", 0);
+                const decoded = new Uint8Array(count * stride);
+                if (decoder.decodeGltfBuffer(decoded, count, stride, compressed, str(meshopt, "mode", ""),
+                        str(meshopt, "filter", "NONE"))) {
+                    out = decoded;
+                } else {
+                    this.warn("meshopt: " + decoder.error);
+                }
+            }
+        } else {
+            const b = this.buffer(<i32>num(v, "buffer", 0));
+            if (b != null) {
+                const offset = <i32>num(v, "byteOffset", 0);
+                out = b.subarray(offset, offset + <i32>num(v, "byteLength", 0));
+            }
+        }
+        this.views.set(index, out);
+        return out;
+    }
+
+    private viewStride(index: i32): i32 {
+        return <i32>num(dat(dget(this.json, "bufferViews"), index), "byteStride", 0);
     }
 
     /// Accessor `index` as floats (normalized integers scaled to [0, 1] or
@@ -292,16 +417,39 @@ class GLTFParser {
         const ct = <i32>num(a, "componentType", 5126);
         const normalized = dbool(dget(a, "normalized"));
         const out = new Float32Array(count * n);
-        const bv = <i32>num(a, "bufferView", -1);
-        if (bv < 0) return out;   // all zeros (sparse accessors are not read)
-        const v = this.view(bv);
         const size = componentSize(ct);
-        const stride = v[2] > 0 ? v[2] : size * n;
-        const base = v[0] + <i32>num(a, "byteOffset", 0);
-        const b = this.bytes;
-        for (let i = 0; i < count; i++) {
-            const at = base + i * stride;
-            for (let c = 0; c < n; c++) out[i * n + c] = <f32>readComponent(b, at + c * size, ct, normalized);
+        const bv = <i32>num(a, "bufferView", -1);
+        if (bv >= 0) {
+            const b = this.viewBytes(bv);
+            const vs = this.viewStride(bv);
+            const stride = vs > 0 ? vs : size * n;
+            const base = <i32>num(a, "byteOffset", 0);
+            for (let i = 0; i < count; i++) {
+                const at = base + i * stride;
+                if (at + size * n > b.length) break;
+                for (let c = 0; c < n; c++) out[i * n + c] = <f32>readComponent(b, at + c * size, ct, normalized);
+            }
+        }
+        // Sparse: values replacing some elements (of zeros without a view).
+        const sparse = dget(a, "sparse");
+        if (sparse != null) {
+            const sc = <i32>num(sparse, "count", 0);
+            const ind = dget(sparse, "indices");
+            const val = dget(sparse, "values");
+            const ib = this.viewBytes(<i32>num(ind, "bufferView", -1));
+            const ibase = <i32>num(ind, "byteOffset", 0);
+            const ict = <i32>num(ind, "componentType", 5125);
+            const isize = componentSize(ict);
+            const vb = this.viewBytes(<i32>num(val, "bufferView", -1));
+            const vbase = <i32>num(val, "byteOffset", 0);
+            for (let i = 0; i < sc; i++) {
+                if (ibase + (i + 1) * isize > ib.length || vbase + (i + 1) * size * n > vb.length) break;
+                const target = <i32>readComponent(ib, ibase + i * isize, ict, false);
+                if (target < 0 || target >= count) continue;
+                for (let c = 0; c < n; c++) {
+                    out[target * n + c] = <f32>readComponent(vb, vbase + (i * n + c) * size, ct, normalized);
+                }
+            }
         }
         return out;
     }
@@ -336,6 +484,9 @@ class GLTFParser {
                 }
             }
         }
+        // EXT_mesh_gpu_instancing: each mesh becomes an InstancedMesh.
+        const gpuInstancing = dget(dget(def, "extensions"), "EXT_mesh_gpu_instancing");
+        if (gpuInstancing != null && meshes.length > 0) this.instance(gpuInstancing, objects, meshes);
         this.meshesOf.push(meshes);
         const cameraIndex = <i32>num(def, "camera", -1);
         if (cameraIndex >= 0) {
@@ -380,6 +531,38 @@ class GLTFParser {
             if (s != null && s.length == 3) node.scale.set(s[0], s[1], s[2]);
         }
         return node;
+    }
+
+    private instance(def: Dynamic?, objects: Array<Object3D>, meshes: Array<Mesh>): void {
+        const attrs = dget(def, "attributes");
+        const t = <i32>num(attrs, "TRANSLATION", -1);
+        const r = <i32>num(attrs, "ROTATION", -1);
+        const sc = <i32>num(attrs, "SCALE", -1);
+        const c = <i32>num(attrs, "_COLOR_0", -1);
+        const translations = t >= 0 ? this.floats(t) : new Float32Array(0);
+        const rotations = r >= 0 ? this.floats(r) : new Float32Array(0);
+        const scales = sc >= 0 ? this.floats(sc) : new Float32Array(0);
+        const colors = c >= 0 ? this.floats(c) : new Float32Array(0);
+        const count = max<i32>(max<i32>(translations.length / 3, rotations.length / 4), scales.length / 3);
+        if (count == 0) return;
+        const p = new Vector3(), q = new Quaternion(), s = new Vector3(), m = new Matrix4(), color = new Color();
+        const colorSize = c >= 0 ? colors.length / count : 0;
+        for (let i = 0; i < meshes.length; i++) {
+            const mesh = meshes[i];
+            if (mesh instanceof SkinnedMesh) continue;
+            const im = new InstancedMesh(mesh.geometry, mesh.material, count);
+            for (let k = 0; k < count; k++) {
+                p.set(0, 0, 0); q.set(0, 0, 0, 1); s.set(1, 1, 1);
+                if (translations.length >= (k + 1) * 3) p.set(translations[k * 3], translations[k * 3 + 1], translations[k * 3 + 2]);
+                if (rotations.length >= (k + 1) * 4) q.set(rotations[k * 4], rotations[k * 4 + 1], rotations[k * 4 + 2], rotations[k * 4 + 3]);
+                if (scales.length >= (k + 1) * 3) s.set(scales[k * 3], scales[k * 3 + 1], scales[k * 3 + 2]);
+                im.setMatrixAt(k, m.compose(p, q, s));
+                if (colorSize >= 3) im.setColorAt(k, color.setRGB(colors[k * colorSize], colors[k * colorSize + 1], colors[k * colorSize + 2]));
+            }
+            im.name = mesh.name;
+            for (let o = 0; o < objects.length; o++) if (objects[o] === mesh) objects[o] = im;
+            meshes[i] = im;
+        }
     }
 
     /// three.js-style unique, sanitized names ("node_<index>" when unnamed).
@@ -554,7 +737,9 @@ class GLTFParser {
         } else {
             const physical = dget(ext, "KHR_materials_clearcoat") != null
                 || dget(ext, "KHR_materials_sheen") != null || dget(ext, "KHR_materials_ior") != null
-                || dget(ext, "KHR_materials_specular") != null;
+                || dget(ext, "KHR_materials_specular") != null || dget(ext, "KHR_materials_transmission") != null
+                || dget(ext, "KHR_materials_volume") != null || dget(ext, "KHR_materials_iridescence") != null
+                || dget(ext, "KHR_materials_anisotropy") != null || dget(ext, "KHR_materials_dispersion") != null;
             const m: MeshStandardMaterial = physical ? <MeshStandardMaterial>new MeshPhysicalMaterial() : new MeshStandardMaterial();
             if (factor != null && factor.length == 4) {
                 m.color.setRGB(factor[0], factor[1], factor[2]);
@@ -593,6 +778,14 @@ class GLTFParser {
                 if (cc != null) {
                     p.clearcoat = num(cc, "clearcoatFactor", 0);
                     p.clearcoatRoughness = num(cc, "clearcoatRoughnessFactor", 0);
+                    p.clearcoatMap = this.optTexture(dget(cc, "clearcoatTexture"), false);
+                    p.clearcoatRoughnessMap = this.optTexture(dget(cc, "clearcoatRoughnessTexture"), false);
+                    const ccn = dget(cc, "clearcoatNormalTexture");
+                    if (ccn != null) {
+                        p.clearcoatNormalMap = this.texture(ccn, false);
+                        const scale = num(ccn, "scale", 1);
+                        p.clearcoatNormalScale.set(scale, -scale);
+                    }
                 }
                 const sheen = dget(ext, "KHR_materials_sheen");
                 if (sheen != null) {
@@ -600,6 +793,8 @@ class GLTFParser {
                     const sc = Dynamic.asNumbersOrNull(dget(sheen, "sheenColorFactor"));
                     if (sc != null && sc.length == 3) p.sheenColor.setRGB(sc[0], sc[1], sc[2]);
                     p.sheenRoughness = num(sheen, "sheenRoughnessFactor", 0);
+                    p.sheenColorMap = this.optTexture(dget(sheen, "sheenColorTexture"), true);
+                    p.sheenRoughnessMap = this.optTexture(dget(sheen, "sheenRoughnessTexture"), false);
                 }
                 const ior = dget(ext, "KHR_materials_ior");
                 if (ior != null) p.ior = num(ior, "ior", 1.5);
@@ -608,7 +803,39 @@ class GLTFParser {
                     p.specularIntensity = num(spec, "specularFactor", 1);
                     const sc = Dynamic.asNumbersOrNull(dget(spec, "specularColorFactor"));
                     if (sc != null && sc.length == 3) p.specularColor.setRGB(sc[0], sc[1], sc[2]);
+                    p.specularIntensityMap = this.optTexture(dget(spec, "specularTexture"), false);
+                    p.specularColorMap = this.optTexture(dget(spec, "specularColorTexture"), true);
                 }
+                const tr = dget(ext, "KHR_materials_transmission");
+                if (tr != null) {
+                    p.transmission = num(tr, "transmissionFactor", 0);
+                    p.transmissionMap = this.optTexture(dget(tr, "transmissionTexture"), false);
+                }
+                const volume = dget(ext, "KHR_materials_volume");
+                if (volume != null) {
+                    p.thickness = num(volume, "thicknessFactor", 0);
+                    p.thicknessMap = this.optTexture(dget(volume, "thicknessTexture"), false);
+                    p.attenuationDistance = num(volume, "attenuationDistance", Infinity);
+                    const ac = Dynamic.asNumbersOrNull(dget(volume, "attenuationColor"));
+                    if (ac != null && ac.length == 3) p.attenuationColor.setRGB(ac[0], ac[1], ac[2]);
+                }
+                const irid = dget(ext, "KHR_materials_iridescence");
+                if (irid != null) {
+                    p.iridescence = num(irid, "iridescenceFactor", 0);
+                    p.iridescenceIOR = num(irid, "iridescenceIor", 1.3);
+                    p.iridescenceThicknessRange = [num(irid, "iridescenceThicknessMinimum", 100),
+                        num(irid, "iridescenceThicknessMaximum", 400)];
+                    p.iridescenceMap = this.optTexture(dget(irid, "iridescenceTexture"), false);
+                    p.iridescenceThicknessMap = this.optTexture(dget(irid, "iridescenceThicknessTexture"), false);
+                }
+                const aniso = dget(ext, "KHR_materials_anisotropy");
+                if (aniso != null) {
+                    p.anisotropy = num(aniso, "anisotropyStrength", 0);
+                    p.anisotropyRotation = num(aniso, "anisotropyRotation", 0);
+                    p.anisotropyMap = this.optTexture(dget(aniso, "anisotropyTexture"), false);
+                }
+                const dispersion = dget(ext, "KHR_materials_dispersion");
+                if (dispersion != null) p.dispersion = num(dispersion, "dispersion", 0);
             }
             material = m;
         }
@@ -635,6 +862,10 @@ class GLTFParser {
         else if (m instanceof PointsMaterial) (m as PointsMaterial).color.setRGB(factor[0], factor[1], factor[2]);
     }
 
+    private optTexture(info: Dynamic?, srgb: bool): Texture? {
+        return info != null ? this.texture(info, srgb) : null;
+    }
+
     /// A textureInfo ({index, texCoord, extensions}) as a Texture.
     private texture(info: Dynamic?, srgb: bool): Texture? {
         const index = <i32>num(info, "index", -1);
@@ -647,7 +878,9 @@ class GLTFParser {
         const key = index.toString() + (srgb ? "s" : "l") + channel.toString()
             + (transform != null ? Dynamic.toText(transform) : "");
         if (this.textures.has(key)) return this.textures.get(key);
-        const source = <i32>num(tdef, "source", -1);
+        let source = <i32>num(tdef, "source", -1);
+        const webp = dget(dget(tdef, "extensions"), "EXT_texture_webp");
+        if (webp != null) source = <i32>num(webp, "source", <f64>source);
         const images = arr(this.json, "images");
         if (source < 0 || source >= images.length) return null;
         const texture = new DataTexture(new Uint8Array(0), 0, 0);
@@ -688,18 +921,25 @@ class GLTFParser {
             this.decodes.get(source).textures.push(texture);
             return;
         }
-        const listener = new TextureDecode(this.context);
+        const context = this.context;
+        if (context == null) return;   // parsing without a context: no images
+        const listener = new TextureDecode(context);
         listener.textures.push(texture);
         this.decodes.set(source, listener);
         const image = dat(dget(this.json, "images"), source);
         const bv = <i32>num(image, "bufferView", -1);
-        if (bv < 0) {
-            this.context.log("three: GLTFLoader: external image URIs are not supported");
+        let bytes: Uint8Array? = null;
+        if (bv >= 0) bytes = this.viewBytes(bv);
+        else {
+            const uri = str(image, "uri", "");
+            if (uri.startsWith("data:")) bytes = decodeDataUri(uri);
+        }
+        if (bytes == null || bytes.length == 0) {
+            this.warn("external image URIs are not supported");
             return;
         }
-        const v = this.view(bv);
         pendingDecodes.push(listener);
-        this.context.decodeImage(this.data.slice(v[0], v[0] + v[1]), listener);
+        context.decodeImage(bytes.slice().buffer, listener);
     }
 
     // ------------------------------------------------------------- cameras & lights
@@ -812,6 +1052,38 @@ class GLTFParser {
 }
 
 // ----------------------------------------------------------------- helpers
+
+/// The bytes of a base64 data: URI (null when not base64).
+function decodeDataUri(uri: string): Uint8Array? {
+    const comma = uri.indexOf(",");
+    if (comma < 0 || !uri.substring(0, comma).endsWith(";base64")) return null;
+    return base64Decode(uri, comma + 1);
+}
+
+function base64Value(c: i32): i32 {
+    if (c >= 65 && c <= 90) return c - 65;
+    if (c >= 97 && c <= 122) return c - 71;
+    if (c >= 48 && c <= 57) return c + 4;
+    if (c == 43 || c == 45) return 62;
+    if (c == 47 || c == 95) return 63;
+    return -1;
+}
+
+export function base64Decode(text: string, start: i32 = 0): Uint8Array {
+    const out = new Uint8Array((text.length - start) * 3 / 4 + 3);
+    let n = 0, acc: u32 = 0, bits = 0;
+    for (let i = start; i < text.length; i++) {
+        const v = base64Value(text.charCodeAt(i));
+        if (v < 0) continue;   // padding, whitespace
+        acc = (acc << 6) | <u32>v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out[n++] = <u8>((acc >> <u32>bits) & 255);
+        }
+    }
+    return out.slice(0, n);
+}
 
 /// Dynamic.get, but null for a null or non-table value (Dynamic.get traps).
 function dget(value: Dynamic?, key: string): Dynamic? {

@@ -445,11 +445,28 @@ export class Demo extends Layout {
   BlobAsset `robot`; no URLs, no callbacks, no `LoadingManager`. Embedded
   images decode asynchronously; their textures fill in a few frames later.
   Import loaders from `three/addons/loaders/...`.
-- GLTFLoader reads binary `.glb` only, without Draco, meshopt, KTX2 or
-  sparse accessors; extensions read: KHR_lights_punctual,
-  KHR_materials_unlit, emissive_strength, clearcoat, sheen, ior, specular,
-  KHR_texture_transform. `gltf.parser`, `gltf.userData` and `extras` are not
-  exposed.
+- GLTFLoader reads `.glb`, and `.gltf` JSON whose buffers and images are
+  base64 `data:` URIs (external files are not read: there are no URLs).
+  Extensions read: KHR_lights_punctual, KHR_materials_unlit,
+  emissive_strength, clearcoat, sheen, ior, specular, transmission, volume,
+  iridescence, anisotropy, dispersion (with their textures),
+  KHR_texture_transform, KHR_mesh_quantization, EXT_texture_webp,
+  EXT_mesh_gpu_instancing (with `_COLOR_0`) and EXT_meshopt_compression;
+  sparse accessors too. Not read: Draco, KTX2 / Basis textures
+  (KHR_texture_basisu), KHR_materials_variants, TEXCOORD_2 and up (the
+  renderer has two uv sets). A file that *requires* another extension
+  fails (`loader.error`), as three.js throws. `gltf.parser`,
+  `gltf.userData` and `extras` are not exposed.
+- **The meshopt decoder is AnimaScript**, not WebAssembly:
+  `three/addons/libs/meshopt_decoder` exports `MeshoptDecoder` for
+  `setMeshoptDecoder`, as three.js's module. It reads the attribute codec
+  version 0 (meshoptimizer's default for EXT_meshopt_compression), the
+  triangle and index codecs and the three filters.
+- `GLTFLoader`'s context is optional: without one, `parse` still builds
+  the scene (no images; warnings in `loader.warnings`, the failure in
+  `loader.error`).
+- With anisotropy and neither tangents nor uvs, the tangent frame is any
+  frame around the normal (three.js's derivative frame degenerates).
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
   named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
 
