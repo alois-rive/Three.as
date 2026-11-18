@@ -67,6 +67,9 @@ rive . --artboard=Shapes                          # curves, extrusion, a Rive pa
 rive . --artboard=Interactive                     # orbit, click a Rive switch in 3D, render target
 rive . --artboard=Deform                          # GPU skinning and morph targets
 rive . --artboard=Model                           # a glTF model, animated
+rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a live artboard
+rive . --artboard=Environment                     # image-based lighting
+rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```

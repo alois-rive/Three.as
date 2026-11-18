@@ -139,16 +139,19 @@ In steps, each committed with tests and a screenshot check:
 - OBJLoader. (ObjectLoader dropped: three.js JSON scenes are rare in Rive
   projects.) meshopt/Draco/KTX2 decoding are left for later.
 
-### M5: lighting quality
+### M5: lighting quality (done)
 
-- Shadows: DirectionalLight, SpotLight, PointLight (cube) shadow maps with
-  PCF/PCFSoft/VSM, `castShadow`/`receiveShadow`.
-- Environment: equirect/cube environment maps, a PMREMGenerator
-  equivalent, `scene.environment`, `envMap` and `envMapIntensity`.
-- Tone mapping (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral) and
-  `toneMappingExposure`.
+- Shadows: directional, spot and point (six faces) shadow maps in a depth
+  array texture, Basic/PCF/PCFSoft filtering, bias, normalBias, radius,
+  intensity.
+- Environment: equirectangular `scene.environment` / `envMap` lighting with
+  three.js's IBL maths over the map's mip chain (not a GGX-prefiltered
+  PMREM), environmentIntensity/Rotation, PMREMGenerator shim.
+- Tone mapping (came in M2c).
 - ShaderMaterial / RawShaderMaterial with WGSL shader assets and typed
   uniforms.
+- Later: cube textures and cube environment maps, a real PMREM (GGX
+  prefiltering pass), alpha-tested shadows.
 
 ### M6: post-processing and performance
 

@@ -180,8 +180,25 @@ export class Demo extends Layout {
 - `flatShading` is on the `Material` base (ignored by unlit materials).
 - Fog is mixed in linear space after tone mapping and before the sRGB
   encode, so a fully fogged surface matches a background of the fog colour.
-- `envMap` / `envMapIntensity` exist but do nothing until environment maps
-  land (M5).
+- **Environment maps** light MeshStandard/Physical materials only
+  (Lambert/Phong/Basic ignore `envMap`; no `reflectivity`/`combine`), with
+  three.js's IBL maths, but **reflections read the equirectangular map's own
+  mip chain by roughness, not a GGX-prefiltered PMREM**: rough reflections
+  are box-blurred. One environment per render: `scene.environment`, else the
+  first material `envMap` drawn. Equirectangular textures only (no cube
+  textures yet); clearcoat ignores the environment.
+  `PMREMGenerator.fromEquirectangular(t).texture` is a shim returning `t`
+  prepared; `fromScene`, `fromCubemap` and RoomEnvironment are not ported.
+- **ShaderMaterial / RawShaderMaterial take a WGSL shader asset**, not GLSL
+  strings: `{ shader: "shaders/wave" }` (its project path without `.wgsl`).
+  Nothing is injected: the shader declares the bindings it uses by a fixed
+  contract (frame block at group 0, object block at group 1, the material's
+  uniforms at group 2; see `three/materials/ShaderMaterial.as`) and outputs
+  sRGB, premultiplied colour. `uniforms` is a `Map<string, UniformBase>` of
+  `Uniform<T>` (f64, Vector2/3/4, Color, Matrix4, Texture), packed in
+  insertion order: `material.uniform<f64>("time").value += dt`. `defines`,
+  `extensions`, `lights`, `fog`, `wireframe` and custom points/lines are not
+  supported for shader materials.
 
 ## Curves and shapes
 
@@ -304,6 +321,25 @@ export class Demo extends Layout {
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
   named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
 
+## Shadows
+
+- `renderer.shadowMap.enabled/type/autoUpdate/needsUpdate`, `castShadow` /
+  `receiveShadow`, `light.shadow.mapSize/bias/normalBias/radius/intensity/
+  camera` as three.js, for directional, spot and point lights.
+- Shadow maps share one depth **array texture** (needs texture arrays; else
+  shadows are off with a log line): at most **12 layers**, one per
+  directional or spot light and six per point light; the layer size is the
+  largest `mapSize` (256 to 2048). Lights beyond 12 layers cast no shadow.
+- `VSMShadowMap` renders as `PCFSoftShadowMap` (PCF 5x5); `shadow.radius`
+  scales the PCF step.
+- Casters always render their back faces (`shadowSide` is not read) and
+  ignore `alphaTest`/`alphaMap` (no cut-out shadows) and
+  `customDepthMaterial`. Point light faces are rendered at 98 degrees so
+  filtering stays inside a face.
+- Directional shadow cameras are not fitted automatically, as in three.js:
+  set `shadow.camera.left/right/top/bottom/near/far` and call
+  `updateProjectionMatrix()`.
+
 ## Lighting
 
 - Intensities are three.js's physically based ones (r155+, no legacy
@@ -355,5 +391,5 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
-RectAreaLight (not planned: it needs three.js's LTC tables), cube textures, shadows,
-environment maps, ShaderMaterial, ObjectLoader, post-processing, `EventDispatcher` events (`dispose` events are internal).
+RectAreaLight (not planned: it needs three.js's LTC tables),
+cube textures, ObjectLoader, post-processing, `EventDispatcher` events (`dispose` events are internal).

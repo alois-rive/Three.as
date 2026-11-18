@@ -22,9 +22,13 @@ export const FRAME_VIEWPORT: i32 = 480;
 export const FRAME_ENV: i32 = 496;
 export const FRAME_ENV_ROTATION: i32 = 512;
 export const FRAME_ENV_FLAGS: i32 = 576;
-export const FRAME_LIGHTS: i32 = 592;
-export const LIGHT_BYTES: i32 = 64;
-export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1104
+export const FRAME_SHADOW_PARAMS: i32 = 592;
+export const FRAME_LIGHTS: i32 = 608;
+export const LIGHT_BYTES: i32 = 96;
+export const FRAME_SHADOW_TILES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1376
+export const SHADOW_TILE_BYTES: i32 = 80;
+export const MAX_SHADOW_TILES: i32 = 12;
+export const FRAME_BYTES: i32 = FRAME_SHADOW_TILES + MAX_SHADOW_TILES * SHADOW_TILE_BYTES;   // 2336
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;
@@ -55,6 +59,7 @@ export const FLAG_VERTEX_COLORS: u32 = 1;
 export const FLAG_FOG: u32 = 2;
 export const FLAG_TRANSPARENT: u32 = 4;
 export const FLAG_TONE_MAPPED: u32 = 8;
+export const FLAG_RECEIVE_SHADOW: u32 = 16;
 
 export const LIGHT_DIRECTIONAL: f32 = 0;
 export const LIGHT_POINT: f32 = 1;

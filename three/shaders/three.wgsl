@@ -39,6 +39,7 @@ const FLAG_VERTEX_COLORS: u32 = 1u;
 const FLAG_FOG: u32 = 2u;
 const FLAG_TRANSPARENT: u32 = 4u;
 const FLAG_TONE_MAPPED: u32 = 8u;
+const FLAG_RECEIVE_SHADOW: u32 = 16u;
 
 const LIGHT_DIRECTIONAL: f32 = 0.0;
 const LIGHT_POINT: f32 = 1.0;
@@ -61,6 +62,15 @@ struct Light {
     direction: vec4<f32>,  // xyz unit direction towards the light, w cos(cone)
     color: vec4<f32>,      // rgb colour x intensity (linear), w cut off distance
     params: vec4<f32>,     // x decay, y cos(penumbra edge)
+    shadow: vec4<f32>,     // x first shadow layer (-1: none), y bias, z normalBias, w radius
+    shadow2: vec4<f32>,    // x intensity, y 1 for a point light (six layers)
+};
+
+const MAX_SHADOW_TILES: u32 = 12u;
+
+struct ShadowTile {
+    matrix: mat4x4<f32>,   // world -> the light camera's clip space
+    params: vec4<f32>,
 };
 
 struct FrameU {
@@ -83,7 +93,9 @@ struct FrameU {
     env: vec4<f32>,          // x 1 when there is an environment, y intensity, z max mip
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
+    shadow_params: vec4<f32>, // x type (0 basic, 1 PCF, 2 PCF soft), y texel size
     lights: array<Light, 8>,
+    shadow_tiles: array<ShadowTile, 12>,
 };
 
 struct ObjU {
@@ -116,6 +128,8 @@ struct BonesU {
 @group(0) @binding(0) var<uniform> F: FrameU;
 @group(0) @binding(1) var t_env: texture_2d<f32>;
 @group(0) @binding(2) var s_env: sampler;
+@group(0) @binding(3) var t_shadow: texture_depth_2d_array;
+@group(0) @binding(4) var s_shadow: sampler_comparison;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
 @group(2) @binding(0) var t_map: texture_2d<f32>;
@@ -456,6 +470,55 @@ fn dfg_approx(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> vec2<f32> {
     return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
 }
 
+// ---------------------------------------------------------------- shadows
+
+/// How lit `world` is by `light`, 0 (shadowed) to 1, from its shadow map.
+fn shadow_factor(light: Light, world: vec3<f32>, normal: vec3<f32>) -> f32 {
+    let first = i32(light.shadow.x);
+    if (first < 0) {
+        return 1.0;
+    }
+    var layer = first;
+    if (light.shadow2.y > 0.5) {
+        // A point light: the cube face the point is in (+x -x +y -y +z -z).
+        let d = world - light.position.xyz;
+        let a = abs(d);
+        if (a.x >= a.y && a.x >= a.z) {
+            layer += select(1, 0, d.x > 0.0);
+        } else if (a.y >= a.z) {
+            layer += select(3, 2, d.y > 0.0);
+        } else {
+            layer += select(5, 4, d.z > 0.0);
+        }
+    }
+    let p = world + normal * light.shadow.z;
+    let clip = F.shadow_tiles[layer].matrix * vec4<f32>(p, 1.0);
+    let ndc = clip.xyz / clip.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (clip.w <= 0.0 || uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z > 1.0) {
+        return 1.0;
+    }
+    let depth = ndc.z + light.shadow.y;
+    let kind = u32(F.shadow_params.x);
+    var lit = 0.0;
+    if (kind == 0u) {
+        lit = textureSampleCompareLevel(t_shadow, s_shadow, uv, layer, depth);
+    } else {
+        let step = F.shadow_params.y * max(light.shadow.w, 1.0);
+        let reach = select(1, 2, kind == 2u);
+        var count = 0.0;
+        for (var y = -reach; y <= reach; y++) {
+            for (var x = -reach; x <= reach; x++) {
+                let o = vec2<f32>(f32(x), f32(y)) * step;
+                lit += textureSampleCompareLevel(t_shadow, s_shadow, uv + o, layer, depth);
+                count += 1.0;
+            }
+        }
+        lit /= count;
+    }
+    return mix(1.0, lit, light.shadow2.x);
+}
+
 fn distance_attenuation(d: f32, cutoff: f32, decay: f32) -> f32 {
     var falloff = 1.0 / max(pow(d, decay), 0.01);
     if (cutoff > 0.0) {
@@ -633,6 +696,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
                     let angle_cos = dot(L, light.direction.xyz);
                     radiance *= smoothstep(light.direction.w, light.params.y, angle_cos);
                 }
+            }
+            if ((flags & FLAG_RECEIVE_SHADOW) != 0u) {
+                radiance *= shadow_factor(light, in.world, normalize(in.normal) * face);
             }
             let dotNL = saturate(dot(N, L));
             var irradiance = dotNL * radiance;

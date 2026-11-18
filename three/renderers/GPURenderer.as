@@ -33,11 +33,12 @@ import {
     GPUCanvas, GPUTexture, GPUTextureDesc, GPUTextureView, GPUBuffer, GPUPipeline, GPUPipelineDesc,
     GPUColorTargetDesc, GPUDepthStencilDesc, GPUVertexBufferLayout, GPUVertexAttribute, GPUBindGroup,
     GPUBindGroupLayout, GPUBindGroupUBO, GPUBindGroupTexture, GPUBindGroupSampler, GPUColorAttachment,
-    GPUPassDesc, GPUSampler, GPUShaderModule, GPUBlendState, GPURenderPass,
+    GPUPassDesc, GPUSampler, GPUShaderModule, GPUBlendState, GPURenderPass, GPUTextureViewDesc,
 } from "rive/gpu";
 import {
     BufferUsage, TextureFormat, CompareFunction, CullMode, VertexFormat, VertexStepMode, LoadOp, StoreOp, Filter,
-    WrapMode, BlendFactor, FaceWinding, PrimitiveTopology, ColorWriteMask,
+    WrapMode, BlendFactor, FaceWinding, PrimitiveTopology, ColorWriteMask, TextureType, TextureViewDimension,
+    TextureAspect,
 } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 
@@ -78,8 +79,11 @@ import {
     BackSide, DoubleSide, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter,
     LinearMipmapLinearFilter, RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace, NoToneMapping,
     NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
-    EquirectangularReflectionMapping, EquirectangularRefractionMapping,
+    EquirectangularReflectionMapping, EquirectangularRefractionMapping, BasicShadowMap, PCFShadowMap,
+
 } from "../constants";
+import { LightShadow } from "../lights/LightShadow";
+import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
 import { RenderTarget } from "./RenderTarget";
@@ -87,7 +91,8 @@ import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
     FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_PROJ, FRAME_VIEWPORT, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES, OBJ_SPRITE,
-    FRAME_ENV, FRAME_ENV_ROTATION, FRAME_ENV_FLAGS,
+    FRAME_ENV, FRAME_ENV_ROTATION, FRAME_ENV_FLAGS, FRAME_SHADOW_PARAMS, FRAME_SHADOW_TILES, SHADOW_TILE_BYTES,
+    MAX_SHADOW_TILES, FLAG_RECEIVE_SHADOW,
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
@@ -188,6 +193,24 @@ export class GPURendererParameters {
     alpha: bool = false;
 }
 
+/// three.js's renderer.shadowMap.
+export class ShadowMapSettings {
+    /// Render shadow maps for lights with castShadow (meshes need castShadow
+    /// to cast and receiveShadow to receive).
+    enabled: bool = false;
+    /// BasicShadowMap, PCFShadowMap (default) or PCFSoftShadowMap
+    /// (VSMShadowMap renders as PCFSoftShadowMap).
+    type: i32 = PCFShadowMap;
+    /// Re-render the maps every frame (else only when needsUpdate is set).
+    autoUpdate: bool = true;
+    needsUpdate: bool = false;
+}
+
+// One shadow map layer: a light camera's view-projection.
+class ShadowTile {
+    matrix: Matrix4 = new Matrix4();
+}
+
 export class RenderInfo {
     frame: i32 = 0;
     calls: i32 = 0;
@@ -264,6 +287,7 @@ export class GPURenderer {
     /// Always sRGB here.
     readonly outputColorSpace: string = SRGBColorSpace;
     readonly info: RendererInfo = new RendererInfo();
+    readonly shadowMap: ShadowMapSettings = new ShadowMapSettings();
 
     private canvas: GPUCanvas? = null;
     private width: f64 = 0;
@@ -311,6 +335,25 @@ export class GPURenderer {
     private envView: GPUTextureView? = null;
     private envLevels: u32 = 1;
     private frameGroupView: GPUTextureView? = null;
+    private frameGroupShadow: GPUTextureView? = null;
+    // Shadows.
+    private shadowTex: GPUTexture? = null;
+    private shadowView: GPUTextureView? = null;
+    private shadowLayerViews: Array<GPUTextureView> = [];
+    private shadowSize: u32 = 0;
+    private shadowLayers: u32 = 0;
+    private dummyShadowView: GPUTextureView? = null;
+    private compareSampler: GPUSampler? = null;
+    private tileUbos: Array<GPUBuffer> = [];
+    private tileGroups: Array<GPUBindGroup> = [];
+    private tileStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
+    private tiles: Array<ShadowTile> = [];
+    private tileCount: i32 = 0;
+    private lightFirstTile: Map<i32, i32> = new Map<i32, i32>();
+    private casterMeshes: Array<Mesh> = [];
+    private casterItems: Array<DrawItem> = [];
+    private shadowPipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
+    private shadowsWarned: bool = false;
 
     private mainTargets: PassTargets = new PassTargets();
     private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
@@ -452,6 +495,7 @@ export class GPURenderer {
         this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
         this.collect(scene, camera, info.frame);
         const background = this.prepareBackground(scene, info.frame, canvas);
+        this.planShadows();
         this.prepareEnvironment(scene, info.frame, canvas);
         this.writeFrame(scene, camera);
         if (this.sortObjects) {
@@ -461,6 +505,9 @@ export class GPURenderer {
         // Per-draw blocks; mip chains render here, before the main pass.
         this.writeDraws(this.opaque, info.frame, canvas);
         this.writeDraws(this.transparent, info.frame, canvas);
+
+        // Shadow maps: one depth pass per light view, before the main pass.
+        this.renderShadows(canvas, info.frame);
 
         // The pass.
         const color = this.colorAttachment;
@@ -603,6 +650,18 @@ export class GPURenderer {
                 vertexLayout(16, VertexFormat.float4, 10),
             ]);
             this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
+            const sd = new GPUTextureDesc();
+            sd.width = 1; sd.height = 1;
+            sd.format = TextureFormat.depth32float;
+            sd.textureType = TextureType.array2D;
+            sd.renderTarget = true;
+            const dummyShadow = new GPUTexture(sd);
+            const dv = new GPUTextureViewDesc();
+            dv.dimension = TextureViewDimension.array2D;
+            dv.aspect = TextureAspect.depthOnly;
+            this.dummyShadowView = dummyShadow.view(dv);
+            this.compareSampler = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest,
+                WrapMode.clampToEdge, WrapMode.clampToEdge, CompareFunction.lessEqual);
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
             this.maxAnisotropy = features.anisotropicFiltering ? 16 : 1;
@@ -896,6 +955,7 @@ export class GPURenderer {
         this.opaque.length = 0;
         this.transparent.length = 0;
         this.lights.length = 0;
+        this.casterMeshes.length = 0;
         const stack = this.stack;
         stack.length = 0;
         stack.push(scene);
@@ -904,6 +964,7 @@ export class GPURenderer {
             if (!o.visible) continue;
             if (o.layers.test(camera.layers)) {
                 if (o instanceof LOD && (o as LOD).autoUpdate) (o as LOD).update(camera);
+                if (o.castShadow && o instanceof Mesh && this.shadowMap.enabled) this.casterMeshes.push(o as Mesh);
                 if (o instanceof Light) {
                     this.lights.push(o as Light);
                 } else if (o instanceof Mesh || o instanceof Line || o instanceof Points || o instanceof Sprite) {
@@ -1239,11 +1300,254 @@ export class GPURenderer {
         this.envTexture = view != null ? env : null;
         this.envLevels = env != null && view != null ? this.textures.levels(env) : 1;
         const bind = view != null ? view! : this.white!;
-        if (this.frameGroup == null || this.frameGroupView !== bind) {
+        const shadow = this.tileCount > 0 && this.shadowView != null ? this.shadowView! : this.dummyShadowView!;
+        if (this.frameGroup == null || this.frameGroupView !== bind || this.frameGroupShadow !== shadow) {
             this.frameGroup = new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
-                [new GPUBindGroupTexture(1, bind)], [new GPUBindGroupSampler(2, this.backgroundSampler(true))]);
+                [new GPUBindGroupTexture(1, bind), new GPUBindGroupTexture(3, shadow)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]);
             this.frameGroupView = bind;
+            this.frameGroupShadow = shadow;
         }
+    }
+
+    /// Assigns shadow map layers to the lights that cast shadows (directional
+    /// and spot: one, point: six; at most MAX_SHADOW_TILES) and computes their
+    /// light cameras.
+    private planShadows(): void {
+        this.tileCount = 0;
+        this.lightFirstTile.clear();
+        if (!this.shadowMap.enabled) return;
+        let lightSlot = 0;
+        let mapSize: f64 = 0;
+        for (let i = 0; i < this.lights.length; i++) {
+            const light = this.lights[i];
+            const point = light instanceof PointLight;
+            const directional = light instanceof DirectionalLight;
+            const spot = light instanceof SpotLight;
+            if (!directional && !spot && !point) continue;
+            if (lightSlot++ >= MAX_LIGHTS) break;
+            if (!light.castShadow) continue;
+            const need = point ? 6 : 1;
+            if (this.tileCount + need > MAX_SHADOW_TILES) continue;
+            const first = this.tileCount;
+            this.lightFirstTile.set(light.id, first);
+            light.getWorldPosition(_pos);
+            if (directional) {
+                const d = light as DirectionalLight;
+                const cam = d.shadow.camera;
+                d.target.getWorldPosition(_dir);
+                this.lookFrom(cam, _pos, _dir, 0, 1, 0);
+                this.setTile(first, cam, d.shadow);
+                mapSize = Math.max(mapSize, Math.max(d.shadow.mapSize.x, d.shadow.mapSize.y));
+            } else if (spot) {
+                const sl = light as SpotLight;
+                const cam = sl.shadow.camera as PerspectiveCamera;
+                cam.fov = 2 * sl.angle * sl.shadow.focus * 180 / Math.PI;
+                cam.aspect = 1;
+                if (sl.distance > 0) cam.far = sl.distance;
+                cam.updateProjectionMatrix();
+                sl.target.getWorldPosition(_dir);
+                this.lookFrom(cam, _pos, _dir, 0, 1, 0);
+                this.setTile(first, cam, sl.shadow);
+                mapSize = Math.max(mapSize, Math.max(sl.shadow.mapSize.x, sl.shadow.mapSize.y));
+            } else {
+                const pl = light as PointLight;
+                const cam = pl.shadow.camera as PerspectiveCamera;
+                // A little over 90 degrees, so filter taps near a face's edge
+                // stay inside it (the face is still picked by direction).
+                cam.fov = 98;
+                cam.aspect = 1;
+                cam.updateProjectionMatrix();
+                for (let f = 0; f < 6; f++) {
+                    const axis = f / 2;
+                    const sign: f64 = (f & 1) == 0 ? 1 : -1;
+                    _dir.copy(_pos);
+                    if (axis == 0) _dir.x += sign; else if (axis == 1) _dir.y += sign; else _dir.z += sign;
+                    if (axis == 1) this.lookFrom(cam, _pos, _dir, 0, 0, sign);
+                    else this.lookFrom(cam, _pos, _dir, 0, 1, 0);
+                    this.setTile(first + f, cam, pl.shadow);
+                }
+                mapSize = Math.max(mapSize, Math.max(pl.shadow.mapSize.x, pl.shadow.mapSize.y));
+            }
+            this.tileCount += need;
+        }
+        if (this.tileCount > 0) this.ensureShadowTexture(<u32>Math.max(256, Math.min(2048, mapSize)), <u32>this.tileCount);
+    }
+
+    private lookFrom(cam: Camera, from: Vector3, to: Vector3, ux: f64, uy: f64, uz: f64): void {
+        cam.position.copy(from);
+        cam.up.set(ux, uy, uz);
+        cam.lookAt(to);
+        cam.updateMatrixWorld();
+    }
+
+    private setTile(index: i32, cam: Camera, shadow: LightShadow): void {
+        while (this.tiles.length <= index) this.tiles.push(new ShadowTile());
+        this.tiles[index].matrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+        shadow.matrix.copy(this.tiles[index].matrix);
+    }
+
+    private ensureShadowTexture(size: u32, layers: u32): void {
+        const maxSize = this.context.features().maxTextureSize2D;
+        if (size > maxSize) size = maxSize;
+        if (this.shadowTex != null && this.shadowSize == size && this.shadowLayers >= layers) return;
+        if (!this.context.features().textureArrays) {
+            if (!this.shadowsWarned) {
+                this.context.log("three: shadows disabled: texture arrays are not supported here");
+                this.shadowsWarned = true;
+            }
+            this.tileCount = 0;
+            return;
+        }
+        releaseTex(this.shadowTex);
+        const d = new GPUTextureDesc();
+        d.width = size;
+        d.height = size;
+        d.depthOrArrayLayers = max<u32>(layers, this.shadowLayers);
+        d.format = TextureFormat.depth32float;
+        d.textureType = TextureType.array2D;
+        d.renderTarget = true;
+        const tex = new GPUTexture(d);
+        this.shadowTex = tex;
+        this.shadowSize = size;
+        this.shadowLayers = d.depthOrArrayLayers;
+        const sv = new GPUTextureViewDesc();
+        sv.dimension = TextureViewDimension.array2D;
+        sv.aspect = TextureAspect.depthOnly;
+        this.shadowView = tex.view(sv);
+        this.shadowLayerViews = [];
+        for (let i: u32 = 0; i < this.shadowLayers; i++) {
+            const lv = new GPUTextureViewDesc();
+            lv.dimension = TextureViewDimension.texture2D;
+            lv.baseLayer = i;
+            lv.layerCount = 1;
+            this.shadowLayerViews.push(tex.view(lv));
+        }
+    }
+
+    /// The depth passes: every caster, once per shadow layer.
+    private renderShadows(canvas: GPUCanvas, frame: i32): void {
+        if (this.tileCount == 0 || this.shadowTex == null) return;
+        if (!this.shadowMap.autoUpdate && !this.shadowMap.needsUpdate) return;
+        this.shadowMap.needsUpdate = false;
+        // Caster draws share the main draws' per-object blocks.
+        const items = this.casterItems;
+        items.length = 0;
+        for (let i = 0; i < this.casterMeshes.length; i++) this.collectCaster(this.casterMeshes[i], frame, items);
+        this.writeDraws(items, frame, canvas);
+        // A frame block per layer, holding its view-projection.
+        while (this.tileUbos.length < this.tileCount) {
+            const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
+            this.tileUbos.push(ubo);
+            this.tileGroups.push(new GPUBindGroup(this.frameLayout!, [new GPUBindGroupUBO(0, ubo)],
+                [new GPUBindGroupTexture(1, this.white!), new GPUBindGroupTexture(3, this.dummyShadowView!)],
+                [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!)]));
+        }
+        for (let t = 0; t < this.tileCount; t++) {
+            this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
+            this.tileUbos[t].update(0, this.tileStaging, 64);
+            const pd = new GPUPassDesc();
+            pd.label = "three shadow";
+            pd.color = [];
+            pd.depthView = this.shadowLayerViews[t];
+            pd.depthLoadOp = LoadOp.clear;
+            pd.depthStoreOp = StoreOp.store;
+            pd.depthClearValue = 1;
+            const pass = canvas.beginRenderPass(pd);
+            let lastKey = -1;
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const g = item.geometry!;
+                const state = item.state;
+                if (state.objGroup == null) continue;
+                const key = item.pipelineKey;
+                if (key != lastKey) {
+                    pass.setPipeline(this.shadowPipeline(key));
+                    pass.setBindGroup(0, this.tileGroups[t]);
+                    lastKey = key;
+                }
+                pass.setBindGroup(1, state.objGroup!);
+                const pos = item.positionOverride;
+                pass.setVertexBuffer(0, pos != null ? pos : g.position!);
+                pass.setVertexBuffer(1, g.normal!);
+                pass.setVertexBuffer(2, g.uv!);
+                pass.setVertexBuffer(3, g.color!);
+                pass.setVertexBuffer(4, item.instances);
+                if (item.skinned) {
+                    pass.setVertexBuffer(5, g.skinIndex!);
+                    pass.setVertexBuffer(6, g.skinWeight!);
+                }
+                const index = item.index;
+                if (index != null) {
+                    pass.setIndexBuffer(index, item.indexFormat);
+                    pass.drawIndexed(<u32>item.count, item.instanceCount, <u32>item.first);
+                } else {
+                    pass.draw(<u32>item.count, item.instanceCount, <u32>item.first);
+                }
+            }
+            pass.finish();
+        }
+    }
+
+    /// Shadow draws of a caster (triangles only), with its deformation.
+    private collectCaster(mesh: Mesh, frame: i32, out: Array<DrawItem>): void {
+        const geometry = mesh.geometry;
+        const g = this.geometries.get(geometry);
+        if (g == null) return;
+        const material = mesh.material;
+        let instances = this.identityInstance!;
+        let instanceCount: u32 = 1;
+        if (mesh instanceof InstancedMesh) {
+            const im = mesh as InstancedMesh;
+            if (im.count <= 0) return;
+            instances = this.instanceBuffer(im);
+            instanceCount = <u32>im.count;
+        }
+        const stateKey = mesh.id * 64;
+        let state: DrawState;
+        if (this.states.has(stateKey)) state = this.states.get(stateKey);
+        else {
+            state = new DrawState();
+            this.states.set(stateKey, state);
+        }
+        const item = new DrawItem(mesh, material, g, state, instances);
+        item.instanceCount = instanceCount;
+        item.first = 0;
+        item.count = g.count;
+        if (g.indexed) {
+            item.index = g.index;
+            item.indexFormat = <u32>g.indexFormat;
+        }
+        // three.js renders back faces of front-sided casters.
+        const side = material.side;
+        item.pipelineKey = side == DoubleSide ? 1 : side == BackSide ? 0 : 2;
+        this.deform(mesh, geometry, g, item, frame);
+        out.push(item);
+    }
+
+    private shadowPipeline(key: i32): GPUPipeline {
+        if (this.shadowPipelines.has(key)) return this.shadowPipelines.get(key);
+        const ds = new GPUDepthStencilDesc();
+        ds.format = TextureFormat.depth32float;
+        ds.compare = CompareFunction.lessEqual;
+        ds.write = true;
+        ds.depthBias = 2;
+        ds.depthBiasSlopeScale = 1.5;
+        const d = new GPUPipelineDesc();
+        d.vertexModule = this.module;
+        const skinned = (key & KEY_SKINNED) != 0;
+        d.vertexEntryPoint = skinned ? "vs_skinned" : "vs_main";
+        d.colorTargets = [];
+        d.vertexBuffers = skinned ? this.skinBuffers : this.vertexBuffers;
+        d.bindGroupLayouts = [this.frameLayout, this.objLayout];
+        const cull = key & KEY_CULL_MASK;
+        d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
+        d.winding = FaceWinding.counterClockwise;
+        d.depthStencil = ds;
+        d.sampleCount = 1;
+        const p = new GPUPipeline(d);
+        this.shadowPipelines.set(key, p);
+        return p;
     }
 
     private backgroundSampler(mipmapped: bool): GPUSampler {
@@ -1309,6 +1613,7 @@ export class GPURenderer {
                 continue;
             }
             const base = (FRAME_LIGHTS + count * LIGHT_BYTES) >> 2;
+            this.writeLightShadow(f, base, light);
             light.getWorldPosition(_pos);
             f[base] = <f32>_pos.x; f[base + 1] = <f32>_pos.y; f[base + 2] = <f32>_pos.z;
             f[base + 8] = <f32>(light.color.r * k);
@@ -1390,6 +1695,15 @@ export class GPURenderer {
             u[b + 2] = bt.flipY ? 1 : 0;
             u[b + 3] = bt.premultiplyAlpha ? 1 : 0;
         }
+        // Shadow layers.
+        o = FRAME_SHADOW_PARAMS >> 2;
+        const type = this.shadowMap.type;
+        f[o] = type == BasicShadowMap ? 0 : type == PCFShadowMap ? 1 : 2;
+        f[o + 1] = this.shadowSize > 0 ? <f32>(1.0 / <f64>this.shadowSize) : 0;
+        for (let t = 0; t < this.tileCount; t++) {
+            this.tiles[t].matrix.mat4.writeToBuffer(buf, FRAME_SHADOW_TILES + t * SHADOW_TILE_BYTES);
+        }
+
         // Environment.
         o = FRAME_ENV >> 2;
         const et = this.envTexture;
@@ -1413,6 +1727,24 @@ export class GPURenderer {
             f[o] = 0;
         }
         this.frameUbo!.update(0, buf);
+    }
+
+    /// A light's shadow fields (Light.shadow, Light.shadow2 in the shader).
+    private writeLightShadow(f: Float32Array, base: i32, light: Light): void {
+        const s = base + 16;
+        f[s] = -1; f[s + 1] = 0; f[s + 2] = 0; f[s + 3] = 1;
+        f[s + 4] = 0; f[s + 5] = 0; f[s + 6] = 0; f[s + 7] = 0;
+        if (!this.lightFirstTile.has(light.id)) return;
+        let shadow: LightShadow;
+        if (light instanceof DirectionalLight) shadow = (light as DirectionalLight).shadow;
+        else if (light instanceof SpotLight) shadow = (light as SpotLight).shadow;
+        else shadow = (light as PointLight).shadow;
+        f[s] = <f32>this.lightFirstTile.get(light.id);
+        f[s + 1] = <f32>shadow.bias;
+        f[s + 2] = <f32>shadow.normalBias;
+        f[s + 3] = <f32>(this.shadowMap.type == BasicShadowMap ? 1 : shadow.radius);
+        f[s + 4] = <f32>shadow.intensity;
+        f[s + 5] = light instanceof PointLight ? 1 : 0;
     }
 
     private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
@@ -1492,6 +1824,7 @@ export class GPURenderer {
             if (mu.fog) flags |= FLAG_FOG;
             if (item.material.transparent) flags |= FLAG_TRANSPARENT;
             if (item.material.toneMapped && this.toneMapping != NoToneMapping) flags |= FLAG_TONE_MAPPED;
+            if (object.receiveShadow && this.tileCount > 0) flags |= FLAG_RECEIVE_SHADOW;
             o = OBJ_FLAGS >> 2;
             u[o] = premul; u[o + 1] = flags; u[o + 2] = 0; u[o + 3] = 0;
             state.ubo.update(0, buf);
