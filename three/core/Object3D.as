@@ -6,6 +6,7 @@ import { Quaternion } from "../math/Quaternion";
 import { Euler } from "../math/Euler";
 import { Matrix4 } from "../math/Matrix4";
 import { Matrix3 } from "../math/Matrix3";
+import { Layers } from "./Layers";
 
 let _object3DId: i32 = 0;
 
@@ -39,6 +40,8 @@ export class Object3D {
     matrixWorldAutoUpdate: bool = Object3D.DEFAULT_MATRIX_WORLD_AUTO_UPDATE;
     matrixWorldNeedsUpdate: bool = false;
 
+    /// Rendered only when it shares a layer with the camera.
+    layers: Layers = new Layers();
     visible: bool = true;
     castShadow: bool = false;
     receiveShadow: bool = false;
@@ -311,6 +314,7 @@ export class Object3D {
         this.receiveShadow = source.receiveShadow;
         this.frustumCulled = source.frustumCulled;
         this.renderOrder = source.renderOrder;
+        this.layers.mask = source.layers.mask;
         return this;
     }
 }

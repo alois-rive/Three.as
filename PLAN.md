@@ -82,24 +82,26 @@ Rive artboard as the cube's texture.
 
 ### M2: breadth of the core API
 
-- Geometries: Circle, Ring, Cylinder, Cone, Torus, TorusKnot, Capsule,
-  Icosahedron/Octahedron/Tetrahedron/Dodecahedron, Lathe, Extrude/Shape
-  (from Rive `Path`s), EdgesGeometry, WireframeGeometry.
-- Objects: Line, LineSegments, LineLoop, Points, Sprite, InstancedMesh,
-  LOD; geometry groups with material arrays.
-- Materials: MeshPhongMaterial, MeshPhysicalMaterial (clearcoat, sheen,
-  transmission subset), MeshToonMaterial, MeshMatcapMaterial,
-  MeshDepthMaterial, LineBasicMaterial, LineDashedMaterial, PointsMaterial,
-  SpriteMaterial; `alphaTest`, `vertexColors`, `flatShading`, `wireframe`,
-  `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`, `emissiveMap`,
-  `alphaMap`.
-- Lights: SpotLight, HemisphereLight, RectAreaLight (LTC).
-- Scene: `fog` (Fog, FogExp2), background texture and cube texture.
-- Math: Box3, Sphere, Plane, Ray, Frustum, Triangle, Spherical, Cylindrical,
-  Curves (CatmullRomCurve3, QuadraticBezierCurve3 ...).
-- Renderer: frustum culling, mipmap generation, anisotropy, `info`
-  counters, per-draw uniform chunks with dynamic offsets (fewer buffer
-  updates), `renderOrder`, `layers`.
+In steps, each committed with tests and a screenshot check:
+
+- **M2a, bounds and culling (done).** Math: Box3, Sphere, Plane, Ray, Line3,
+  Triangle, Frustum, Spherical, Cylindrical. `computeBoundingBox` /
+  `computeBoundingSphere`, Layers, frustum culling in the renderer.
+- **M2b, geometries.** Circle, Ring, Cylinder, Cone, Torus, TorusKnot,
+  Capsule, Lathe, Polyhedron/Icosahedron/Octahedron/Tetrahedron/
+  Dodecahedron, EdgesGeometry, WireframeGeometry.
+- **M2c, shading.** Geometry groups with material arrays, vertexColors,
+  MeshPhongMaterial, MeshToonMaterial, MeshMatcapMaterial,
+  MeshDepthMaterial; `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`,
+  `emissiveMap`, `alphaMap`; SpotLight, HemisphereLight; Fog, FogExp2;
+  background texture; mipmap generation and anisotropy.
+- **M2d, other primitives.** Line, LineSegments, LineLoop, Points, Sprite,
+  InstancedMesh, LOD; LineBasicMaterial, LineDashedMaterial,
+  PointsMaterial, SpriteMaterial; `wireframe`.
+- **M2e, the rest.** Curves (CatmullRomCurve3, QuadraticBezierCurve3 ...),
+  Shape/ShapeGeometry/ExtrudeGeometry (also from Rive `Path`s),
+  MeshPhysicalMaterial subset (clearcoat, sheen), RectAreaLight (LTC), cube
+  texture backgrounds, per-draw uniform chunks with dynamic offsets.
 
 ### M3: Rive integration
 

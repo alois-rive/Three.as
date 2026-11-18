@@ -25,6 +25,10 @@ export class Vector4 {
     clone(): Vector4 { return new Vector4(this.x, this.y, this.z, this.w); }
     copy(v: Vector4): Vector4 { this.x = v.x; this.y = v.y; this.z = v.z; this.w = v.w; return this; }
     add(v: Vector4): Vector4 { this.x += v.x; this.y += v.y; this.z += v.z; this.w += v.w; return this; }
+    addScaledVector(v: Vector4, s: f64): Vector4 {
+        this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; this.w += v.w * s;
+        return this;
+    }
     sub(v: Vector4): Vector4 { this.x -= v.x; this.y -= v.y; this.z -= v.z; this.w -= v.w; return this; }
     multiplyScalar(s: f64): Vector4 { this.x *= s; this.y *= s; this.z *= s; this.w *= s; return this; }
     divideScalar(s: f64): Vector4 { return this.multiplyScalar(1 / s); }

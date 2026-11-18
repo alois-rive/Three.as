@@ -17,8 +17,18 @@ export * from "./math/Euler";
 export * from "./math/Matrix3";
 export * from "./math/Matrix4";
 export * from "./math/Color";
+export * from "./math/Box3";
+export * from "./math/Sphere";
+export * from "./math/Plane";
+export * from "./math/Line3";
+export * from "./math/Ray";
+export * from "./math/Triangle";
+export * from "./math/Frustum";
+export * from "./math/Spherical";
+export * from "./math/Cylindrical";
 
 export * from "./core/Object3D";
+export * from "./core/Layers";
 export * from "./core/BufferAttribute";
 export * from "./core/BufferGeometry";
 

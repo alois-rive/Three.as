@@ -6,6 +6,8 @@ import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
 import { Quaternion } from "../math/Quaternion";
 import { Vector3 } from "../math/Vector3";
+import { Box3 } from "../math/Box3";
+import { Sphere } from "../math/Sphere";
 
 let _geometryId: i32 = 0;
 
@@ -39,6 +41,11 @@ export class BufferGeometry {
     attributes: Map<string, BufferAttribute> = new Map<string, BufferAttribute>();
     groups: Array<GeometryGroup> = [];
     drawRange: DrawRange = new DrawRange();
+    /// Set by computeBoundingBox (null until then).
+    boundingBox: Box3? = null;
+    /// Set by computeBoundingSphere; the renderer computes it on first
+    /// use for frustum culling. Recompute after moving vertices by hand.
+    boundingSphere: Sphere? = null;
 
     constructor() {
         this.id = _geometryId++;
@@ -96,6 +103,8 @@ export class BufferGeometry {
             normal.applyNormalMatrix(_n.getNormalMatrix(matrix));
             normal.needsUpdate = true;
         }
+        if (this.boundingBox != null) this.computeBoundingBox();
+        if (this.boundingSphere != null) this.computeBoundingSphere();
         return this;
     }
 
@@ -123,6 +132,38 @@ export class BufferGeometry {
         }
         _v.addVectors(_min, _max).multiplyScalar(-0.5);
         return this.translate(_v.x, _v.y, _v.z);
+    }
+
+    computeBoundingBox(): void {
+        let box = this.boundingBox;
+        if (box == null) {
+            box = new Box3();
+            this.boundingBox = box;
+        }
+        const position = this.getAttribute("position");
+        if (position != null) box.setFromBufferAttribute(position);
+        else box.makeEmpty();
+    }
+
+    computeBoundingSphere(): void {
+        let sphere = this.boundingSphere;
+        if (sphere == null) {
+            sphere = new Sphere();
+            this.boundingSphere = sphere;
+        }
+        const position = this.getAttribute("position");
+        if (position == null || position.count == 0) {
+            sphere.makeEmpty();
+            return;
+        }
+        const center = sphere.center;
+        _box.setFromBufferAttribute(position).getCenter(center);
+        let maxRadiusSq: f64 = 0;
+        for (let i = 0, l = position.count; i < l; i++) {
+            _v.set(position.getX(i), position.getY(i), position.getZ(i));
+            maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(_v));
+        }
+        sphere.radius = Math.sqrt(maxRadiusSq);
     }
 
     /// Area-weighted vertex normals from the faces (index or triangle soup).
@@ -183,6 +224,7 @@ function addTo(attribute: BufferAttribute, i: i32, v: Vector3): void {
 }
 
 const _m: Matrix4 = new Matrix4();
+const _box: Box3 = new Box3();
 const _n: Matrix3 = new Matrix3();
 const _v: Vector3 = new Vector3();
 const _min: Vector3 = new Vector3();

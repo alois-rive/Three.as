@@ -5,6 +5,8 @@ import { Matrix4 } from "./Matrix4";
 import { Quaternion } from "./Quaternion";
 import { Euler } from "./Euler";
 import { Camera } from "../cameras/Camera";
+import { Spherical } from "./Spherical";
+import { Cylindrical } from "./Cylindrical";
 
 export class Vector3 {
     x: f64;
@@ -200,6 +202,10 @@ export class Vector3 {
     manhattanDistanceTo(v: Vector3): f64 {
         return Math.abs(this.x - v.x) + Math.abs(this.y - v.y) + Math.abs(this.z - v.z);
     }
+
+    setFromSpherical(s: Spherical): Vector3 { return this.setFromSphericalCoords(s.radius, s.phi, s.theta); }
+
+    setFromCylindrical(c: Cylindrical): Vector3 { return this.setFromCylindricalCoords(c.radius, c.theta, c.y); }
 
     setFromSphericalCoords(radius: f64, phi: f64, theta: f64): Vector3 {
         const s = Math.sin(phi) * radius;

@@ -61,6 +61,8 @@ import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
+import { Frustum } from "../math/Frustum";
+import { Sphere } from "../math/Sphere";
 import {
     BackSide, DoubleSide, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter,
     RepeatWrapping, MirroredRepeatWrapping, SRGBColorSpace,
@@ -120,6 +122,8 @@ export class RenderInfo {
     frame: i32 = 0;
     calls: i32 = 0;
     triangles: i32 = 0;
+    /// Meshes skipped by frustum culling this frame (not in three.js).
+    culled: i32 = 0;
 }
 
 export class RendererInfo {
@@ -264,6 +268,7 @@ export class GPURenderer {
         info.frame++;
         info.calls = 0;
         info.triangles = 0;
+        info.culled = 0;
         if (this.broken) return;
         const pw = this.pixelWidth(), ph = this.pixelHeight();
         if (pw == 0 || ph == 0) return;
@@ -287,7 +292,8 @@ export class GPURenderer {
         Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
 
         // Collect lights and draws.
-        this.collect(scene, info.frame);
+        _frustum.setFromProjectionMatrix(this.viewProj);
+        this.collect(scene, camera, info.frame);
         this.writeFrame(camera);
         if (this.sortObjects) {
             this.opaque.sort(compareOpaque);
@@ -519,7 +525,7 @@ export class GPURenderer {
 
     // ---------------------------------------------------------------- collect
 
-    private collect(scene: Object3D, frame: i32): void {
+    private collect(scene: Object3D, camera: Camera, frame: i32): void {
         this.opaque.length = 0;
         this.transparent.length = 0;
         this.lights.length = 0;
@@ -529,11 +535,26 @@ export class GPURenderer {
         while (stack.length > 0) {
             const o = stack.pop();
             if (!o.visible) continue;
-            if (o instanceof Mesh) this.collectMesh(o as Mesh, frame);
-            else if (o instanceof Light) this.lights.push(o as Light);
+            if (o.layers.test(camera.layers)) {
+                if (o instanceof Mesh) {
+                    if (!o.frustumCulled || this.inFrustum(o as Mesh)) this.collectMesh(o as Mesh, frame);
+                    else this.info.render.culled++;
+                } else if (o instanceof Light) {
+                    this.lights.push(o as Light);
+                }
+            }
             const children = o.children;
             for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
         }
+    }
+
+    private inFrustum(mesh: Mesh): bool {
+        const geometry = mesh.geometry;
+        if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
+        const bounds = geometry.boundingSphere!;
+        if (bounds.isEmpty()) return true;
+        _sphere.copy(bounds).applyMatrix4(mesh.matrixWorld);
+        return _frustum.intersectsSphere(_sphere);
     }
 
     private collectMesh(mesh: Mesh, frame: i32): void {
@@ -808,5 +829,7 @@ function releaseTex(t: GPUTexture?): void {
 }
 
 const _pos: Vector3 = new Vector3();
+const _frustum: Frustum = new Frustum();
+const _sphere: Sphere = new Sphere();
 const _dir: Vector3 = new Vector3();
 const _normal: Matrix3 = new Matrix3();

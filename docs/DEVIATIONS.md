@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 1 (see [../PLAN.md](../PLAN.md)). Features not yet ported
+Status: Milestone 2 in progress (see [../PLAN.md](../PLAN.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
 
@@ -68,7 +68,7 @@ export class Demo extends Layout {
 | `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
 | `outputColorSpace`, `toneMapping` | fixed: sRGB output, no tone mapping (M5) |
 | output | premultiplied alpha, composited with `srcOver` |
-| `info.render.calls/triangles` | same; `info.memory` is missing |
+| `info.render.calls/triangles` | same, plus `info.render.culled` (meshes frustum culled); `info.memory` is missing |
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -118,6 +118,12 @@ export class Demo extends Layout {
 - `MathUtils` is a class of static functions; `DEG2RAD` and `RAD2DEG` are
   also module constants.
 - `toArray` / `fromArray` take `Array<f64>`.
+- Where three.js returns `null` for "no result" from a method returning a
+  number, ThreeAS returns a sentinel: **`Ray.distanceToPlane` returns -1**
+  when the ray never reaches the plane. Methods returning objects still
+  return `null` (`Ray.intersectBox`, `Plane.intersectLine` ...).
+- `Triangle.getInterpolation<V>(...)` returns the target set to zero for a
+  degenerate triangle (three.js returns `null`).
 - Rive interop: `Vector2.setFromVector(v)` / `toVector()` convert to and from
   Rive's `Vector`.
 
@@ -182,7 +188,7 @@ InstancedMesh, material arrays and geometry groups, every geometry except
 Box/Plane/Sphere, Phong/Physical/Toon/Matcap/Depth/line/points materials,
 maps other than `map`, `wireframe`, `vertexColors`, SpotLight,
 HemisphereLight, RectAreaLight, fog, background textures, shadows,
-environment maps, tone mapping, ShaderMaterial, render targets, frustum
-culling, Raycaster, Box3/Sphere/Plane/Ray/Frustum, curves, loaders other
+environment maps, tone mapping, ShaderMaterial, render targets,
+Raycaster, curves, loaders other
 than TextureLoader, animation (AnimationMixer), skinning, controls,
 post-processing, `EventDispatcher` events (`dispose` events are internal).
