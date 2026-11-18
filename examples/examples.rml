@@ -570,8 +570,8 @@
     <ScriptAsset file="examples/editor.as" name="editor" id="0:2190" codeFileId="0:103014"/>
     <ScriptAsset file="examples/batched.as" name="batched" id="0:2290" codeFileId="0:111653"/>
     <ScriptAsset file="examples/models.as" name="models" id="0:2390" codeFileId="0:115080"/>
-    <BlobAsset file="examples/assets/checker_bc1.bin" name="checker_bc1" id="0:1791"/>
-    <BlobAsset file="examples/assets/checker_astc.bin" name="checker_astc" id="0:1792"/>
+    <BlobAsset file="examples/assets/checker_bc1.ktx2" name="checker_bc1" id="0:1791"/>
+    <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
     <BlobAsset file="examples/assets/pyramid_binary.stl" name="pyramid_binary" id="0:2305"/>

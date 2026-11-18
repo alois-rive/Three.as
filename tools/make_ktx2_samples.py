@@ -1,5 +1,5 @@
-"""Writes examples/assets/checker_bc1.bin (BC1/DXT1, sRGB, full mip chain
-down to 4x4) and examples/assets/checker_astc.bin (ASTC 4x4, sRGB, one
+"""Writes examples/assets/checker_bc1.ktx2 (BC1/DXT1, sRGB, full mip chain
+down to 4x4) and examples/assets/checker_astc.ktx2 (ASTC 4x4, sRGB, one
 level of constant-colour "void extent" blocks): a 64 x 64 coloured checker
 for KTX2Loader. Pure Python, no dependencies.
 
@@ -98,8 +98,6 @@ while True:
     if len(cur) <= 4:
         break
     cur = half(cur)
-ktx2(os.path.join(out, "checker_bc1.bin"), 132, chain, SIZE)          # VK_FORMAT_BC1_RGB_SRGB_BLOCK
-ktx2(os.path.join(out, "checker_astc.bin"), 158, [astc_void(px)], SIZE)   # VK_FORMAT_ASTC_4x4_SRGB_BLOCK
-# KTX2 files, stored as .bin: `rive push` uploads of .ktx2 blob assets fail
-# (HTTP 400) and KTX2Loader reads the magic bytes, not the extension.
-print("wrote checker_bc1.bin (%d levels) and checker_astc.bin" % len(chain))
+ktx2(os.path.join(out, "checker_bc1.ktx2"), 132, chain, SIZE)          # VK_FORMAT_BC1_RGB_SRGB_BLOCK
+ktx2(os.path.join(out, "checker_astc.ktx2"), 158, [astc_void(px)], SIZE)   # VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+print("wrote checker_bc1.ktx2 (%d levels) and checker_astc.ktx2" % len(chain))
