@@ -55,6 +55,7 @@ export class Batched extends ThreeLayout {
         }
         scene.add(mesh);
         this.mesh = mesh;
+        this.animate(0);   // place the instances before the first frame
 
         this.camera.position.set(0, 4, 13);
         const controls = new OrbitControls(this.camera, this.renderer);
