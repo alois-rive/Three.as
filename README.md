@@ -82,6 +82,23 @@ rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```
 
+## Gallery
+
+`gallery/` is the project's landing page, built in Rive (RML, no HTML) in
+the Rive brand: install, quickstart, features, and a card per example.
+Clicking a card plays that example artboard live on the page's stage, full
+size, with its pointer input (orbit, zoom, clicks).
+
+```bash
+rive . --artboard=Gallery                         # the landing page
+python3 gallery/make_gallery.py                   # regenerate gallery/gallery.rml
+python3 gallery/make_gallery.py --thumbs          # ... and the card thumbnails (macOS)
+```
+
+The stage is a nested artboard whose artboard is bound to a view model
+property that the cards' listeners write, so the example artboards are
+marked `isComponent="true"` in `examples/examples.rml`.
+
 ## What is there
 
 Milestone 1: math (Vector2/3/4, Quaternion, Euler, Matrix3/4, Color,

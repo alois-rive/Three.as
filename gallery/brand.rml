@@ -1,0 +1,81 @@
+<Rive version="1" kind="fragment">
+    <!-- From the Rive brand kit (rive-branding skill, brand-kit/scene.rml),
+         unchanged but for the Logo's stage position and layout style: the RiveTheme global
+         view model every gallery colour binds to (Dark first, so the page is
+         dark), and the Logo component (the R cut out of a square). -->
+    <ViewModel viewModelType="global" defaultInstanceId="2:20" name="RiveTheme" id="2:1">
+        <ViewModelPropertyColor name="background" id="2:2"/>
+        <ViewModelPropertyColor name="foreground" id="2:3"/>
+        <ViewModelPropertyColor name="surface" id="2:4"/>
+        <ViewModelPropertyColor name="muted" id="2:5"/>
+        <ViewModelPropertyColor name="faint" id="2:6"/>
+        <ViewModelPropertyColor name="accent" id="2:7"/>
+        <ViewModelPropertyColor name="sticker" id="2:8"/>
+        <ViewModelInstance exports="true" name="Dark" id="2:20">
+            <ViewModelInstanceColor propertyValue="FF000000" viewModelPropertyId="2:2"/>
+            <ViewModelInstanceColor propertyValue="FFFFFFFF" viewModelPropertyId="2:3"/>
+            <ViewModelInstanceColor propertyValue="FF141414" viewModelPropertyId="2:4"/>
+            <ViewModelInstanceColor propertyValue="FFA0A0A0" viewModelPropertyId="2:5"/>
+            <ViewModelInstanceColor propertyValue="FF5C5C5C" viewModelPropertyId="2:6"/>
+            <ViewModelInstanceColor propertyValue="FFFFA41C" viewModelPropertyId="2:7"/>
+            <ViewModelInstanceColor propertyValue="FFFFA41C" viewModelPropertyId="2:8"/>
+        </ViewModelInstance>
+        <ViewModelInstance exports="true" name="Light" id="2:21">
+            <ViewModelInstanceColor propertyValue="FFE0E0E0" viewModelPropertyId="2:2"/>
+            <ViewModelInstanceColor propertyValue="FF141414" viewModelPropertyId="2:3"/>
+            <ViewModelInstanceColor propertyValue="FFFFFFFF" viewModelPropertyId="2:4"/>
+            <ViewModelInstanceColor propertyValue="FF5C5C5C" viewModelPropertyId="2:5"/>
+            <ViewModelInstanceColor propertyValue="FF9A9A9A" viewModelPropertyId="2:6"/>
+            <ViewModelInstanceColor propertyValue="FFFFA41C" viewModelPropertyId="2:7"/>
+            <ViewModelInstanceColor propertyValue="FF3084FF" viewModelPropertyId="2:8"/>
+        </ViewModelInstance>
+    </ViewModel>
+
+    <Artboard defaultStateMachineId="4:1" viewModelId="2:1" viewModelInstanceId="2:20" isComponent="true" clip="false" width="100" height="100" x="2000" y="-1700" styleId="104:3" name="Logo" id="4:9">
+        <LayoutComponentStyle name="Logo Style" id="104:3"/>
+        <Node x="50" y="50" name="Art">
+            <Shape name="SquareWithR" id="4:8">
+                <PointsPath isClockwise="false" isClosed="true" pathFlags="2" name="Path">
+                    <StraightVertex x="-50" y="-50"/>
+                    <StraightVertex x="-50" y="50"/>
+                    <StraightVertex x="50" y="50"/>
+                    <StraightVertex x="50" y="-50"/>
+                </PointsPath>
+                <PointsPath isClosed="true" name="Path">
+                    <CubicDetachedVertex outDistance="2.0899999" outRotation="1.5707964" x="33.330002" y="-5.71"/>
+                    <CubicDetachedVertex inDistance="2.0357063" inRotation="-1.0345891" outDistance="2.0443091" outRotation="2.1045046" x="31.77" y="0.050000001"/>
+                    <CubicDetachedVertex inDistance="2.0342073" inRotation="-0.52524358" outDistance="2.0342073" outRotation="2.616349" x="27.57" y="4.21"/>
+                    <CubicDetachedVertex inDistance="2.0799999" x="21.809999" y="5.73"/>
+                    <StraightVertex x="13.36" y="5.75"/>
+                    <StraightVertex x="33.34" y="29.6"/>
+                    <StraightVertex x="19.030001" y="29.6"/>
+                    <StraightVertex x="-0.92000002" y="5.79"/>
+                    <StraightVertex x="-12.89" y="5.8200002"/>
+                    <StraightVertex x="-12.89" y="-5.21"/>
+                    <CubicDetachedVertex outDistance="0.61000001" x="21.280001" y="-5.21"/>
+                    <CubicDetachedVertex inDistance="0.61000001" inRotation="1.5707964" x="22.389999" y="-6.3200002"/>
+                    <CubicDetachedVertex outDistance="0.61000001" outRotation="-1.5707964" x="22.389999" y="-17.620001"/>
+                    <CubicDetachedVertex inDistance="0.61000001" x="21.280001" y="-18.73"/>
+                    <StraightVertex x="-33.330002" y="-18.73"/>
+                    <StraightVertex x="-33.330002" y="-29.6"/>
+                    <CubicDetachedVertex outDistance="2.0899999" x="21.809999" y="-29.6"/>
+                    <CubicDetachedVertex inDistance="2.0357063" inRotation="-2.6053855" outDistance="2.0443091" outRotation="0.53370821" x="27.57" y="-28.040001"/>
+                    <CubicDetachedVertex inDistance="2.0185392" inRotation="-2.1120656" outDistance="2.0185392" outRotation="1.0295272" x="31.77" y="-23.879999"/>
+                    <CubicDetachedVertex inDistance="2.0799999" inRotation="-1.5707964" x="33.330002" y="-18.16"/>
+                </PointsPath>
+                <Fill name="Fill"><SolidColor colorValue="FFFFFFFF" name="Color"><DataBindContext sourcePathIds="2:1-2:3" propertyKey="37"/></SolidColor></Fill>
+            </Shape>
+        </Node>
+        <StateMachine name="State Machine 1" id="4:1">
+            <StateMachineLayer name="Layer 1" id="4:2">
+                <AnyState x="400" y="0" id="4:3"/>
+                <ExitState x="480" y="0" id="4:4"/>
+                <EntryState x="0" y="16" id="4:5"><StateTransition stateToId="4:6"/></EntryState>
+                <AnimationState animationId="4:7" x="160" y="0" id="4:6"/>
+            </StateMachineLayer>
+        </StateMachine>
+        <LinearAnimation loopValue="loop" duration="60" name="Idle" id="4:7"/>
+    </Artboard>
+
+    <ComponentAsset artboardId="4:9" name="Logo" id="104:1"/>
+</Rive>
