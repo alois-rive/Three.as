@@ -106,6 +106,11 @@ export * from "./textures/DataTexture";
 export * from "./textures/CanvasTexture";
 export * from "./loaders/TextureLoader";
 
+export * from "./animation/KeyframeTrack";
+export * from "./animation/AnimationClip";
+export * from "./animation/PropertyBinding";
+export * from "./animation/AnimationMixer";
+
 export * from "./renderers/GPURenderer";
 export * from "./renderers/RenderTarget";
 

@@ -17,6 +17,10 @@ export class Mesh extends Object3D {
     /// materialIndex: three.js's `material` array (a field cannot be
     /// "Material or array" here). Groups without a material are not drawn.
     materials: Array<Material> = [];
+    /// Morph target weights, one per geometry.morphAttributes entry.
+    morphTargetInfluences: Array<f64> = [];
+    /// Morph target names to indices.
+    morphTargetDictionary: Map<string, i32> = new Map<string, i32>();
 
     constructor(geometry: BufferGeometry = new BufferGeometry(), material: Material = new MeshBasicMaterial()) {
         super();
