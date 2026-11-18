@@ -5,6 +5,7 @@ scripting: wasm
 
 exclude:
   - build
+  - tools
   - docs
   - "*.md"
   - "**/*.md"

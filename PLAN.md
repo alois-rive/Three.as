@@ -125,14 +125,19 @@ In steps, each committed with tests and a screenshot check:
 - Not ported: TrackballControls, FlyControls, PointerLockControls,
   TransformControls, DragControls.
 
-### M4: assets and animation
+### M4: assets and animation (done)
 
-- GLTFLoader from a `BlobAsset` (`.glb`, meshopt), with materials, embedded
-  textures, cameras, lights and node hierarchy.
-- SkinnedMesh, Skeleton, Bone (GPU skinning); morph targets.
-- AnimationMixer, AnimationClip, AnimationAction, KeyframeTracks (number,
-  vector, quaternion, color), PropertyBinding by name.
-- OBJLoader, a `.json` ObjectLoader subset.
+- Animation: KeyframeTracks (number, vector, quaternion, colour, boolean;
+  discrete, linear, smooth, glTF cubic spline), AnimationClip,
+  PropertyBinding, AnimationMixer/AnimationAction (weights, loops, fades,
+  cross-fades).
+- SkinnedMesh, Skeleton, Bone (GPU skinning, 256 bones); morph targets
+  (CPU blended).
+- GLTFLoader from a BlobAsset (.glb): hierarchy, meshes, PBR materials and
+  extensions, embedded textures, skins, morphs, animations, cameras,
+  KHR_lights_punctual. A generated sample (tools/make_sample_glb.py).
+- OBJLoader. (ObjectLoader dropped: three.js JSON scenes are rare in Rive
+  projects.) meshopt/Draco/KTX2 decoding are left for later.
 
 ### M5: lighting quality
 

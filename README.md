@@ -65,6 +65,8 @@ rive . --artboard=Materials                       # materials, lights, fog, sky
 rive . --artboard=Primitives                      # instancing, points, lines, sprites
 rive . --artboard=Shapes                          # curves, extrusion, a Rive path in 3D
 rive . --artboard=Interactive                     # orbit, click a Rive switch in 3D, render target
+rive . --artboard=Deform                          # GPU skinning and morph targets
+rive . --artboard=Model                           # a glTF model, animated
 rive . --test                                     # math and geometry tests
 rive . --screenshot=build/s.png --advance=1s      # headless render
 ```

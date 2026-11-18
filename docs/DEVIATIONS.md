@@ -263,6 +263,47 @@ export class Demo extends Layout {
 - `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
   an (animated) Rive node.
 
+## Animation
+
+- `KeyframeTrack(name, times, values, interpolation)` takes `Array<f64>`
+  and stores `Float32Array`s. Interpolations: Discrete, Linear (slerp for
+  quaternions), Smooth, plus `InterpolateGLTFCubicSpline` (three.js keeps
+  that inside its GLTFLoader). `StringKeyframeTrack` is not ported.
+- `PropertyBinding` resolves `node.position|quaternion|scale|rotation|
+  visible`, `node.morphTargetInfluences[i|name]` and `node.material.color|
+  opacity|emissive`; nodes by name under the root (names cannot hold
+  dots: `PropertyBinding.sanitizeNodeName`). No uuid paths, no arbitrary
+  properties.
+- `mixer.clipAction(clip)` takes an `AnimationClip` (not a clip name).
+  Mixer events (`finished`, `loop`) are not dispatched: poll
+  `action.isRunning()`, `action.enabled`, `action.paused`. Cross-fades
+  ignore `warp`; `halt` and `warp` are not ported.
+
+## Skinning and morph targets
+
+- GPU skinning, up to **256 bones** per skeleton (more: drawn unskinned,
+  with a log line). `Skeleton(bones: Array<Bone>, boneInverses)`.
+- **Morph targets are blended on the CPU** (whenever the influences change),
+  then uploaded; fine for faces and props, costly for big meshes animating
+  every frame.
+- A SkinnedMesh is frustum culled only after `computeBoundingSphere()` (its
+  posed bounds); otherwise it is always drawn.
+
+## Loaders
+
+- **Loaders are synchronous and read Rive assets by name**: `new
+  GLTFLoader(context).load("robot")` returns a `GLTF` (or null) from the
+  BlobAsset `robot`; no URLs, no callbacks, no `LoadingManager`. Embedded
+  images decode asynchronously; their textures fill in a few frames later.
+  Import loaders from `three/addons/loaders/...`.
+- GLTFLoader reads binary `.glb` only, without Draco, meshopt, KTX2 or
+  sparse accessors; extensions read: KHR_lights_punctual,
+  KHR_materials_unlit, emissive_strength, clearcoat, sheen, ior, specular,
+  KHR_texture_transform. `gltf.parser`, `gltf.userData` and `extras` are not
+  exposed.
+- OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
+  named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
+
 ## Lighting
 
 - Intensities are three.js's physically based ones (r155+, no legacy
@@ -314,7 +355,5 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
-SkinnedMesh, RectAreaLight (not planned: it needs three.js's LTC tables), cube textures, shadows,
-environment maps, ShaderMaterial, loaders other
-than TextureLoader, animation (AnimationMixer), skinning, controls,
-post-processing, `EventDispatcher` events (`dispose` events are internal).
+RectAreaLight (not planned: it needs three.js's LTC tables), cube textures, shadows,
+environment maps, ShaderMaterial, ObjectLoader, post-processing, `EventDispatcher` events (`dispose` events are internal).
