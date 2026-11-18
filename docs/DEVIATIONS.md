@@ -69,7 +69,7 @@ export class Demo extends Layout {
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
-| `info.render.calls/triangles` | same, plus `info.render.culled` (meshes frustum culled); `info.memory` is missing |
+| `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -180,6 +180,18 @@ export class Demo extends Layout {
 - `envMap` / `envMapIntensity` exist but do nothing until environment maps
   land (M5).
 
+## Lines, points and sprites
+
+- **Lines are one pixel wide** (`linewidth`, `linecap`, `linejoin` are
+  kept and ignored, as three.js on almost every platform). Every line
+  (Line, LineLoop, LineSegments, `wireframe`) is drawn as a line list from
+  a generated index buffer.
+- **Points are instanced quads** (WebGPU has no point size): square,
+  `size` pixels times the pixel ratio, attenuated by depth as three.js.
+  A Points geometry's index is ignored.
+- `LineDashedMaterial` reads "lineDistance" through the uv slot, so a line
+  with both "uv" and "lineDistance" dashes along u instead.
+
 ## Lighting
 
 - Intensities are three.js's physically based ones (r155+, no legacy
@@ -230,10 +242,9 @@ export class Demo extends Layout {
 
 ## Not yet supported
 
-Missing so far, planned in [../PLAN.md](../PLAN.md): Line/Points/Sprite/
-InstancedMesh (so EdgesGeometry and WireframeGeometry build but cannot be
-drawn yet), Shape/ShapeGeometry/ExtrudeGeometry/TubeGeometry, line and
-points materials, `wireframe`, RectAreaLight, cube textures, shadows,
+Missing so far, planned in [../PLAN.md](../PLAN.md): BatchedMesh,
+SkinnedMesh, Shape/ShapeGeometry/ExtrudeGeometry/TubeGeometry,
+RectAreaLight, cube textures, shadows,
 environment maps, ShaderMaterial, render targets,
 Raycaster, curves, loaders other
 than TextureLoader, animation (AnimationMixer), skinning, controls,

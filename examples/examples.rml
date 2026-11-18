@@ -126,8 +126,24 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Primitives: instancing, points, lines, sprites, LOD
+         (examples/primitives.as). -->
+    <Artboard defaultStateMachineId="0:607" clip="true" x="1800" y="1400" width="800" height="600" styleId="0:601" name="Primitives" id="0:600">
+        <LayoutComponentStyle name="Artboard Style" id="0:601"/>
+        <LayoutComponent width="800" height="600" styleId="0:603" name="Root" id="0:602">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:603"/>
+            <ScriptedLayout scriptAssetId="0:194" name="Scene" id="0:604"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:607">
+            <StateMachineLayer name="Layer 1" id="0:608">
+                <EntryState/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191"/>
     <ScriptAsset file="examples/geometries.as" name="geometries" id="0:192"/>
     <ScriptAsset file="examples/materials.as" name="materials" id="0:193"/>
+    <ScriptAsset file="examples/primitives.as" name="primitives" id="0:194"/>
 </Rive>

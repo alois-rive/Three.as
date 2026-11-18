@@ -42,12 +42,17 @@ import {
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 
 import { Object3D } from "../core/Object3D";
-import { disposedGeometries } from "../core/BufferGeometry";
+import { BufferGeometry, disposedGeometries } from "../core/BufferGeometry";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Scene } from "../scenes/Scene";
 import { Fog, FogExp2 } from "../scenes/Fog";
 import { Mesh } from "../objects/Mesh";
+import { InstancedMesh } from "../objects/InstancedMesh";
+import { Line, LineSegments, LineLoop } from "../objects/Line";
+import { Points } from "../objects/Points";
+import { Sprite } from "../objects/Sprite";
+import { LOD } from "../objects/LOD";
 import { Light } from "../lights/Light";
 import { AmbientLight } from "../lights/AmbientLight";
 import { HemisphereLight } from "../lights/HemisphereLight";
@@ -71,12 +76,12 @@ import {
     NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending,
     EquirectangularReflectionMapping, EquirectangularRefractionMapping,
 } from "../constants";
-import { GPUGeometries, GeometryGPU } from "./gpu/GPUGeometries";
+import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
-    FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES,
+    FRAME_BG_ROTATION, FRAME_BG_FLAGS, FRAME_PROJ, FRAME_VIEWPORT, FRAME_LIGHTS, LIGHT_BYTES, FRAME_BYTES, OBJ_SPRITE,
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_UV, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT,
@@ -95,7 +100,23 @@ const KEY_DEPTH_TEST: i32 = 1 << 5;
 const KEY_DEPTH_WRITE: i32 = 1 << 6;
 const KEY_MIRRORED: i32 = 1 << 7;
 const KEY_COLOR_WRITE: i32 = 1 << 8;
+const KEY_PRIM_SHIFT: i32 = 9;          // 2 bits: PRIM_*
 const KEY_BACKGROUND: i32 = 1 << 30;
+
+// What a draw rasterizes.
+const PRIM_TRIANGLES: i32 = 0;
+const PRIM_LINES: i32 = 1;
+const PRIM_POINTS: i32 = 2;
+const PRIM_SPRITE: i32 = 3;
+
+// An InstancedMesh's packed instance buffer.
+class InstanceGPU {
+    buffer: GPUBuffer? = null;
+    matrixVersion: i32 = -1;
+    colorVersion: i32 = -1;
+    count: i32 = -1;
+    staging: Float32Array = new Float32Array(0);
+}
 
 // -----------------------------------------------------------------------------
 
@@ -111,6 +132,8 @@ export class RenderInfo {
     frame: i32 = 0;
     calls: i32 = 0;
     triangles: i32 = 0;
+    lines: i32 = 0;
+    points: i32 = 0;
     /// Objects skipped by frustum culling this frame (not in three.js).
     culled: i32 = 0;
 }
@@ -137,7 +160,10 @@ class DrawState {
 class DrawItem {
     object: Object3D;
     material: Material;
-    geometry: GeometryGPU;
+    geometry: GeometryGPU?;
+    prim: i32 = PRIM_TRIANGLES;
+    index: GPUBuffer? = null;
+    indexFormat: u32 = 0;
     state: DrawState;
     pipelineKey: i32 = 0;
     depth: f64 = 0;
@@ -146,7 +172,7 @@ class DrawItem {
     instances: GPUBuffer;
     instanceCount: u32 = 1;
 
-    constructor(object: Object3D, material: Material, geometry: GeometryGPU, state: DrawState, instances: GPUBuffer) {
+    constructor(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer) {
         this.object = object;
         this.material = material;
         this.geometry = geometry;
@@ -186,6 +212,8 @@ export class GPURenderer {
     private matLayout: GPUBindGroupLayout? = null;
     private bgLayout: GPUBindGroupLayout? = null;
     private vertexBuffers: Array<GPUVertexBufferLayout> = [];
+    private pointBuffers: Array<GPUVertexBufferLayout> = [];
+    private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
     private pipelines: Map<i32, GPUPipeline> = new Map<i32, GPUPipeline>();
     private pipelineFormat: u32 = 0xFFFFFFFF;
     private samples: u32 = 1;
@@ -287,6 +315,8 @@ export class GPURenderer {
         info.calls = 0;
         info.triangles = 0;
         info.culled = 0;
+        info.lines = 0;
+        info.points = 0;
         if (this.broken) return;
         const pw = this.pixelWidth(), ph = this.pixelHeight();
         if (pw == 0 || ph == 0) return;
@@ -453,6 +483,11 @@ export class GPURenderer {
                 vertexLayout(16, VertexFormat.float4, 3),
                 instance,
             ];
+            const pointPosition = vertexLayout(12, VertexFormat.float3, 0);
+            pointPosition.stepMode = VertexStepMode.instance;
+            const pointColor = vertexLayout(16, VertexFormat.float4, 3);
+            pointColor.stepMode = VertexStepMode.instance;
+            this.pointBuffers = [pointPosition, pointColor];
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
             this.maxAnisotropy = features.anisotropicFiltering ? 16 : 1;
@@ -539,16 +574,30 @@ export class GPURenderer {
             if ((key & KEY_COLOR_WRITE) == 0) target.writeMask = <u32>ColorWriteMask.none;
             ds.compare = (key & KEY_DEPTH_TEST) != 0 ? CompareFunction.lessEqual : CompareFunction.always;
             ds.write = (key & KEY_DEPTH_WRITE) != 0;
-            d.vertexEntryPoint = "vs_main";
+            const prim = (key >> KEY_PRIM_SHIFT) & 3;
             d.fragmentEntryPoint = "fs_main";
             d.colorTargets = [target];
-            d.vertexBuffers = this.vertexBuffers;
             d.bindGroupLayouts = [this.frameLayout, this.objLayout, this.matLayout];
             d.cullMode = cull == 0 ? CullMode.back : cull == 2 ? CullMode.front : CullMode.none;
             // three.js flips the front face of mirrored (negative determinant)
             // objects, so front_facing stays true on their outside.
             d.winding = (key & KEY_MIRRORED) != 0 ? FaceWinding.clockwise : FaceWinding.counterClockwise;
             d.topology = PrimitiveTopology.triangleList;
+            if (prim == PRIM_POINTS) {
+                d.vertexEntryPoint = "vs_points";
+                d.vertexBuffers = this.pointBuffers;
+                d.cullMode = CullMode.none;
+            } else if (prim == PRIM_SPRITE) {
+                d.vertexEntryPoint = "vs_sprite";
+                d.cullMode = CullMode.none;
+            } else {
+                d.vertexEntryPoint = "vs_main";
+                d.vertexBuffers = this.vertexBuffers;
+                if (prim == PRIM_LINES) {
+                    d.topology = PrimitiveTopology.lineList;
+                    d.cullMode = CullMode.none;
+                }
+            }
         }
         const p = new GPUPipeline(d);
         this.pipelines.set(key, p);
@@ -604,11 +653,12 @@ export class GPURenderer {
             const o = stack.pop();
             if (!o.visible) continue;
             if (o.layers.test(camera.layers)) {
-                if (o instanceof Mesh) {
-                    if (!o.frustumCulled || this.inFrustum(o as Mesh)) this.collectMesh(o as Mesh, frame);
-                    else this.info.render.culled++;
-                } else if (o instanceof Light) {
+                if (o instanceof LOD && (o as LOD).autoUpdate) (o as LOD).update(camera);
+                if (o instanceof Light) {
                     this.lights.push(o as Light);
+                } else if (o instanceof Mesh || o instanceof Line || o instanceof Points || o instanceof Sprite) {
+                    if (!o.frustumCulled || this.inFrustum(o)) this.collectObject(o, frame);
+                    else this.info.render.culled++;
                 }
             }
             const children = o.children;
@@ -616,23 +666,79 @@ export class GPURenderer {
         }
     }
 
-    private inFrustum(mesh: Mesh): bool {
-        const geometry = mesh.geometry;
+    private inFrustum(o: Object3D): bool {
+        if (o instanceof Sprite) return intersectsSprite(o as Sprite);
+        if (o instanceof InstancedMesh) {
+            const im = o as InstancedMesh;
+            if (im.boundingSphere == null) im.computeBoundingSphere();
+            _sphere.copy(im.boundingSphere!).applyMatrix4(im.matrixWorld);
+            return _frustum.intersectsSphere(_sphere);
+        }
+        const geometry = geometryOf(o);
+        if (geometry == null) return true;
         if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
         const bounds = geometry.boundingSphere!;
         if (bounds.isEmpty()) return true;
-        _sphere.copy(bounds).applyMatrix4(mesh.matrixWorld);
+        _sphere.copy(bounds).applyMatrix4(o.matrixWorld);
         return _frustum.intersectsSphere(_sphere);
     }
 
-    private collectMesh(mesh: Mesh, frame: i32): void {
-        const g = this.geometries.get(mesh.geometry);
+    private collectObject(o: Object3D, frame: i32): void {
+        const override = this.overrideMaterial;
+        if (o instanceof Sprite) {
+            const sprite = o as Sprite;
+            const item = this.addDraw(sprite, override != null ? override : sprite.material, null, 0, 0, 6, frame,
+                PRIM_SPRITE);
+            if (item != null) item.count = 6;
+            return;
+        }
+        const geometry = geometryOf(o)!;
+        const g = this.geometries.get(geometry);
         if (g == null) return;
-        const range = mesh.geometry.drawRange;
+        const range = geometry.drawRange;
         const rangeStart = max<i32>(0, range.start);
         const rangeEnd = range.count < 0 ? g.count : min<i32>(g.count, rangeStart + range.count);
-        const override = this.overrideMaterial;
-        const groups = mesh.geometry.groups;
+
+        if (o instanceof Points) {
+            const points = o as Points;
+            // One quad per vertex (indices ignored), from the vertex range.
+            const vStart = max<i32>(0, range.start);
+            const vEnd = range.count < 0 ? g.vertexCount : min<i32>(g.vertexCount, vStart + range.count);
+            this.addDraw(points, override != null ? override : points.material, g, 0, vStart, vEnd, frame, PRIM_POINTS);
+            return;
+        }
+        if (o instanceof Line) {
+            const line = o as Line;
+            const mode = o instanceof LineSegments ? LINE_SEGMENTS : o instanceof LineLoop ? LINE_LOOP : LINE_STRIP;
+            if (!this.geometries.lines(geometry, g, mode)) return;
+            let first = 0, count = g.lineCounts[mode];
+            if (mode == LINE_SEGMENTS) {
+                first = rangeStart;
+                count = min<i32>(count - first, rangeEnd - rangeStart);
+            } else if (rangeStart > 0 || rangeEnd < g.count) {
+                // A strip's segment k joins vertices k and k + 1.
+                first = rangeStart * 2;
+                count = max<i32>(0, rangeEnd - rangeStart - 1) * 2;
+            }
+            const item = this.addDraw(line, override != null ? override : line.material, g, 0, first, first + count,
+                frame, PRIM_LINES);
+            if (item != null) {
+                item.index = g.lineBuffers[mode];
+                item.indexFormat = <u32>g.lineFormats[mode];
+            }
+            return;
+        }
+
+        const mesh = o as Mesh;
+        let instances = this.identityInstance!;
+        let instanceCount: u32 = 1;
+        if (mesh instanceof InstancedMesh) {
+            const im = mesh as InstancedMesh;
+            if (im.count <= 0) return;
+            instances = this.instanceBuffer(im);
+            instanceCount = <u32>im.count;
+        }
+        const groups = geometry.groups;
         if (override == null && mesh.materials.length > 0 && groups.length > 0) {
             for (let i = 0; i < groups.length; i++) {
                 const group = groups[i];
@@ -640,16 +746,41 @@ export class GPURenderer {
                 if (mi < 0 || mi >= mesh.materials.length) continue;
                 const start = max<i32>(rangeStart, group.start);
                 const end = min<i32>(rangeEnd, group.start + group.count);
-                this.addDraw(mesh, mesh.materials[mi], g, i + 1, start, end, frame);
+                this.addMeshDraw(mesh, mesh.materials[mi], geometry, g, i + 1, start, end, frame, instances,
+                    instanceCount);
             }
         } else {
-            this.addDraw(mesh, override != null ? override : mesh.material, g, 0, rangeStart, rangeEnd, frame);
+            this.addMeshDraw(mesh, override != null ? override : mesh.material, geometry, g, 0, rangeStart, rangeEnd,
+                frame, instances, instanceCount);
         }
     }
 
-    private addDraw(object: Object3D, material: Material, g: GeometryGPU, part: i32, start: i32, end: i32,
-                    frame: i32): void {
-        if (!material.visible || end <= start) return;
+    private addMeshDraw(mesh: Mesh, material: Material, geometry: BufferGeometry, g: GeometryGPU, part: i32,
+                        start: i32, end: i32, frame: i32, instances: GPUBuffer, instanceCount: u32): void {
+        if (material.wireframe) {
+            if (!this.geometries.lines(geometry, g, LINE_WIREFRAME)) return;
+            // Each triangle's three edges: index range x2.
+            const item = this.addDraw(mesh, material, g, part, start * 2, end * 2, frame, PRIM_LINES);
+            if (item == null) return;
+            item.index = g.lineBuffers[LINE_WIREFRAME];
+            item.indexFormat = <u32>g.lineFormats[LINE_WIREFRAME];
+            item.instances = instances;
+            item.instanceCount = instanceCount;
+            return;
+        }
+        const item = this.addDraw(mesh, material, g, part, start, end, frame, PRIM_TRIANGLES);
+        if (item == null) return;
+        item.instances = instances;
+        item.instanceCount = instanceCount;
+        if (g.indexed) {
+            item.index = g.index;
+            item.indexFormat = <u32>g.indexFormat;
+        }
+    }
+
+    private addDraw(object: Object3D, material: Material, g: GeometryGPU?, part: i32, start: i32, end: i32,
+                    frame: i32, prim: i32): DrawItem? {
+        if (!material.visible || end <= start) return null;
         const stateKey = object.id * 64 + part;
         let state: DrawState;
         if (this.states.has(stateKey)) state = this.states.get(stateKey);
@@ -666,6 +797,7 @@ export class GPURenderer {
         }
 
         const item = new DrawItem(object, material, g, state, this.identityInstance!);
+        item.prim = prim;
         item.first = start;
         item.count = end - start;
         const side = material.side;
@@ -675,12 +807,58 @@ export class GPURenderer {
         if (blending == NormalBlending && !material.transparent) blending = NoBlending;
         item.pipelineKey = cull | (blending << KEY_BLEND_SHIFT)
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
-            | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0);
+            | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT);
         const e = object.matrixWorld.elements;
         _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
         item.depth = _pos.z;
         if (material.transparent) this.transparent.push(item);
         else this.opaque.push(item);
+        return item;
+    }
+
+    /// The InstancedMesh's instances, packed as mat4 + RGBA, re-uploaded when
+    /// instanceMatrix or instanceColor changed.
+    private instanceBuffer(im: InstancedMesh): GPUBuffer {
+        let ig: InstanceGPU;
+        if (this.instanceBuffers.has(im.id)) ig = this.instanceBuffers.get(im.id);
+        else {
+            ig = new InstanceGPU();
+            this.instanceBuffers.set(im.id, ig);
+        }
+        const capacity = im.instanceMatrix.count;
+        const colors = im.instanceColor;
+        const colorVersion = colors != null ? colors.version : -2;
+        if (ig.buffer != null && ig.matrixVersion == im.instanceMatrix.version && ig.colorVersion == colorVersion
+                && ig.count == capacity) {
+            return ig.buffer!;
+        }
+        const floats = <i32>INSTANCE_STRIDE / 4;
+        if (ig.staging.length != capacity * floats) ig.staging = new Float32Array(capacity * floats);
+        const out = ig.staging;
+        const m = im.instanceMatrix.array;
+        for (let i = 0; i < capacity; i++) {
+            const o = i * floats;
+            for (let k = 0; k < 16; k++) out[o + k] = m[i * 16 + k];
+            if (colors != null) {
+                out[o + 16] = colors.array[i * 3];
+                out[o + 17] = colors.array[i * 3 + 1];
+                out[o + 18] = colors.array[i * 3 + 2];
+            } else {
+                out[o + 16] = 1; out[o + 17] = 1; out[o + 18] = 1;
+            }
+            out[o + 19] = 1;
+        }
+        const bytes = out.buffer;
+        const existing = ig.buffer;
+        if (existing != null && existing.size == <u32>bytes.byteLength) existing.update(0, bytes);
+        else {
+            if (existing != null) existing.release();
+            ig.buffer = new GPUBuffer(BufferUsage.vertex, <u32>bytes.byteLength, bytes);
+        }
+        ig.matrixVersion = im.instanceMatrix.version;
+        ig.colorVersion = colorVersion;
+        ig.count = capacity;
+        return ig.buffer!;
     }
 
     /// Prepares the background texture's bind group; true when there is
@@ -722,6 +900,8 @@ export class GPURenderer {
         this.viewProj.mat4.writeToBuffer(buf, FRAME_VIEW_PROJ);
         camera.matrixWorldInverse.mat4.writeToBuffer(buf, FRAME_VIEW);
         this.invViewProj.mat4.writeToBuffer(buf, FRAME_INV_VIEW_PROJ);
+        camera.projectionMatrix.mat4.writeToBuffer(buf, FRAME_PROJ);
+        put4(f, FRAME_VIEWPORT, <f64>this.pixelWidth(), <f64>this.pixelHeight(), this.pixelRatio, 0);
         const cw = camera.matrixWorld.elements;
         let o = FRAME_CAMERA_POS >> 2;
         f[o] = cw[12]; f[o + 1] = cw[13]; f[o + 2] = cw[14];
@@ -883,6 +1063,10 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
             put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.pixelHeight() * 0.5);
             put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, 0);
+            if (object instanceof Sprite) {
+                const c = (object as Sprite).center;
+                put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);
+            }
 
             // Textures: views, flags, the shared sampler and UV transform
             // (from the first texture present, `map` first).
@@ -951,7 +1135,6 @@ export class GPURenderer {
         let lastKey = -1;
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
-            const g = item.geometry;
             const state = item.state;
             if (state.objGroup == null || state.matGroup == null) continue;
             if (item.pipelineKey != lastKey) {
@@ -961,19 +1144,37 @@ export class GPURenderer {
             }
             pass.setBindGroup(1, state.objGroup!);
             pass.setBindGroup(2, state.matGroup!);
+            const prim = item.prim;
+            if (prim == PRIM_SPRITE) {
+                pass.draw(6);
+                info.calls++;
+                info.triangles += 2;
+                continue;
+            }
+            const g = item.geometry!;
+            if (prim == PRIM_POINTS) {
+                pass.setVertexBuffer(0, g.position!, <u32>(item.first * 12));
+                pass.setVertexBuffer(1, g.color!, <u32>(item.first * 16));
+                pass.draw(6, <u32>item.count);
+                info.calls++;
+                info.points += item.count;
+                continue;
+            }
             pass.setVertexBuffer(0, g.position!);
             pass.setVertexBuffer(1, g.normal!);
             pass.setVertexBuffer(2, g.uv!);
             pass.setVertexBuffer(3, g.color!);
             pass.setVertexBuffer(4, item.instances);
-            if (g.indexed) {
-                pass.setIndexBuffer(g.index!, <u32>g.indexFormat);
+            const index = item.index;
+            if (index != null) {
+                pass.setIndexBuffer(index, item.indexFormat);
                 pass.drawIndexed(<u32>item.count, item.instanceCount, <u32>item.first);
             } else {
                 pass.draw(<u32>item.count, item.instanceCount, <u32>item.first);
             }
             info.calls++;
-            info.triangles += (item.count / 3) * <i32>item.instanceCount;
+            if (prim == PRIM_LINES) info.lines += (item.count / 2) * <i32>item.instanceCount;
+            else info.triangles += (item.count / 3) * <i32>item.instanceCount;
         }
     }
 }
@@ -1014,6 +1215,22 @@ function compareTransparent(a: DrawItem, b: DrawItem): i32 {
     const ro = a.object.renderOrder - b.object.renderOrder;
     if (ro != 0) return ro;
     return a.depth > b.depth ? -1 : a.depth < b.depth ? 1 : a.object.id - b.object.id;
+}
+
+function geometryOf(o: Object3D): BufferGeometry? {
+    if (o instanceof Mesh) return (o as Mesh).geometry;
+    if (o instanceof Line) return (o as Line).geometry;
+    if (o instanceof Points) return (o as Points).geometry;
+    return null;
+}
+
+/// three.js's Frustum.intersectsSprite.
+function intersectsSprite(sprite: Sprite): bool {
+    _sphere.center.set(0, 0, 0);
+    const dx = 0.5 - sprite.center.x, dy = 0.5 - sprite.center.y;
+    _sphere.radius = 0.7071067811865476 + Math.sqrt(dx * dx + dy * dy);
+    _sphere.applyMatrix4(sprite.matrixWorld);
+    return _frustum.intersectsSphere(_sphere);
 }
 
 function isNearest(filter: i32): bool {

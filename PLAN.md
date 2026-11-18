@@ -95,7 +95,7 @@ In steps, each committed with tests and a screenshot check:
   MeshDepthMaterial; `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`,
   `emissiveMap`, `alphaMap`; SpotLight, HemisphereLight; Fog, FogExp2;
   background texture; mipmap generation and anisotropy.
-- **M2d, other primitives.** Line, LineSegments, LineLoop, Points, Sprite,
+- **M2d, other primitives (done).** Line, LineSegments, LineLoop, Points, Sprite,
   InstancedMesh, LOD; LineBasicMaterial, LineDashedMaterial,
   PointsMaterial, SpriteMaterial; `wireframe`.
 - **M2e, the rest.** Curves (CatmullRomCurve3, QuadraticBezierCurve3 ...),

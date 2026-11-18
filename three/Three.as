@@ -31,10 +31,16 @@ export * from "./core/Object3D";
 export * from "./core/Layers";
 export * from "./core/ColorOrTexture";
 export * from "./core/BufferAttribute";
+export * from "./core/InstancedBufferAttribute";
 export * from "./core/BufferGeometry";
 
 export * from "./objects/Group";
 export * from "./objects/Mesh";
+export * from "./objects/InstancedMesh";
+export * from "./objects/Line";
+export * from "./objects/Points";
+export * from "./objects/Sprite";
+export * from "./objects/LOD";
 export * from "./scenes/Scene";
 export * from "./scenes/Fog";
 
@@ -60,6 +66,10 @@ export * from "./materials/MeshPhongMaterial";
 export * from "./materials/MeshToonMaterial";
 export * from "./materials/MeshMatcapMaterial";
 export * from "./materials/MeshDepthMaterial";
+export * from "./materials/LineBasicMaterial";
+export * from "./materials/LineDashedMaterial";
+export * from "./materials/PointsMaterial";
+export * from "./materials/SpriteMaterial";
 
 export * from "./geometries/BoxGeometry";
 export * from "./geometries/PlaneGeometry";

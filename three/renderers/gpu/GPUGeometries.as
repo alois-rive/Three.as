@@ -6,7 +6,12 @@
 import { GPUBuffer } from "rive/gpu";
 import { BufferUsage, IndexFormat } from "rive/gpu_enums";
 import { BufferGeometry } from "../../core/BufferGeometry";
-import { BufferAttribute } from "../../core/BufferAttribute";
+import { BufferAttribute, Uint32BufferAttribute } from "../../core/BufferAttribute";
+
+export const LINE_STRIP: i32 = 0;
+export const LINE_LOOP: i32 = 1;
+export const LINE_SEGMENTS: i32 = 2;
+export const LINE_WIREFRAME: i32 = 3;
 
 export class GeometryGPU {
     position: GPUBuffer? = null;
@@ -31,7 +36,18 @@ export class GeometryGPU {
     uvAttr: BufferAttribute? = null;
     colorAttr: BufferAttribute? = null;
 
+    // Generated line-list indices per line mode (LINE_*).
+    lineBuffers: StaticArray<GPUBuffer?> = new StaticArray<GPUBuffer?>(4);
+    lineFormats: StaticArray<IndexFormat> = new StaticArray<IndexFormat>(4);
+    lineCounts: StaticArray<i32> = new StaticArray<i32>(4);
+    lineStamps: StaticArray<i64> = [-1, -1, -1, -1];
+
     release(): void {
+        for (let i = 0; i < 4; i++) {
+            releaseBuffer(this.lineBuffers[i]);
+            this.lineBuffers[i] = null;
+            this.lineStamps[i] = -1;
+        }
         releaseBuffer(this.position); this.position = null;
         releaseBuffer(this.normal); this.normal = null;
         releaseBuffer(this.uv); this.uv = null;
@@ -76,7 +92,24 @@ export class GPUGeometries {
             g.normalAttr = null;
         }
 
-        const uv = geometry.getAttribute("uv");
+        // Dashed lines read "lineDistance" through the uv slot.
+        let uv = geometry.getAttribute("uv");
+        if (uv == null) {
+            const d = geometry.getAttribute("lineDistance");
+            if (d != null && d.count == vertexCount) {
+                if (resized || g.uvAttr !== d || g.uvVersion != d.version) {
+                    const a = new Float32Array(vertexCount * 2);
+                    for (let i = 0; i < vertexCount; i++) a[i * 2] = d.array[i];
+                    g.uv = upload(g.uv, a);
+                    g.uvAttr = d;
+                    g.uvVersion = d.version;
+                }
+                uv = d;
+            }
+        }
+        if (uv != null && uv.itemSize == 1) {
+            // lineDistance, uploaded above.
+        } else
         if (uv != null && uv.count == vertexCount) {
             if (resized || g.uvAttr !== uv || g.uvVersion != uv.version) {
                 g.uv = upload(g.uv, uv.array);
@@ -134,6 +167,48 @@ export class GPUGeometries {
         return g;
     }
 
+    /// Line-list indices drawing `geometry` as `mode` (LINE_STRIP for Line,
+    /// LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME for triangle edges). Fills
+    /// g.lineBuffers/lineFormats/lineCounts[mode]; false when empty.
+    lines(geometry: BufferGeometry, g: GeometryGPU, mode: i32): bool {
+        const index = geometry.index;
+        const stamp: i64 = (index != null ? (<i64>index.version + 1) << 33 | (<i64>index.count << 1) | 1 : 0)
+            ^ (<i64>g.vertexCount << 40);
+        if (g.lineStamps[mode] == stamp) return g.lineCounts[mode] > 0;
+        g.lineStamps[mode] = stamp;
+        const n = index != null ? index.count : g.vertexCount;
+        const out: Array<u32> = [];
+        if (mode == LINE_WIREFRAME) {
+            for (let t = 0; t + 2 < n; t += 3) {
+                const a = seq(index, t), b = seq(index, t + 1), c = seq(index, t + 2);
+                out.push(a); out.push(b); out.push(b); out.push(c); out.push(c); out.push(a);
+            }
+        } else if (mode == LINE_SEGMENTS) {
+            for (let i = 0; i + 1 < n; i += 2) { out.push(seq(index, i)); out.push(seq(index, i + 1)); }
+        } else {
+            for (let i = 0; i + 1 < n; i++) { out.push(seq(index, i)); out.push(seq(index, i + 1)); }
+            if (mode == LINE_LOOP && n > 2) { out.push(seq(index, n - 1)); out.push(seq(index, 0)); }
+        }
+        g.lineCounts[mode] = out.length;
+        if (out.length == 0) return false;
+        let maxIndex: u32 = 0;
+        for (let i = 0; i < out.length; i++) if (out[i] > maxIndex) maxIndex = out[i];
+        let bytes: ArrayBuffer;
+        if (maxIndex < 65535) {
+            const a = new Uint16Array((out.length + 1) & ~1);
+            for (let i = 0; i < out.length; i++) a[i] = <u16>out[i];
+            bytes = a.buffer;
+            g.lineFormats[mode] = IndexFormat.uint16;
+        } else {
+            const a = new Uint32Array(out.length);
+            for (let i = 0; i < out.length; i++) a[i] = out[i];
+            bytes = a.buffer;
+            g.lineFormats[mode] = IndexFormat.uint32;
+        }
+        g.lineBuffers[mode] = uploadBytes(g.lineBuffers[mode], BufferUsage.index, bytes);
+        return true;
+    }
+
     dispose(id: i32): void {
         if (this.map.has(id)) {
             this.map.get(id).release();
@@ -160,6 +235,10 @@ function toRGBA(color: BufferAttribute, count: i32): Float32Array {
         out[i * 4 + 3] = 1;
     }
     return out;
+}
+
+function seq(index: Uint32BufferAttribute?, i: i32): u32 {
+    return index != null ? index.array[i] : <u32>i;
 }
 
 function upload(existing: GPUBuffer?, data: Float32Array): GPUBuffer {

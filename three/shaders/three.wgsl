@@ -25,6 +25,7 @@ const KIND_TOON: u32 = 5u;
 const KIND_MATCAP: u32 = 6u;
 const KIND_DEPTH: u32 = 7u;
 const KIND_PHYSICAL: u32 = 8u;
+const KIND_LINE_DASHED: u32 = 9u;
 
 const SLOT_MAP: u32 = 0u;
 const SLOT_NORMAL: u32 = 1u;
@@ -77,6 +78,8 @@ struct FrameU {
     output: vec4<f32>,       // x tone mapping, y exposure, z background intensity, w background max mip
     bg_rotation: mat4x4<f32>,
     bg_flags: vec4<u32>,     // x mapping, y srgb, z flipY, w premultiplied
+    proj: mat4x4<f32>,
+    viewport: vec4<f32>,     // width, height (pixels), pixel ratio
     lights: array<Light, 8>,
 };
 
@@ -96,6 +99,7 @@ struct ObjU {
     flags: vec4<u32>,        // x premultiplied (bit per slot), y FLAG_*
     points: vec4<f32>,       // size, sizeAttenuation, rotation, viewport height / 2
     dash: vec4<f32>,         // dashSize, gapSize, scale
+    sprite: vec4<f32>,       // xy sprite center
 };
 
 @group(0) @binding(0) var<uniform> F: FrameU;
@@ -154,6 +158,67 @@ fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
     let vcolor = select(vec4<f32>(1.0), in.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
     out.color = vcolor * inst.color;
     out.view_depth = -(F.view * world).z;
+    return out;
+}
+
+// The corners of a quad drawn as two triangles from vertex_index, -1..1.
+fn quad_corner(vi: u32) -> vec2<f32> {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0),
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    return corners[vi % 6u];
+}
+
+struct PointIn {
+    @location(0) position: vec3<f32>,
+    @location(3) color: vec4<f32>,
+};
+
+// Points: an instanced quad per vertex, `size` pixels (three.js's
+// gl_PointSize, attenuated by depth with sizeAttenuation).
+@vertex
+fn vs_points(p: PointIn, @builtin(vertex_index) vi: u32) -> VsOut {
+    var out: VsOut;
+    let corner = quad_corner(vi);
+    let world = O.model * vec4<f32>(p.position, 1.0);
+    let clip = F.view_proj * world;
+    let view_z = (F.view * world).z;
+    var size = O.points.x * F.viewport.z;
+    if (O.points.y > 0.5 && F.camera_pos.w < 0.5) {
+        size *= O.points.w / max(-view_z, 1e-6);
+    }
+    let offset = corner * size / F.viewport.xy;
+    out.clip = clip + vec4<f32>(offset * clip.w, 0.0, 0.0);
+    out.world = world.xyz;
+    out.normal = -F.camera_dir.xyz;
+    out.uv = (corner * 0.5 + vec2<f32>(0.5)) * O.uv_xform.zw + O.uv_xform.xy;
+    out.color = select(vec4<f32>(1.0), p.color, (O.flags.y & FLAG_VERTEX_COLORS) != 0u);
+    out.view_depth = -view_z;
+    return out;
+}
+
+// Sprites: a camera-facing quad, as three.js's sprite vertex shader.
+@vertex
+fn vs_sprite(@builtin(vertex_index) vi: u32) -> VsOut {
+    var out: VsOut;
+    let corner = quad_corner(vi) * 0.5;
+    let origin = O.model * vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    var mv = F.view * origin;
+    var scale = vec2<f32>(length(O.model[0].xyz), length(O.model[1].xyz));
+    if (O.points.y < 0.5 && F.camera_pos.w < 0.5) {
+        scale *= -mv.z;
+    }
+    let aligned = (corner - (O.sprite.xy - vec2<f32>(0.5))) * scale;
+    let c = cos(O.points.z);
+    let s = sin(O.points.z);
+    let rotated = vec2<f32>(c * aligned.x - s * aligned.y, s * aligned.x + c * aligned.y);
+    mv = vec4<f32>(mv.xy + rotated, mv.z, 1.0);
+    out.clip = F.proj * mv;
+    out.world = origin.xyz;
+    out.normal = -F.camera_dir.xyz;
+    out.uv = (corner + vec2<f32>(0.5)) * O.uv_xform.zw + O.uv_xform.xy;
+    out.color = vec4<f32>(1.0);
+    out.view_depth = -mv.z;
     return out;
 }
 
@@ -397,6 +462,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if (diffuse.a < O.emissive.w) {
         discard;
     }
+    if (kind == KIND_LINE_DASHED) {
+        let total = O.dash.x + O.dash.y;
+        if ((in.uv.x * O.dash.z) % total > O.dash.x) {
+            discard;
+        }
+    }
     let alpha = select(1.0, diffuse.a, (flags & FLAG_TRANSPARENT) != 0u);
 
     // Normal mapping in a tangent frame built from derivatives (three.js's
@@ -432,7 +503,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     }
 
     var rgb = diffuse.rgb;
-    if (kind == KIND_BASIC) {
+    if (kind == KIND_BASIC || kind == KIND_LINE_DASHED) {
         rgb = diffuse.rgb * ao;
     } else if (kind == KIND_MATCAP) {
         rgb = diffuse.rgb * select(vec3<f32>(1.0), s_aux.rgb, has_flag(present, SLOT_AUX));

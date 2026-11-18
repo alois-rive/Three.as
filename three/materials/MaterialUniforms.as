@@ -14,6 +14,7 @@ export const KIND_TOON: i32 = 5;
 export const KIND_MATCAP: i32 = 6;
 export const KIND_DEPTH: i32 = 7;
 export const KIND_PHYSICAL: i32 = 8;
+export const KIND_LINE_DASHED: i32 = 9;
 
 // Texture slots (the material bind group's bindings 0..6).
 export const SLOT_MAP: i32 = 0;

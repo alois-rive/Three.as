@@ -17,9 +17,11 @@ export const FRAME_FOG_PARAMS: i32 = 304;
 export const FRAME_OUTPUT: i32 = 320;
 export const FRAME_BG_ROTATION: i32 = 336;
 export const FRAME_BG_FLAGS: i32 = 400;
-export const FRAME_LIGHTS: i32 = 416;
+export const FRAME_PROJ: i32 = 416;
+export const FRAME_VIEWPORT: i32 = 480;
+export const FRAME_LIGHTS: i32 = 496;
 export const LIGHT_BYTES: i32 = 64;
-export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 928
+export const FRAME_BYTES: i32 = FRAME_LIGHTS + MAX_LIGHTS * LIGHT_BYTES;   // 1008
 
 export const OBJ_MODEL: i32 = 0;
 export const OBJ_NORMAL: i32 = 64;
@@ -36,7 +38,8 @@ export const OBJ_TEX_FLAGS: i32 = 272;
 export const OBJ_FLAGS: i32 = 288;
 export const OBJ_POINTS: i32 = 304;
 export const OBJ_DASH: i32 = 320;
-export const OBJ_USED: i32 = 336;
+export const OBJ_SPRITE: i32 = 336;
+export const OBJ_USED: i32 = 352;
 /// The per-draw buffer size (room to grow).
 export const OBJ_BYTES: i32 = 512;
 
