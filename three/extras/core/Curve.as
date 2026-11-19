@@ -4,6 +4,8 @@
 
 import { Vector3 } from "../../math/Vector3";
 import { Matrix4 } from "../../math/Matrix4";
+import { Dynamic } from "rive/dynamic";
+import { jsonMetadata, jint } from "../../core/JSON";
 
 export class FrenetFrames {
     tangents: Array<Vector3> = [];
@@ -23,6 +25,22 @@ export class Curve<V> {
     /// The point at `t` in [0, 1] (curve parameter, not arc length).
     getPoint(t: f64, target: V): V {
         return target;
+    }
+
+    /// three.js's JSON: { metadata, arcLengthDivisions, type } plus each
+    /// curve's own members (points as [x, y] / [x, y, z] arrays).
+    toJSON(): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("metadata", jsonMetadata("Curve", "Curve.toJSON"));
+        data.set("arcLengthDivisions", Dynamic.fromNumber(<f64>this.arcLengthDivisions));
+        data.set("type", Dynamic.fromString(this.type));
+        return data;
+    }
+
+    /// Reads what toJSON wrote; returns this.
+    fromJSON(json: Dynamic?): Curve<V> {
+        this.arcLengthDivisions = jint(json, "arcLengthDivisions", this.arcLengthDivisions);
+        return this;
     }
 
     /// The point at `u` in [0, 1] of the arc length.

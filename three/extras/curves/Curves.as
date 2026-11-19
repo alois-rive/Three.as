@@ -6,11 +6,58 @@ import { Curve } from "../core/Curve";
 import { CatmullRom, QuadraticBezier, CubicBezier } from "../core/Interpolations";
 import { Vector2 } from "../../math/Vector2";
 import { Vector3 } from "../../math/Vector3";
+import { Dynamic } from "rive/dynamic";
+import { setNumber, setNumbers, setBool, jnum, jbool, jstr, jarr, jnumbers, asNumbers } from "../../core/JSON";
 
 const EPSILON: f64 = 2.220446049250313e-16;
 
+/// A new 2D curve of three.js's class `type` (for CurvePath.fromJSON), or
+/// null for a type that is not a 2D curve.
+export function createCurve2(type: string): Curve<Vector2>? {
+    if (type == "LineCurve") return new LineCurve();
+    if (type == "QuadraticBezierCurve") return new QuadraticBezierCurve();
+    if (type == "CubicBezierCurve") return new CubicBezierCurve();
+    if (type == "EllipseCurve") return new EllipseCurve();
+    if (type == "ArcCurve") return new ArcCurve();
+    if (type == "SplineCurve") return new SplineCurve();
+    return null;
+}
+
+/// A new 3D curve of three.js's class `type`, or null.
+export function createCurve3(type: string): Curve<Vector3>? {
+    if (type == "LineCurve3") return new LineCurve3();
+    if (type == "QuadraticBezierCurve3") return new QuadraticBezierCurve3();
+    if (type == "CubicBezierCurve3") return new CubicBezierCurve3();
+    if (type == "CatmullRomCurve3") return new CatmullRomCurve3();
+    return null;
+}
+
+function readVector2(v: Vector2, json: Dynamic?, key: string): void {
+    const a = jnumbers(json, key);
+    if (a != null && a.length >= 2) v.set(a[0], a[1]);
+}
+
+function readVector3(v: Vector3, json: Dynamic?, key: string): void {
+    const a = jnumbers(json, key);
+    if (a != null && a.length >= 3) v.set(a[0], a[1], a[2]);
+}
+
 export class LineCurve extends Curve<Vector2> {
     readonly isLineCurve: bool = true;
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        readVector2(this.v1, json, "v1");
+        readVector2(this.v2, json, "v2");
+        return this;
+    }
     v1: Vector2;
     v2: Vector2;
 
@@ -37,6 +84,20 @@ export class LineCurve extends Curve<Vector2> {
 
 export class LineCurve3 extends Curve<Vector3> {
     readonly isLineCurve3: bool = true;
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector3> {
+        super.fromJSON(json);
+        readVector3(this.v1, json, "v1");
+        readVector3(this.v2, json, "v2");
+        return this;
+    }
     v1: Vector3;
     v2: Vector3;
 
@@ -62,6 +123,22 @@ export class LineCurve3 extends Curve<Vector3> {
 }
 
 export class QuadraticBezierCurve extends Curve<Vector2> {
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v0", this.v0.toArray());
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        readVector2(this.v0, json, "v0");
+        readVector2(this.v1, json, "v1");
+        readVector2(this.v2, json, "v2");
+        return this;
+    }
+
     v0: Vector2;
     v1: Vector2;
     v2: Vector2;
@@ -80,6 +157,22 @@ export class QuadraticBezierCurve extends Curve<Vector2> {
 }
 
 export class QuadraticBezierCurve3 extends Curve<Vector3> {
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v0", this.v0.toArray());
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector3> {
+        super.fromJSON(json);
+        readVector3(this.v0, json, "v0");
+        readVector3(this.v1, json, "v1");
+        readVector3(this.v2, json, "v2");
+        return this;
+    }
+
     v0: Vector3;
     v1: Vector3;
     v2: Vector3;
@@ -99,6 +192,24 @@ export class QuadraticBezierCurve3 extends Curve<Vector3> {
 }
 
 export class CubicBezierCurve extends Curve<Vector2> {
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v0", this.v0.toArray());
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        setNumbers(data, "v3", this.v3.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        readVector2(this.v0, json, "v0");
+        readVector2(this.v1, json, "v1");
+        readVector2(this.v2, json, "v2");
+        readVector2(this.v3, json, "v3");
+        return this;
+    }
+
     v0: Vector2;
     v1: Vector2;
     v2: Vector2;
@@ -119,6 +230,24 @@ export class CubicBezierCurve extends Curve<Vector2> {
 }
 
 export class CubicBezierCurve3 extends Curve<Vector3> {
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumbers(data, "v0", this.v0.toArray());
+        setNumbers(data, "v1", this.v1.toArray());
+        setNumbers(data, "v2", this.v2.toArray());
+        setNumbers(data, "v3", this.v3.toArray());
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector3> {
+        super.fromJSON(json);
+        readVector3(this.v0, json, "v0");
+        readVector3(this.v1, json, "v1");
+        readVector3(this.v2, json, "v2");
+        readVector3(this.v3, json, "v3");
+        return this;
+    }
+
     v0: Vector3;
     v1: Vector3;
     v2: Vector3;
@@ -141,6 +270,32 @@ export class CubicBezierCurve3 extends Curve<Vector3> {
 
 export class EllipseCurve extends Curve<Vector2> {
     readonly isEllipseCurve: bool = true;
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        setNumber(data, "aX", this.aX);
+        setNumber(data, "aY", this.aY);
+        setNumber(data, "xRadius", this.xRadius);
+        setNumber(data, "yRadius", this.yRadius);
+        setNumber(data, "aStartAngle", this.aStartAngle);
+        setNumber(data, "aEndAngle", this.aEndAngle);
+        setBool(data, "aClockwise", this.aClockwise);
+        setNumber(data, "aRotation", this.aRotation);
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        this.aX = jnum(json, "aX", this.aX);
+        this.aY = jnum(json, "aY", this.aY);
+        this.xRadius = jnum(json, "xRadius", this.xRadius);
+        this.yRadius = jnum(json, "yRadius", this.yRadius);
+        this.aStartAngle = jnum(json, "aStartAngle", this.aStartAngle);
+        this.aEndAngle = jnum(json, "aEndAngle", this.aEndAngle);
+        this.aClockwise = jbool(json, "aClockwise", this.aClockwise);
+        this.aRotation = jnum(json, "aRotation", this.aRotation);
+        return this;
+    }
     aX: f64;
     aY: f64;
     xRadius: f64;
@@ -197,6 +352,25 @@ export class ArcCurve extends EllipseCurve {
 
 export class SplineCurve extends Curve<Vector2> {
     readonly isSplineCurve: bool = true;
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        const points = Dynamic.newTable();
+        for (let i = 0; i < this.points.length; i++) points.push(Dynamic.fromNumbers(this.points[i].toArray()));
+        data.set("points", points);
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        this.points = [];
+        const items = jarr(json, "points");
+        for (let i = 0; i < items.length; i++) {
+            const a = asNumbers(items[i]);
+            if (a != null && a.length >= 2) this.points.push(new Vector2(a[0], a[1]));
+        }
+        return this;
+    }
     points: Array<Vector2>;
 
     constructor(points: Array<Vector2> = []) {
@@ -254,6 +428,31 @@ class CubicPoly {
 /// "catmullrom" with `tension`).
 export class CatmullRomCurve3 extends Curve<Vector3> {
     readonly isCatmullRomCurve3: bool = true;
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        const points = Dynamic.newTable();
+        for (let i = 0; i < this.points.length; i++) points.push(Dynamic.fromNumbers(this.points[i].toArray()));
+        data.set("points", points);
+        setBool(data, "closed", this.closed);
+        data.set("curveType", Dynamic.fromString(this.curveType));
+        setNumber(data, "tension", this.tension);
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector3> {
+        super.fromJSON(json);
+        this.points = [];
+        const items = jarr(json, "points");
+        for (let i = 0; i < items.length; i++) {
+            const a = asNumbers(items[i]);
+            if (a != null && a.length >= 3) this.points.push(new Vector3(a[0], a[1], a[2]));
+        }
+        this.closed = jbool(json, "closed", this.closed);
+        this.curveType = jstr(json, "curveType", this.curveType);
+        this.tension = jnum(json, "tension", this.tension);
+        return this;
+    }
     points: Array<Vector3>;
     closed: bool;
     curveType: string;

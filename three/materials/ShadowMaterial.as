@@ -2,6 +2,8 @@
 // there `color` at `opacity` (receiveShadow must be set on the mesh).
 
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { MaterialUniforms, KIND_SHADOW } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 
@@ -12,6 +14,11 @@ export class ShadowMaterialParameters extends MaterialParameters {
 
 export class ShadowMaterial extends Material {
     readonly isShadowMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+    }
     color: Color = new Color(0, 0, 0);
 
     constructor(parameters: ShadowMaterialParameters? = null) {

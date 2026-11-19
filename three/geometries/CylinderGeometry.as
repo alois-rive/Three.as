@@ -2,6 +2,8 @@
 // top cap, 2 the bottom cap.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, setBool, jnum, jint, jbool } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Vector3 } from "../math/Vector3";
 
@@ -18,6 +20,25 @@ export class CylinderGeometryParameters {
 
 export class CylinderGeometry extends BufferGeometry {
     parameters: CylinderGeometryParameters = new CylinderGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radiusTop", p.radiusTop);
+        setNumber(data, "radiusBottom", p.radiusBottom);
+        setNumber(data, "height", p.height);
+        setNumber(data, "radialSegments", <f64>p.radialSegments);
+        setNumber(data, "heightSegments", <f64>p.heightSegments);
+        setBool(data, "openEnded", p.openEnded);
+        setNumber(data, "thetaStart", p.thetaStart);
+        setNumber(data, "thetaLength", p.thetaLength);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): CylinderGeometry {
+        return new CylinderGeometry(jnum(data, "radiusTop", 1), jnum(data, "radiusBottom", 1),
+            jnum(data, "height", 1), jint(data, "radialSegments", 32), jint(data, "heightSegments", 1),
+            jbool(data, "openEnded", false), jnum(data, "thetaStart", 0), jnum(data, "thetaLength", Math.PI * 2));
+    }
 
     private indices: Array<i32> = [];
     private vertices: Array<f64> = [];

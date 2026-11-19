@@ -3,11 +3,18 @@
 // (straight up by default).
 
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { Object3D } from "../core/Object3D";
 import { Color } from "../math/Color";
 
 export class HemisphereLight extends Light {
     readonly isHemisphereLight: bool = true;
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("groundColor", Dynamic.fromNumber(<f64>this.groundColor.getHex()));
+    }
     groundColor: Color;
 
     constructor(skyColor: u32 = 0xFFFFFF, groundColor: u32 = 0xFFFFFF, intensity: f64 = 1) {

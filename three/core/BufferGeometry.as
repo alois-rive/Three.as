@@ -9,6 +9,9 @@ import { Quaternion } from "../math/Quaternion";
 import { Vector3 } from "../math/Vector3";
 import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
+import { MathUtils } from "../math/MathUtils";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, jsonMetadata, isEmptyTable } from "./JSON";
 
 let _geometryId: i32 = 0;
 
@@ -52,11 +55,101 @@ export class BufferGeometry extends EventDispatcher {
     /// Set by computeBoundingSphere; the renderer computes it on first
     /// use for frustum culling. Recompute after moving vertices by hand.
     boundingSphere: Sphere? = null;
+    private _uuid: string = "";
+    private _userData: Dynamic? = null;
 
     constructor() {
         super();
         this.id = _geometryId++;
     }
+
+    /// A random uuid, made on first use.
+    get uuid(): string {
+        if (this._uuid.length == 0) this._uuid = MathUtils.generateUUID();
+        return this._uuid;
+    }
+    set uuid(value: string) { this._uuid = value; }
+
+    /// A `Dynamic` table, as three.js's userData (see Object3D.userData).
+    get userData(): Dynamic {
+        let d = this._userData;
+        if (d == null) {
+            d = Dynamic.newTable();
+            this._userData = d;
+        }
+        return d!;
+    }
+    set userData(value: Dynamic) { this._userData = value; }
+
+    /// three.js's JSON: { metadata, uuid, type, name, userData } and either
+    /// the parameters of a built-in geometry (BoxGeometry ...: its
+    /// constructor arguments, rebuilt by ObjectLoader) or `data` (attributes,
+    /// index, morph attributes, groups, bounding sphere; `type` is then
+    /// "BufferGeometry" for any class whose parameters are not written,
+    /// such as TubeGeometry). `meta` collects
+    /// the shapes of shape and extrude geometries (three.js does that in
+    /// Object3D.toJSON).
+    toJSON(meta: JSONMeta? = null): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("metadata", jsonMetadata("BufferGeometry", "BufferGeometry.toJSON"));
+        data.set("uuid", Dynamic.fromString(this.uuid));
+        data.set("type", Dynamic.fromString(this.type));
+        if (this.name != "") data.set("name", Dynamic.fromString(this.name));
+        if (!isEmptyTable(this._userData)) data.set("userData", this._userData);
+        if (this.toJSONParameters(data, meta)) return data;
+        // A geometry written as data loads as a BufferGeometry (three.js
+        // would look for the parameters of e.g. a TubeGeometry).
+        data.set("type", Dynamic.fromString("BufferGeometry"));
+
+        const d = Dynamic.newTable();
+        const attributes = Dynamic.newTable();
+        const index = this.index;
+        if (index != null) d.set("index", index.toJSON());
+        const names = this.attributes.keys();
+        for (let i = 0; i < names.length; i++) attributes.set(names[i], this.attributes.get(names[i]).toJSON());
+        d.set("attributes", attributes);
+        const morphNames = this.morphAttributes.keys();
+        const morphAttributes = Dynamic.newTable();
+        let hasMorphAttributes = false;
+        for (let i = 0; i < morphNames.length; i++) {
+            const list = this.morphAttributes.get(morphNames[i]);
+            if (list.length == 0) continue;
+            const array = Dynamic.newTable();
+            for (let j = 0; j < list.length; j++) array.push(list[j].toJSON());
+            morphAttributes.set(morphNames[i], array);
+            hasMorphAttributes = true;
+        }
+        if (hasMorphAttributes) {
+            d.set("morphAttributes", morphAttributes);
+            d.set("morphTargetsRelative", Dynamic.fromBool(this.morphTargetsRelative));
+        }
+        if (this.groups.length > 0) {
+            const groups = Dynamic.newTable();
+            for (let i = 0; i < this.groups.length; i++) {
+                const g = this.groups[i];
+                const group = Dynamic.newTable();
+                group.set("start", Dynamic.fromNumber(<f64>g.start));
+                group.set("count", Dynamic.fromNumber(<f64>g.count));
+                group.set("materialIndex", Dynamic.fromNumber(<f64>g.materialIndex));
+                groups.push(group);
+            }
+            d.set("groups", groups);
+        }
+        const sphere = this.boundingSphere;
+        if (sphere != null) {
+            const bs = Dynamic.newTable();
+            bs.set("center", Dynamic.fromNumbers(sphere.center.toArray()));
+            bs.set("radius", Dynamic.fromNumber(sphere.radius));
+            d.set("boundingSphere", bs);
+        }
+        data.set("data", d);
+        return data;
+    }
+
+    /// Writes a built-in geometry's parameters into `data` and returns true
+    /// (three.js writes `this.parameters` when a geometry has them); false
+    /// writes the vertex data instead. Internal to toJSON.
+    toJSONParameters(data: Dynamic, meta: JSONMeta?): bool { return false; }
 
     getIndex(): Uint32BufferAttribute? { return this.index; }
 
@@ -276,6 +369,7 @@ export class BufferGeometry extends EventDispatcher {
     /// bounds and draw range, cloned.
     copy(source: BufferGeometry): BufferGeometry {
         this.name = source.name;
+        this._userData = source._userData;
         this.attributes = new Map<string, BufferAttribute>();
         const names = source.attributes.keys();
         for (let i = 0; i < names.length; i++) this.attributes.set(names[i], source.attributes.get(names[i]).clone());

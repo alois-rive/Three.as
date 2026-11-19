@@ -1,6 +1,8 @@
 // three.js LatheGeometry: `points` (x radius, y height) revolved around Y.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint, jget, jhas, jat, jitems, asNum } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
@@ -14,6 +16,36 @@ export class LatheGeometryParameters {
 
 export class LatheGeometry extends BufferGeometry {
     parameters: LatheGeometryParameters = new LatheGeometryParameters();
+
+    /// `points` as three.js writes Vector2s: { x, y } objects.
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        const points = Dynamic.newTable();
+        for (let i = 0; i < p.points.length; i++) {
+            const point = Dynamic.newTable();
+            setNumber(point, "x", p.points[i].x);
+            setNumber(point, "y", p.points[i].y);
+            points.push(point);
+        }
+        data.set("points", points);
+        setNumber(data, "segments", <f64>p.segments);
+        setNumber(data, "phiStart", p.phiStart);
+        setNumber(data, "phiLength", p.phiLength);
+        return true;
+    }
+
+    /// Points may be { x, y } objects or [x, y] pairs.
+    static fromJSON(data: Dynamic?): LatheGeometry {
+        const points: Array<Vector2> = [];
+        const items = jitems(jget(data, "points"));
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (jhas(item, "x")) points.push(new Vector2(jnum(item, "x", 0), jnum(item, "y", 0)));
+            else points.push(new Vector2(asNum(jat(item, 0), 0), asNum(jat(item, 1), 0)));
+        }
+        return new LatheGeometry(points, jint(data, "segments", 12), jnum(data, "phiStart", 0),
+            jnum(data, "phiLength", Math.PI * 2));
+    }
 
     constructor(points: Array<Vector2> = [new Vector2(0, -0.5), new Vector2(0.5, 0), new Vector2(0, 0.5)],
                 segments: i32 = 12, phiStart: f64 = 0, phiLength: f64 = Math.PI * 2) {

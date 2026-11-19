@@ -579,4 +579,5 @@
     <BlobAsset file="examples/assets/cube_ascii.ply" name="cube_ascii" id="0:2309"/>
     <BlobAsset file="examples/assets/quad_binary.ply" name="quad_binary" id="0:2310"/>
     <BlobAsset file="examples/assets/threeas_logo.svg" name="threeas_logo" id="0:2313"/>
+    <BlobAsset file="examples/assets/threejs_scene.json" name="threejs_scene" id="0:2471"/>
 </Rive>

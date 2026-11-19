@@ -7,6 +7,8 @@
 // (InterpolateGLTFCubicSpline: in-tangent, value, out-tangent per key).
 
 import { InterpolateDiscrete, InterpolateLinear, InterpolateSmooth } from "../constants";
+import { Dynamic } from "rive/dynamic";
+import { numbersOf } from "../core/JSON";
 
 /// glTF CUBICSPLINE keys (three.js's GLTFCubicSplineInterpolant).
 export const InterpolateGLTFCubicSpline: i32 = 2303;
@@ -24,6 +26,31 @@ export class KeyframeTrack {
         this.times = toF32(times);
         this.values = toF32(values);
         this.interpolation = interpolation;
+    }
+
+    /// The interpolation toJSON leaves out (Discrete for boolean tracks).
+    get DefaultInterpolation(): i32 {
+        return this.ValueTypeName == "bool" ? InterpolateDiscrete : InterpolateLinear;
+    }
+
+    /// three.js's KeyframeTrack.toJSON(track): { name, times, values, type,
+    /// interpolation (when not the default) }.
+    static toJSON(track: KeyframeTrack): Dynamic {
+        const json = Dynamic.newTable();
+        json.set("name", Dynamic.fromString(track.name));
+        json.set("times", numbersOf(track.times));
+        if (track.ValueTypeName == "bool") {
+            const values = Dynamic.newTable();
+            for (let i = 0; i < track.values.length; i++) values.push(Dynamic.fromBool(track.values[i] != 0));
+            json.set("values", values);
+        } else {
+            json.set("values", numbersOf(track.values));
+        }
+        json.set("type", Dynamic.fromString(track.ValueTypeName));
+        if (track.interpolation != track.DefaultInterpolation) {
+            json.set("interpolation", Dynamic.fromNumber(<f64>track.interpolation));
+        }
+        return json;
     }
 
     /// Values per key.

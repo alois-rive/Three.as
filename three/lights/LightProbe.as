@@ -3,10 +3,17 @@
 
 import { Object3D } from "../core/Object3D";
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { SphericalHarmonics3 } from "../math/SphericalHarmonics3";
 
 export class LightProbe extends Light {
     readonly isLightProbe: bool = true;
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("sh", Dynamic.fromNumbers(this.sh.toArray()));
+    }
     sh: SphericalHarmonics3;
 
     constructor(sh: SphericalHarmonics3? = null, intensity: f64 = 1) {

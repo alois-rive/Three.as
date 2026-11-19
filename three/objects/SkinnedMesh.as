@@ -16,6 +16,8 @@ import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastMesh } from "./raycasting";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export const AttachedBindMode: string = "attached";
 export const DetachedBindMode: string = "detached";
@@ -34,6 +36,17 @@ export class SkinnedMesh extends Mesh {
     constructor(geometry: BufferGeometry = new BufferGeometry(), material: Material = new MeshBasicMaterial()) {
         super(geometry, material);
         this.type = "SkinnedMesh";
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("bindMode", Dynamic.fromString(this.bindMode));
+        object.set("bindMatrix", Dynamic.fromNumbers(this.bindMatrix.toArray()));
+        const skeleton = this.skeleton;
+        if (skeleton != null) {
+            if (!meta.skeletons.has(skeleton.uuid)) meta.skeletons.set(skeleton.uuid, skeleton.toJSON());
+            object.set("skeleton", Dynamic.fromString(skeleton.uuid));
+        }
     }
 
     /// Binds `skeleton`, with the mesh's current world transform as the bind

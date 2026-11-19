@@ -3,10 +3,19 @@
 
 import { Object3D } from "../core/Object3D";
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { PointLightShadow } from "./LightShadow";
 
 export class PointLight extends Light {
     readonly isPointLight: bool = true;
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("distance", Dynamic.fromNumber(this.distance));
+        object.set("decay", Dynamic.fromNumber(this.decay));
+        object.set("shadow", this.shadow.toJSON());
+    }
     distance: f64;
     decay: f64;
     shadow: PointLightShadow = new PointLightShadow();

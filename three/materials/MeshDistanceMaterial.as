@@ -4,6 +4,8 @@
 // not need it).
 
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 import { MaterialUniforms, KIND_DISTANCE, SLOT_MAP, SLOT_ALPHA, ROLE_DISPLACEMENT } from "./MaterialUniforms";
 import { Vector3 } from "../math/Vector3";
 import { Texture } from "../textures/Texture";
@@ -18,6 +20,16 @@ export class MeshDistanceMaterialParameters extends MaterialParameters {
 
 export class MeshDistanceMaterial extends Material {
     readonly isMeshDistanceMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.mapToJSON(data, "displacementMap", this.displacementMap, meta)) {
+            setNumber(data, "displacementScale", this.displacementScale);
+            setNumber(data, "displacementBias", this.displacementBias);
+        }
+    }
     map: Texture? = null;
     alphaMap: Texture? = null;
     displacementMap: Texture? = null;

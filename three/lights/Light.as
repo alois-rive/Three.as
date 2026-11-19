@@ -2,9 +2,17 @@
 
 import { Object3D } from "../core/Object3D";
 import { Color } from "../math/Color";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export class Light extends Object3D {
     readonly isLight: bool = true;
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("color", Dynamic.fromNumber(<f64>this.color.getHex()));
+        object.set("intensity", Dynamic.fromNumber(this.intensity));
+    }
     color: Color;
     intensity: f64;
 

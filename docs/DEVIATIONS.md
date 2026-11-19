@@ -117,10 +117,16 @@ export class Demo extends Layout {
 - **Arrays are invariant**: an `Array<Mesh>` is not an `Array<Object3D>`.
   Declare `Array<Object3D>` for what you pass to `intersectObjects` and cast
   elements back (`arr[i] as Mesh`).
-- **No `userData`** (no untyped objects). Subclass, or keep a `Map` keyed by
-  `object.id`. Loaders that fill `userData` return subclasses with typed
-  fields instead (`STLGeometry.groupNames`, `SVGShapePath.userData`).
-- `uuid` and `MathUtils.generateUUID` are missing; `id` is unique.
+- **`userData` is a `Dynamic` table** (`rive/dynamic`, AnimaScript's
+  untyped value) on objects, geometries, materials and textures:
+  `object.userData.set("hp", Dynamic.fromNumber(3))`,
+  `Dynamic.asNumber(object.userData.get("hp"))`. It holds what JSON holds;
+  `copy` / `clone` deep-copy it (geometries share it), and toJSON writes it.
+- `uuid` (objects, geometries, materials, textures, sources, skeletons,
+  clips, shapes) is made by `MathUtils.generateUUID()` on first read, not
+  in the constructor; `id` is unique too.
+- Loaders that set typed data return subclasses with typed fields as well
+  (`STLGeometry.groupNames`, `SVGShapePath.userData`).
 
 ## Math
 
@@ -422,7 +428,9 @@ export class Demo extends Layout {
 - `KeyframeTrack(name, times, values, interpolation)` takes `Array<f64>`
   and stores `Float32Array`s. Interpolations: Discrete, Linear (slerp for
   quaternions), Smooth, plus `InterpolateGLTFCubicSpline` (three.js keeps
-  that inside its GLTFLoader). `StringKeyframeTrack` is not ported.
+  that inside its GLTFLoader). `StringKeyframeTrack` is not ported
+  (`AnimationClip.parse` skips string tracks). A clip's `blendMode` is kept
+  and written to JSON; the mixer blends every clip normally.
 - `PropertyBinding` resolves `node.position|quaternion|scale|rotation|
   visible`, `node.morphTargetInfluences[i|name]` and `node.material.color|
   opacity|emissive`; nodes by name under the root (names cannot hold
@@ -495,7 +503,7 @@ export class Demo extends Layout {
 - With anisotropy and neither tangents nor uvs, the tangent frame is any
   frame around the normal (three.js's derivative frame degenerates).
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
-  named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
+  named after `usemtl`.
 - **SVGLoader** (`three/addons/loaders/SVGLoader`, r170): `load(name)`
   reads a BlobAsset, `loadAsync(url)` fetches, `parse(text)` returns an
   `SVGResult` (`paths`, `xml`: the root element). **`paths` are
@@ -534,6 +542,93 @@ export class Demo extends Layout {
   three.js's `parseFloatWithUnits`. **Rive-only `loader.applyViewBox`**
   (off by default, as three.js ignores viewBox) maps each `<svg>`'s
   viewBox onto its width and height with `preserveAspectRatio`.
+
+## JSON: toJSON and ObjectLoader
+
+- **`toJSON()` returns a `Dynamic`** (a `rive/dynamic` table of three.js's
+  JSON shape, format 4.6), where three.js returns a plain object.
+  AnimaScript has a JSON parser but no writer, so **`THREE.JSON.stringify(
+  value, space = 0)`** writes the text (and `THREE.JSON.parse(text)` reads
+  it, `JSON.lastError` saying why it failed): `THREE.JSON.stringify(
+  scene.toJSON())` is three.js's `JSON.stringify(scene.toJSON())`. A table
+  with string keys is written as an object, any other as an array (an empty
+  one as `[]`; three.js leaves empty objects out). Non-finite numbers are
+  written `null`, as JavaScript.
+- `toJSON(meta)` takes a `JSONMeta` (the libraries three.js's `meta` object
+  holds: geometries, materials, textures, images, shapes, skeletons,
+  animations, nodes, keyed by uuid). Subclasses add their members through
+  internal hooks (`toJSONObject`, `toJSONProperties`, `toJSONParameters`,
+  `imageToJSON`) instead of overriding toJSON, so the shared resources are
+  in `meta` before the root collects them. `BufferGeometry.toJSON(meta)`
+  takes an optional meta (shape geometries put their shapes in it).
+  `AnimationClip.toJSON(clip)` / `KeyframeTrack.toJSON(track)` are static as
+  three.js; clips also have `toJSON()`; `AnimationClip.parse(json)` reads one.
+- Written as three.js r170 writes them: Object3D (and Mesh, InstancedMesh,
+  SkinnedMesh + Skeleton, Bone, Group, LOD, Line/LineLoop/LineSegments,
+  Points, Sprite, Scene with background, environment and fog, cameras,
+  every light with its shadow and target), materials (every property the
+  class has; colours as hex, maps as texture uuids; ShaderMaterial adds
+  `shader` and its entry points, the WGSL asset, beside `uniforms` and
+  `lights`), textures, curves and shapes, clips. Differences:
+  - The local matrix is brought up to date before it is written (three.js
+    writes it as last updated).
+  - Built-in geometries write their parameters (Box, Sphere, Plane,
+    Cylinder, Cone, Torus, TorusKnot, Circle, Ring, Capsule, Lathe,
+    Polyhedron and its presets, Shape, Extrude); `CapsuleGeometry` writes
+    both r170's `length` and r174's `height` (and reads either). Every other
+    geometry (Tube, Edges, Wireframe, Text, a transformed clone ...) is
+    written as data with type "BufferGeometry", so three.js reads it too.
+    Attributes are always "Float32Array" (they are f32 here), interleaved
+    ones de-interleaved; an index is "Uint16Array" when it fits.
+  - **Images**: Rive images cannot be read back, so a texture's image is
+    what its `source` (three.js's `Source`, here the record of where the
+    image came from) knows: `source.url` (a data: url, an https: url or the
+    Rive image asset name, set by TextureLoader, CubeTextureLoader and
+    ObjectLoader) or, for a DataTexture without one, its texels as
+    `{ data, width, height, type }`. A texture from a canvas, an artboard
+    or a render target has no image in the JSON. Image-backed textures
+    write `premultiplyAlpha: false` (the file is straight alpha to
+    three.js); here the flag means "the source is premultiplied", so
+    ObjectLoader sets it for images Rive decodes.
+  - Not written: BatchedMesh's batches (it loads as an Object3D), camera
+    `view` offsets (not ported), `blendSrc` & co. and the other material
+    members this port does not have, `clippingPlanes` (as three.js).
+- **`ObjectLoader(context, manager)`**: `load(name)` reads the BlobAsset
+  `name` at once; `parse(json)` takes the text (a string) or a parsed
+  `Dynamic` (a generic method); `loadAsync(url)` fetches an https: url
+  (where the host allows the network; its relative images from beside it
+  or `resourcePath`) or reads the blob asset, and `parseAsync(json)` /
+  `loadAsync` resolve once every image has decoded. `parse` returns null on
+  failure, with `loader.error`; problems met on the way (unknown types,
+  missing references) are in `loader.warnings`. No callbacks.
+  `parseShapes`, `parseGeometries`, `parseMaterials`, `parseAnimations`,
+  `parseImages`, `parseTextures`, `parseObject`, `parseSkeletons`,
+  `bindSkeletons`, `bindLightTargets` keep their names and return `Map`s
+  by uuid (parseImages: `ObjectLoaderImage` records instead of Sources).
+- Images in a document: base64 **data: urls** decode through
+  `context.decodeImage` (the texture is a DataTexture filled a frame or so
+  later); other urls name a **Rive image asset** (the url as is, then its
+  file name without folders or extension: "textures/wood.png" -> "wood");
+  https: urls load with `loadAsync` only; `{ data }` images become
+  DataTextures. Cube textures read six image asset names. Without a
+  Context nothing decodes (a warning, an empty texture).
+- Geometries rebuild from their parameters by type (with pre-r125
+  `*BufferGeometry` names), through `X.fromJSON(data)` (and
+  `ShapeGeometry.fromJSON(data, shapes)`, `ExtrudeGeometry.fromJSON(data,
+  shapes)`, with `extrudePath`); TubeGeometry, TextGeometry and other
+  addon types are not rebuilt from parameters (data with any type is read
+  as a BufferGeometry). `BufferGeometryLoader` reads integer arrays as
+  floats, normalized ones scaled to [0, 1] / [-1, 1] (then `normalized` is
+  false), and interleaved buffers (`arrayBuffers` words) de-interleaved.
+  `MaterialLoader` makes every material class the project has (an unknown
+  type is a MeshBasicMaterial, with a warning); a ShaderMaterial needs
+  its WGSL `shader` in the file (GLSL `vertexShader` / `fragmentShader`
+  cannot run here: a warning). Both loaders also take a string or a
+  Dynamic, and load / loadAsync as ObjectLoader.
+- Object types the loader does not know (helpers, BatchedMesh) load as
+  Object3D with a warning, as three.js's default. A directional or spot
+  light whose target is not in the document gets a new Object3D, as
+  three.js. Meshes get `updateMorphTargets()`.
 
 ## Shadows
 
@@ -723,4 +818,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), 
+more post-processing passes (SMAA, SSAO, bokeh), 

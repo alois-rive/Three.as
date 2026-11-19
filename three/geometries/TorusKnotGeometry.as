@@ -1,6 +1,8 @@
 // three.js TorusKnotGeometry: a (p, q) torus knot tube.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Vector3 } from "../math/Vector3";
 
@@ -15,6 +17,22 @@ export class TorusKnotGeometryParameters {
 
 export class TorusKnotGeometry extends BufferGeometry {
     parameters: TorusKnotGeometryParameters = new TorusKnotGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "tube", p.tube);
+        setNumber(data, "tubularSegments", <f64>p.tubularSegments);
+        setNumber(data, "radialSegments", <f64>p.radialSegments);
+        setNumber(data, "p", p.p);
+        setNumber(data, "q", p.q);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): TorusKnotGeometry {
+        return new TorusKnotGeometry(jnum(data, "radius", 1), jnum(data, "tube", 0.4),
+            jint(data, "tubularSegments", 64), jint(data, "radialSegments", 8), jnum(data, "p", 2), jnum(data, "q", 3));
+    }
 
     constructor(radius: f64 = 1, tube: f64 = 0.4, tubularSegments: i32 = 64, radialSegments: i32 = 8,
                 p: f64 = 2, q: f64 = 3) {

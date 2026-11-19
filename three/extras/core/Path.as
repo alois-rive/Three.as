@@ -1,7 +1,12 @@
 // three.js Path: a 2D CurvePath drawn with canvas-like commands.
 
 import { CurvePath } from "./CurvePath";
-import { LineCurve, QuadraticBezierCurve, CubicBezierCurve, EllipseCurve, SplineCurve } from "../curves/Curves";
+import { Curve } from "./Curve";
+import {
+    LineCurve, QuadraticBezierCurve, CubicBezierCurve, EllipseCurve, SplineCurve, createCurve2,
+} from "../curves/Curves";
+import { Dynamic } from "rive/dynamic";
+import { jnumbers } from "../../core/JSON";
 import { Vector2 } from "../../math/Vector2";
 
 export class Path extends CurvePath<Vector2> {
@@ -12,6 +17,21 @@ export class Path extends CurvePath<Vector2> {
         this.type = "Path";
         if (points.length > 0) this.setFromPoints(points);
     }
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        data.set("currentPoint", Dynamic.fromNumbers(this.currentPoint.toArray()));
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<Vector2> {
+        super.fromJSON(json);
+        const p = jnumbers(json, "currentPoint");
+        if (p != null && p.length >= 2) this.currentPoint.set(p[0], p[1]);
+        return this;
+    }
+
+    protected override createCurve(type: string): Curve<Vector2>? { return createCurve2(type); }
 
     setFromPoints(points: Array<Vector2>): Path {
         this.moveTo(points[0].x, points[0].y);

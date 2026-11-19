@@ -7,6 +7,8 @@ import {
 } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Texture } from "../textures/Texture";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 
 export class MeshBasicMaterialParameters extends MaterialParameters {
     /// sRGB hex (or a Rive Color).
@@ -26,6 +28,19 @@ export class MeshBasicMaterialParameters extends MaterialParameters {
 
 export class MeshBasicMaterial extends Material {
     readonly isMeshBasicMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.mapToJSON(data, "lightMap", this.lightMap, meta)) setNumber(data, "lightMapIntensity", this.lightMapIntensity);
+        if (this.mapToJSON(data, "aoMap", this.aoMap, meta)) setNumber(data, "aoMapIntensity", this.aoMapIntensity);
+        this.mapToJSON(data, "specularMap", this.specularMap, meta);
+        if (this.mapToJSON(data, "envMap", this.envMap, meta)) setNumber(data, "combine", <f64>this.combine);
+        setNumber(data, "reflectivity", this.reflectivity);
+        setNumber(data, "refractionRatio", this.refractionRatio);
+    }
     color: Color = new Color();
     map: Texture? = null;
     /// Green channel scales opacity.

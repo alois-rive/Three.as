@@ -2,6 +2,8 @@
 // +x, -x, +y, -y, +z, -z).
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class BoxGeometryParameters {
@@ -15,6 +17,22 @@ export class BoxGeometryParameters {
 
 export class BoxGeometry extends BufferGeometry {
     parameters: BoxGeometryParameters = new BoxGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "width", p.width);
+        setNumber(data, "height", p.height);
+        setNumber(data, "depth", p.depth);
+        setNumber(data, "widthSegments", <f64>p.widthSegments);
+        setNumber(data, "heightSegments", <f64>p.heightSegments);
+        setNumber(data, "depthSegments", <f64>p.depthSegments);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): BoxGeometry {
+        return new BoxGeometry(jnum(data, "width", 1), jnum(data, "height", 1), jnum(data, "depth", 1),
+            jint(data, "widthSegments", 1), jint(data, "heightSegments", 1), jint(data, "depthSegments", 1));
+    }
 
     private indices: Array<i32> = [];
     private vertices: Array<f64> = [];

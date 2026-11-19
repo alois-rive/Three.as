@@ -5,6 +5,8 @@ import { Object3D } from "../core/Object3D";
 import { Camera } from "../cameras/Camera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { Vector3 } from "../math/Vector3";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export class LODLevel {
     object: Object3D;
@@ -27,6 +29,23 @@ export class LOD extends Object3D {
     constructor() {
         super();
         this.type = "LOD";
+    }
+
+    /// `levels` ({ object: uuid, distance, hysteresis }) and `autoUpdate`
+    /// when false, as three.js.
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        if (!this.autoUpdate) object.set("autoUpdate", Dynamic.fromBool(false));
+        const levels = Dynamic.newTable();
+        for (let i = 0; i < this.levels.length; i++) {
+            const level = this.levels[i];
+            const l = Dynamic.newTable();
+            l.set("object", Dynamic.fromString(level.object.uuid));
+            l.set("distance", Dynamic.fromNumber(level.distance));
+            l.set("hysteresis", Dynamic.fromNumber(level.hysteresis));
+            levels.push(l);
+        }
+        object.set("levels", levels);
     }
 
     /// Shows `object` from `distance` on (levels sort by distance).

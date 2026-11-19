@@ -3,6 +3,8 @@
 
 import { TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 import {
     MaterialUniforms, KIND_TOON, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_AO, SLOT_EMISSIVE, SLOT_ALPHA, ROLE_BUMP, ROLE_DISPLACEMENT, ROLE_LIGHT,
 } from "./MaterialUniforms";
@@ -34,6 +36,21 @@ export class MeshToonMaterialParameters extends MaterialParameters {
 
 export class MeshToonMaterial extends Material {
     readonly isMeshToonMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        this.colorToJSON(data, "emissive", this.emissive);
+        if (this.emissiveIntensity != 1) setNumber(data, "emissiveIntensity", this.emissiveIntensity);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "gradientMap", this.gradientMap, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.mapToJSON(data, "lightMap", this.lightMap, meta)) setNumber(data, "lightMapIntensity", this.lightMapIntensity);
+        if (this.mapToJSON(data, "aoMap", this.aoMap, meta)) setNumber(data, "aoMapIntensity", this.aoMapIntensity);
+        this.surfaceMapsToJSON(data, meta, this.normalMap, this.normalMapType, this.normalScale, this.bumpMap,
+            this.bumpScale, this.displacementMap, this.displacementScale, this.displacementBias);
+        this.mapToJSON(data, "emissiveMap", this.emissiveMap, meta);
+    }
     color: Color = new Color();
     map: Texture? = null;
     gradientMap: Texture? = null;

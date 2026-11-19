@@ -1,6 +1,8 @@
 // three.js CircleGeometry: a disc (or sector) in the XY plane, facing +Z.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class CircleGeometryParameters {
@@ -12,6 +14,20 @@ export class CircleGeometryParameters {
 
 export class CircleGeometry extends BufferGeometry {
     parameters: CircleGeometryParameters = new CircleGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "segments", <f64>p.segments);
+        setNumber(data, "thetaStart", p.thetaStart);
+        setNumber(data, "thetaLength", p.thetaLength);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): CircleGeometry {
+        return new CircleGeometry(jnum(data, "radius", 1), jint(data, "segments", 32), jnum(data, "thetaStart", 0),
+            jnum(data, "thetaLength", Math.PI * 2));
+    }
 
     constructor(radius: f64 = 1, segments: i32 = 32, thetaStart: f64 = 0, thetaLength: f64 = Math.PI * 2) {
         super();

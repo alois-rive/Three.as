@@ -7,6 +7,9 @@ import { Vector2 } from "../math/Vector2";
 import { SpriteMaterial } from "../materials/SpriteMaterial";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastSprite } from "./raycasting";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
+import { materialToLibrary } from "./serialize";
 
 export class Sprite extends Object3D {
     readonly isSprite: bool = true;
@@ -18,6 +21,12 @@ export class Sprite extends Object3D {
         super();
         this.type = "Sprite";
         this.material = material;
+    }
+
+    /// The material, as three.js (the quad and `center` are not written).
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("material", Dynamic.fromString(materialToLibrary(this.material, meta)));
     }
 
     /// Needs raycaster.camera (setFromCamera sets it).

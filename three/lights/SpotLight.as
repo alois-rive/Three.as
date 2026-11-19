@@ -3,11 +3,25 @@
 // `penumbra` (0 to 1) softens its edge.
 
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { Object3D } from "../core/Object3D";
 import { SpotLightShadow } from "./LightShadow";
 
 export class SpotLight extends Light {
     readonly isSpotLight: bool = true;
+
+    /// The target is written as its uuid, as three.js (ObjectLoader binds
+    /// it when the target is in the scene, else makes a new one).
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("distance", Dynamic.fromNumber(this.distance));
+        object.set("angle", Dynamic.fromNumber(this.angle));
+        object.set("decay", Dynamic.fromNumber(this.decay));
+        object.set("penumbra", Dynamic.fromNumber(this.penumbra));
+        object.set("shadow", this.shadow.toJSON());
+        object.set("target", Dynamic.fromString(this.target.uuid));
+    }
     target: Object3D = new Object3D();
     distance: f64;
     angle: f64;

@@ -1,6 +1,8 @@
 // three.js SphereGeometry.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class SphereGeometryParameters {
@@ -15,6 +17,24 @@ export class SphereGeometryParameters {
 
 export class SphereGeometry extends BufferGeometry {
     parameters: SphereGeometryParameters = new SphereGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "widthSegments", <f64>p.widthSegments);
+        setNumber(data, "heightSegments", <f64>p.heightSegments);
+        setNumber(data, "phiStart", p.phiStart);
+        setNumber(data, "phiLength", p.phiLength);
+        setNumber(data, "thetaStart", p.thetaStart);
+        setNumber(data, "thetaLength", p.thetaLength);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): SphereGeometry {
+        return new SphereGeometry(jnum(data, "radius", 1), jint(data, "widthSegments", 32),
+            jint(data, "heightSegments", 16), jnum(data, "phiStart", 0), jnum(data, "phiLength", Math.PI * 2),
+            jnum(data, "thetaStart", 0), jnum(data, "thetaLength", Math.PI));
+    }
 
     constructor(radius: f64 = 1, widthSegments: i32 = 32, heightSegments: i32 = 16,
                 phiStart: f64 = 0, phiLength: f64 = Math.PI * 2,

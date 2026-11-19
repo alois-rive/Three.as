@@ -4,6 +4,7 @@ export const DEG2RAD: f64 = Math.PI / 180;
 export const RAD2DEG: f64 = 180 / Math.PI;
 
 let _seed: u32 = 1234567;
+const _hex = "0123456789abcdef";
 
 export class MathUtils {
     static DEG2RAD: f64 = Math.PI / 180;
@@ -45,6 +46,19 @@ export class MathUtils {
         t = (t ^ (t >>> 15)) * (t | 1);
         t ^= t + (t ^ (t >>> 7)) * (t | 61);
         return <f64>((t ^ (t >>> 14)) >>> 0) / 4294967296.0;
+    }
+
+    /// A random RFC 4122 version 4 uuid, lower case, as three.js.
+    static generateUUID(): string {
+        let s = "";
+        for (let i = 0; i < 16; i++) {
+            let b = <i32>Math.floor(Math.random() * 256) & 255;
+            if (i == 6) b = (b & 0x0f) | 0x40;
+            if (i == 8) b = (b & 0x3f) | 0x80;
+            s += _hex.charAt(b >> 4) + _hex.charAt(b & 15);
+            if (i == 3 || i == 5 || i == 7 || i == 9) s += "-";
+        }
+        return s;
     }
 
     static isPowerOfTwo(value: u32): bool { return value != 0 && (value & (value - 1)) == 0; }

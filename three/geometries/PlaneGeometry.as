@@ -1,6 +1,8 @@
 // three.js PlaneGeometry: in the XY plane, facing +Z.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class PlaneGeometryParameters {
@@ -12,6 +14,20 @@ export class PlaneGeometryParameters {
 
 export class PlaneGeometry extends BufferGeometry {
     parameters: PlaneGeometryParameters = new PlaneGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "width", p.width);
+        setNumber(data, "height", p.height);
+        setNumber(data, "widthSegments", <f64>p.widthSegments);
+        setNumber(data, "heightSegments", <f64>p.heightSegments);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): PlaneGeometry {
+        return new PlaneGeometry(jnum(data, "width", 1), jnum(data, "height", 1),
+            jint(data, "widthSegments", 1), jint(data, "heightSegments", 1));
+    }
 
     constructor(width: f64 = 1, height: f64 = 1, widthSegments: i32 = 1, heightSegments: i32 = 1) {
         super();

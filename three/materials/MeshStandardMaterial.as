@@ -9,6 +9,8 @@ import {
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
 import { Texture } from "../textures/Texture";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 
 export class MeshStandardMaterialParameters extends MaterialParameters {
     color: u32 = 0xFFFFFF;
@@ -39,6 +41,26 @@ export class MeshStandardMaterialParameters extends MaterialParameters {
 
 export class MeshStandardMaterial extends Material {
     readonly isMeshStandardMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        setNumber(data, "roughness", this.roughness);
+        setNumber(data, "metalness", this.metalness);
+        this.colorToJSON(data, "emissive", this.emissive);
+        if (this.emissiveIntensity != 1) setNumber(data, "emissiveIntensity", this.emissiveIntensity);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.mapToJSON(data, "lightMap", this.lightMap, meta)) setNumber(data, "lightMapIntensity", this.lightMapIntensity);
+        if (this.mapToJSON(data, "aoMap", this.aoMap, meta)) setNumber(data, "aoMapIntensity", this.aoMapIntensity);
+        this.surfaceMapsToJSON(data, meta, this.normalMap, this.normalMapType, this.normalScale, this.bumpMap,
+            this.bumpScale, this.displacementMap, this.displacementScale, this.displacementBias);
+        this.mapToJSON(data, "roughnessMap", this.roughnessMap, meta);
+        this.mapToJSON(data, "metalnessMap", this.metalnessMap, meta);
+        this.mapToJSON(data, "emissiveMap", this.emissiveMap, meta);
+        this.mapToJSON(data, "envMap", this.envMap, meta);
+        setNumber(data, "envMapIntensity", this.envMapIntensity);
+    }
     color: Color = new Color();
     roughness: f64 = 1;
     metalness: f64 = 0;

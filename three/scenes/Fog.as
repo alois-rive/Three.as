@@ -3,6 +3,7 @@
 // view-space depth, as three.js.
 
 import { Color } from "../math/Color";
+import { Dynamic } from "rive/dynamic";
 
 export abstract class FogBase {
     name: string = "";
@@ -11,6 +12,10 @@ export abstract class FogBase {
     constructor(color: u32) {
         this.color = Color.fromHex(color);
     }
+
+    /// three.js's JSON: { type, name, color, near, far } or { type, name,
+    /// color, density }.
+    abstract toJSON(): Dynamic;
 }
 
 export class Fog extends FogBase {
@@ -22,6 +27,16 @@ export class Fog extends FogBase {
         super(color);
         this.near = near;
         this.far = far;
+    }
+
+    override toJSON(): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("type", Dynamic.fromString("Fog"));
+        data.set("name", Dynamic.fromString(this.name));
+        data.set("color", Dynamic.fromNumber(<f64>this.color.getHex()));
+        data.set("near", Dynamic.fromNumber(this.near));
+        data.set("far", Dynamic.fromNumber(this.far));
+        return data;
     }
 
     clone(): Fog {
@@ -38,6 +53,15 @@ export class FogExp2 extends FogBase {
     constructor(color: u32, density: f64 = 0.00025) {
         super(color);
         this.density = density;
+    }
+
+    override toJSON(): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("type", Dynamic.fromString("FogExp2"));
+        data.set("name", Dynamic.fromString(this.name));
+        data.set("color", Dynamic.fromNumber(<f64>this.color.getHex()));
+        data.set("density", Dynamic.fromNumber(this.density));
+        return data;
     }
 
     clone(): FogExp2 {

@@ -293,11 +293,14 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M11c, URLs (done).** `load(url)` through `rive/net` `fetch` where the host
   allows it (LoadingManager, `setPath`, progress callbacks as a listener
   interface).
-- **M11d, other formats.** STLLoader, PLYLoader, SVGLoader (done: to
+- **M11d, other formats.** STLLoader, PLYLoader (done), SVGLoader (done: to
   ShapePaths, createShapes, strokes; also usable straight as Rive paths
-  with `rivePathFromShapePath`; XML through `addons/libs/dom_parser`), FontLoader, ObjectLoader and
-  `toJSON` (round trips of scenes, geometries, materials), FBXLoader
-  (binary and ASCII), GLTFExporter (to a Blob).
+  with `rivePathFromShapePath`; XML through `addons/libs/dom_parser`),
+  FontLoader, ObjectLoader and `toJSON` (round trips of scenes, geometries,
+  materials; **done**: toJSON returns a Dynamic, `THREE.JSON.stringify`
+  writes it; ObjectLoader, MaterialLoader, BufferGeometryLoader; BatchedMesh
+  and addon geometries' parameters left out), FBXLoader (binary and ASCII),
+  GLTFExporter (to a Blob).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 

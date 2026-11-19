@@ -75,6 +75,7 @@ export class TextureLoader extends Loader {
         const context = this.context!;
         const texture = new Texture(context.image(this.path + name));
         texture.name = name;
+        texture.source.url = this.path + name;
         if (texture.image == null) context.log("three: TextureLoader: no image asset named '" + this.path + name + "'");
         return texture;
     }
@@ -93,5 +94,6 @@ async function loadTextureAsync(loader: TextureLoader, url: string): Promise<Tex
     const bytes = await fetchBytes(loader, url);
     const texture = await decodeTexture(context, bytes, true).promise;
     texture.name = url;
+    texture.source.url = resolved;
     return texture;
 }

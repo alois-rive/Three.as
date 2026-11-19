@@ -10,6 +10,12 @@ import { Matrix4 } from "../math/Matrix4";
 import { Matrix3 } from "../math/Matrix3";
 import { Layers } from "./Layers";
 import { Raycaster, Intersection } from "./Raycaster";
+import { MathUtils } from "../math/MathUtils";
+import { AnimationClip } from "../animation/AnimationClip";
+import { Dynamic } from "rive/dynamic";
+import {
+    JSONMeta, jsonMetadata, setNumber, setString, setBool, setNumbers, isEmptyTable, cloneDynamic,
+} from "./JSON";
 
 let _object3DId: i32 = 0;
 
@@ -57,6 +63,11 @@ export class Object3D extends EventDispatcher {
     frustumCulled: bool = true;
     /// Draws sort by renderOrder first (lower first), then by depth.
     renderOrder: i32 = 0;
+    /// Clips that belong to this object (written by toJSON, read by
+    /// ObjectLoader), as three.js.
+    animations: Array<AnimationClip> = [];
+    private _uuid: string = "";
+    private _userData: Dynamic? = null;
 
     constructor() {
         super();
@@ -68,6 +79,27 @@ export class Object3D extends EventDispatcher {
         this.rotation = r;
         this.quaternion = q;
     }
+
+    /// A random uuid, made on first use; toJSON and ObjectLoader key
+    /// objects by it.
+    get uuid(): string {
+        if (this._uuid.length == 0) this._uuid = MathUtils.generateUUID();
+        return this._uuid;
+    }
+    set uuid(value: string) { this._uuid = value; }
+
+    /// Anything JSON can hold, as three.js's userData: a `Dynamic` table
+    /// (`object.userData.set("hp", Dynamic.fromNumber(3))`), written by
+    /// toJSON and deep-copied by copy / clone.
+    get userData(): Dynamic {
+        let d = this._userData;
+        if (d == null) {
+            d = Dynamic.newTable();
+            this._userData = d;
+        }
+        return d!;
+    }
+    set userData(value: Dynamic) { this._userData = value; }
 
     /// Cameras and lights face their -Z (lookAt, getWorldDirection).
     facesNegativeZ(): bool { return false; }
@@ -339,6 +371,9 @@ export class Object3D extends EventDispatcher {
         this.matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;
         this.customDepthMaterial = source.customDepthMaterial;
         this.customDistanceMaterial = source.customDistanceMaterial;
+        this.animations = source.animations.slice();
+        const userData = source._userData;
+        this._userData = userData != null ? cloneDynamic(userData) : null;
         if (recursive) {
             for (let i = 0; i < source.children.length; i++) this.add(source.children[i].clone(true));
         }
@@ -370,6 +405,75 @@ export class Object3D extends EventDispatcher {
         this.layers.mask = source.layers.mask;
         return this;
     }
+
+    // ------------------------------------------------------------- JSON
+
+    /// three.js's JSON object format 4.6. With no `meta`, the whole
+    /// document ({ metadata, geometries, materials, textures, images,
+    /// shapes, skeletons, animations, object }); with one (a parent writing
+    /// its children), { object }, the shared resources going to `meta`.
+    /// `JSON.stringify` turns it into text; ObjectLoader reads it back. The
+    /// local matrix is brought up to date first (three.js writes it as it
+    /// was last updated).
+    toJSON(meta: JSONMeta? = null): Dynamic {
+        const isRootObject = meta == null;
+        const m = meta != null ? meta! : new JSONMeta();
+        const output = Dynamic.newTable();
+        if (isRootObject) output.set("metadata", jsonMetadata("Object", "Object3D.toJSON"));
+        const object = Dynamic.newTable();
+        setString(object, "uuid", this.uuid);
+        setString(object, "type", this.type);
+        if (this.name != "") setString(object, "name", this.name);
+        if (this.castShadow) setBool(object, "castShadow", true);
+        if (this.receiveShadow) setBool(object, "receiveShadow", true);
+        if (!this.visible) setBool(object, "visible", false);
+        if (!this.frustumCulled) setBool(object, "frustumCulled", false);
+        if (this.renderOrder != 0) setNumber(object, "renderOrder", <f64>this.renderOrder);
+        if (!isEmptyTable(this._userData)) object.set("userData", this._userData);
+        setNumber(object, "layers", <f64>this.layers.mask);
+        if (this.matrixAutoUpdate) this.updateMatrix();
+        setNumbers(object, "matrix", this.matrix.toArray());
+        setNumbers(object, "up", this.up.toArray());
+        if (!this.matrixAutoUpdate) setBool(object, "matrixAutoUpdate", false);
+        this.toJSONObject(object, m);
+        if (this.children.length > 0) {
+            const children = Dynamic.newTable();
+            for (let i = 0; i < this.children.length; i++) children.push(this.children[i].toJSON(m).get("object"));
+            object.set("children", children);
+        }
+        if (this.animations.length > 0) {
+            const uuids = Dynamic.newTable();
+            for (let i = 0; i < this.animations.length; i++) {
+                const clip = this.animations[i];
+                if (!m.animations.has(clip.uuid)) m.animations.set(clip.uuid, clip.toJSON());
+                uuids.push(Dynamic.fromString(clip.uuid));
+            }
+            object.set("animations", uuids);
+        }
+        if (isRootObject) {
+            putLibrary(output, "geometries", m.geometries);
+            putLibrary(output, "materials", m.materials);
+            putLibrary(output, "textures", m.textures);
+            putLibrary(output, "images", m.images);
+            putLibrary(output, "shapes", m.shapes);
+            putLibrary(output, "skeletons", m.skeletons);
+            putLibrary(output, "animations", m.animations);
+            putLibrary(output, "nodes", m.nodes);
+        }
+        output.set("object", object);
+        return output;
+    }
+
+    /// Writes what this class adds to its JSON object (geometry and
+    /// material uuids, camera and light settings ...), serializing shared
+    /// resources into `meta`; subclasses call super first. Internal to
+    /// toJSON (three.js tests `isMesh` & co. inside Object3D.toJSON).
+    toJSONObject(object: Dynamic, meta: JSONMeta): void {}
+}
+
+function putLibrary(output: Dynamic, key: string, cache: Map<string, Dynamic>): void {
+    const values = JSONMeta.extract(cache);
+    if (values != null) output.set(key, values!);
 }
 
 const _v1: Vector3 = new Vector3();
