@@ -110,6 +110,8 @@ import { MorphTexelInput, morphTexels, fastHalf } from "./gpu/MorphTexels";
 import { Job, Jobs } from "rive/jobs";
 import { Parallel, SharedArray } from "rive/parallel";
 import { cullObjects, cullParts, prepareBounds } from "./gpu/Culling";
+import { BAKED_SOURCE_HASH, BAKED_KEYS, BAKED_ASSETS } from "./gpu/BakedShaders";
+import { THREE_WGSL_HASH } from "./gpu/ShaderSourceHash";
 import { Skeleton } from "../objects/Skeleton";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
@@ -152,6 +154,18 @@ const KEY_WIDE_LINE: i32 = 1 << 16;      // LineMaterial: vs_wideline
 const KEY_LOG_DEPTH: i32 = 1 << 17;      // logarithmicDepthBuffer: fs_main_logdepth
 const KEY_STATE_SHIFT: i32 = 21;         // 9 bits: a depthFunc/stencil/polygonOffset state (0: default)
 const KEY_STATE_MASK: i32 = 511;
+// The key bits that pick a draw's entry points (buildPipeline, vertexEntry).
+const KEY_ENTRY_MASK: i32 = (3 << KEY_PRIM_SHIFT) | KEY_SKINNED | KEY_DISPLACED | KEY_WIDE_LINE | KEY_LOG_DEPTH;
+
+/// The vertex entry point of a draw's pipeline key (as buildPipeline picks it).
+function vertexEntry(key: i32): string {
+    const prim = (key >> KEY_PRIM_SHIFT) & 3;
+    if (prim == PRIM_POINTS) return "vs_points";
+    if (prim == PRIM_SPRITE) return "vs_sprite";
+    if ((key & KEY_SKINNED) != 0) return (key & KEY_DISPLACED) != 0 ? "vs_skinned_displaced" : "vs_skinned";
+    if ((key & KEY_WIDE_LINE) != 0) return "vs_wideline";
+    return (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
+}
 // The colour passes' depth (and stencil) format.
 const DEPTH_FORMAT: TextureFormat = TextureFormat.depth24plusStencil8;
 
@@ -458,6 +472,14 @@ class DrawState {
     xcount: i32 = 0;
     xgroupViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(EXTRA_SLOTS);
     frame: i32 = -1;
+    /// Its baked shader variant and what it was chosen from.
+    variant: i32 = -1;
+    vblock: MaterialBlock? = null;
+    vversion: i32 = -1;
+    vpatch: i32 = -1;
+    vframe: i32 = -1;
+    ventry: i32 = -1;
+    vlights: StaticArray<u32> = new StaticArray<u32>(8);
 }
 
 // What a material needs from a view, found once per view however many
@@ -519,6 +541,14 @@ class MaterialBlock {
     samplerGroup: GPUBindGroup? = null;
     groupViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
     groupSamplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
+    /// Its share of the program key (GPURenderer.programKey).
+    vkind: u32 = 0;
+    vpresent: u32 = 0;
+    vflags: u32 = 0;
+    vroles: u32 = 0;
+    vcutout: bool = true;
+    vflat: bool = false;
+    vownEnv: bool = false;
 }
 
 // One draw of this frame (pooled: GPURenderer.newItem resets every field).
@@ -548,6 +578,8 @@ class DrawItem {
     morphed: bool = false;
     morphOffset: u32 = 0;
     morphView: GPUTextureView? = null;
+    /// Its baked shader variant (-1: the uber-shader).
+    variant: i32 = -1;
     boneView: GPUTextureView? = null;
     instanceMorphView: GPUTextureView? = null;
     custom: CustomPipeline? = null;
@@ -599,6 +631,7 @@ class DrawItem {
         this.transmissive = false;
         this.stencilRef = 0;
         this.normalOverride = null;
+        this.variant = -1;
     }
 }
 
@@ -705,6 +738,24 @@ export class GPURenderer {
     private cullTest: Uint8Array = new Uint8Array(0);
     private cullOut: SharedArray<u8> = new SharedArray<u8>(0);
     private cullPlanes: Float64Array = new Float64Array(24);
+    /// Draw with baked shader variants where tools/bake_shaders.sh baked
+    /// the draw's program key ("optimized" mode, Rive-only); else, and
+    /// always without a bake, with the uber-shader.
+    useBakedShaders: bool = true;
+    // The baked variants (gpu/BakedShaders): key -> index, their modules
+    // (loaded on first use) and pipelines. Null: none, or stale.
+    private variantIndex: Map<string, i32>? = null;
+    private variantModules: Array<GPUShaderModule?> = [];
+    private variantMissing: Array<bool> = [];
+    private variantPipelines: Array<Map<i64, GPUPipeline>> = [];
+    private variantsChecked: bool = false;
+    // `--arg threeShaderKeys=1`: log every program key once (the bake
+    // script's recording); keys logged so far.
+    private recordKeys: bool = false;
+    private loggedKeys: Map<string, bool> = new Map<string, bool>();
+    // The frame's share of the program key and its lights' types.
+    private frameVariantBits: i32 = 0;
+    private frameLightTypes: Int32Array = new Int32Array(MAX_LIGHTS);
     // Pass descriptors reused from pass to pass (no garbage per frame).
     private attachmentList: Array<GPUColorAttachment> = [];
     private noAttachments: Array<GPUColorAttachment> = [];
@@ -872,6 +923,9 @@ export class GPURenderer {
         this.antialias = parameters != null ? parameters.antialias : false;
         if (parameters != null && parameters.alpha) this.clearAlpha = 0;
         this.logDepth = parameters != null && parameters.logarithmicDepthBuffer;
+        this.recordKeys = context.arg("threeShaderKeys") != null;
+        // `--arg threeUberShader=1`: ignore the baked variants (to compare).
+        if (context.arg("threeUberShader") != null) this.useBakedShaders = false;
     }
 
     /// The canvas rendered into (three.js's `domElement`), null until the
@@ -1416,7 +1470,7 @@ export class GPURenderer {
             const list = lists[l];
             for (let i = 0; i < list.length; i++) {
                 const item = list[i];
-                if (item.custom == null) this.pipeline(item.pipelineKey);
+                if (item.custom == null) this.drawPipeline(item.pipelineKey, item.variant);
                 if (materials.indexOf(item.material) < 0) materials.push(item.material);
             }
         }
@@ -1796,13 +1850,21 @@ export class GPURenderer {
     private pipeline(key: i32): GPUPipeline {
         const cacheKey = (<i64>this.pipelineCount << 56) | (<i64>this.pipelineFormat << 32) | <i64><u32>key;
         if (this.pipelines.has(cacheKey)) return this.pipelines.get(cacheKey);
+        const p = this.buildPipeline(key, this.module!);
+        this.pipelines.set(cacheKey, p);
+        return p;
+    }
+
+    /// A pipeline of `module` (three.wgsl or one of its baked variants, which
+    /// share its bind group layouts) for a pipeline key.
+    private buildPipeline(key: i32, module: GPUShaderModule): GPUPipeline {
         const target = new GPUColorTargetDesc();
         target.format = <TextureFormat>this.pipelineFormat;
         const ds = new GPUDepthStencilDesc();
         ds.format = DEPTH_FORMAT;
         const d = new GPUPipelineDesc();
-        d.vertexModule = this.module;
-        d.fragmentModule = this.module;
+        d.vertexModule = module;
+        d.fragmentModule = module;
         d.sampleCount = (key & KEY_MSAA) != 0 ? this.samples : 1;
         d.depthStencil = ds;
         if ((key & KEY_BACKGROUND) != 0) {
@@ -1852,9 +1914,7 @@ export class GPURenderer {
                 }
             }
         }
-        const p = new GPUPipeline(d);
-        this.pipelines.set(cacheKey, p);
-        return p;
+        return new GPUPipeline(d);
     }
 
     /// A 1 x 1 depth view standing in for a DepthTexture not rendered yet.
@@ -3644,6 +3704,7 @@ export class GPURenderer {
                 f[base + 11] = <f32>p.distance;
                 f[base + 12] = <f32>p.decay;
             }
+            this.frameLightTypes[count] = <i32>f[base + 3];
             count++;
         }
         o = FRAME_AMBIENT >> 2;
@@ -3737,6 +3798,10 @@ export class GPURenderer {
         } else {
             f[o] = 0;
         }
+        // The frame's share of the program key: fog type, hemisphere light,
+        // scene environment, linear output.
+        this.frameVariantBits = <i32>f[(FRAME_FOG_COLOR >> 2) + 3] | (f[(FRAME_HEMI_DIR >> 2) + 3] > 0.5 ? 4 : 0)
+            | (f[FRAME_ENV >> 2] > 0.5 ? 8 : 0) | (f[(FRAME_SHADOW_PARAMS >> 2) + 2] > 0.5 ? 16 : 0);
         this.frameUbo!.update(0, buf);
     }
 
@@ -4062,6 +4127,119 @@ export class GPURenderer {
         }
     }
 
+    // ------------------------------------------------------- baked variants
+
+    /// Whether baked variants are on: tools/bake_shaders.sh baked some, from
+    /// this three.wgsl (checked once; stale ones are logged and ignored).
+    private bakedVariants(): bool {
+        if (!this.variantsChecked) {
+            this.variantsChecked = true;
+            if (BAKED_KEYS.length > 0) {
+                if (BAKED_SOURCE_HASH != THREE_WGSL_HASH) {
+                    this.context.log("three: the baked shader variants are stale (three.wgsl changed since "
+                        + "tools/bake_shaders.sh); drawing with the uber-shader");
+                } else {
+                    const index = new Map<string, i32>();
+                    for (let i = 0; i < BAKED_KEYS.length; i++) {
+                        index.set(BAKED_KEYS[i], i);
+                        this.variantModules.push(null);
+                        this.variantMissing.push(false);
+                    }
+                    this.variantIndex = index;
+                }
+            }
+        }
+        return this.variantIndex != null;
+    }
+
+    /// A draw's baked variant (-1: the uber-shader), chosen again only when
+    /// its material block, shadow flag, lights or the frame's share changed.
+    private variantOf(state: DrawState, b: MaterialBlock, patch: i32, entry: i32): i32 {
+        const words = this.lightWords;
+        const frameBits = this.frameVariantBits;
+        let same = state.vblock === b && state.vversion == b.version && state.vpatch == patch && state.vframe == frameBits
+            && state.ventry == entry;
+        for (let k = 0; k < 8 && same; k++) same = unchecked(state.vlights[k]) == unchecked(words[k]);
+        if (same) return state.variant;
+        state.vblock = b;
+        state.vversion = b.version;
+        state.vpatch = patch;
+        state.vframe = frameBits;
+        state.ventry = entry;
+        for (let k = 0; k < 8; k++) unchecked(state.vlights[k] = words[k]);
+        const key = this.programKey(b, patch, entry);
+        let variant = -1;
+        const index = this.useBakedShaders ? this.variantIndex : null;
+        if (index != null && index.has(key)) variant = index.get(key);
+        if (!this.loggedKeys.has(key)) {
+            this.loggedKeys.set(key, true);
+            if (this.recordKeys) this.context.log("three shader key: " + key);
+            else if (index != null && variant < 0 && !isDefined(THREE_RELEASE)) {
+                this.context.log("three: no baked shader for " + key + " (uber-shader; rerun tools/bake_shaders.sh)");
+            }
+        }
+        state.variant = variant;
+        return variant;
+    }
+
+    /// three.js's getProgramCacheKey for the fragment stage: what the
+    /// shader's v_* functions answer (three.wgsl's variant block), as
+    /// tools/bake_shaders.sh reads it back.
+    programKey(b: MaterialBlock, patch: i32, entry: i32): string {
+        const words = this.lightWords;
+        const count = <i32>(words[0] & 0xff);
+        let lights = "";
+        for (let k = 0; k < count; k++) {
+            const w = k + 1;
+            const index = <i32>((words[w / 4] >> <u32>((w % 4) * 8)) & 0xff);
+            const type = this.frameLightTypes[index];
+            lights += type == 0 ? "d" : type == 1 ? "p" : type == 2 ? "s" : "r";
+        }
+        const fb = this.frameVariantBits;
+        const flags = b.vflags | ((patch & 1) != 0 ? FLAG_RECEIVE_SHADOW : 0);
+        return "kind=" + b.vkind.toString() + ";present=" + b.vpresent.toString() + ";roles=" + b.vroles.toString()
+            + ";flags=" + flags.toString() + ";cutout=" + (b.vcutout ? "1" : "0") + ";flat=" + (b.vflat ? "1" : "0")
+            + ";env=" + (b.vownEnv ? "1" : "0") + ";scene=" + ((fb & 8) != 0 ? "1" : "0") + ";fog=" + (fb & 3).toString()
+            + ";hemi=" + ((fb & 4) != 0 ? "1" : "0") + ";linear=" + ((fb & 16) != 0 ? "1" : "0")
+            + ";lights=" + (lights.length > 0 ? lights : "-") + ";vs=" + vertexEntry(entry) + ";fs="
+            + ((entry & KEY_LOG_DEPTH) != 0 ? "fs_main_logdepth" : "fs_main");
+    }
+
+    /// Variant `v`'s shader module (null when its asset is missing: logged
+    /// once, the uber-shader draws instead).
+    private variantModule(v: i32): GPUShaderModule? {
+        const m = this.variantModules[v];
+        if (m != null || this.variantMissing[v]) return m;
+        const name = BAKED_ASSETS[v];
+        let module: GPUShaderModule? = null;
+        const names: StaticArray<string> = ["three/shaders/baked/", "shaders/baked/", "baked/", ""];
+        for (let i = 0; i < names.length && module == null; i++) module = this.context.shader(names[i] + name);
+        if (module == null) {
+            this.variantMissing[v] = true;
+            this.context.log("three: baked shader asset '" + name + "' not found; using the uber-shader");
+            return null;
+        }
+        this.variantModules[v] = module;
+        return module;
+    }
+
+    /// The pipeline of a draw: its baked variant's, or the uber-shader's.
+    private drawPipeline(key: i32, variant: i32): GPUPipeline {
+        if (variant >= 0) {
+            const module = this.variantModule(variant);
+            if (module != null) {
+                while (this.variantPipelines.length <= variant) this.variantPipelines.push(new Map<i64, GPUPipeline>());
+                const cache = this.variantPipelines[variant];
+                const cacheKey = (<i64>this.pipelineCount << 56) | (<i64>this.pipelineFormat << 32) | <i64><u32>key;
+                if (cache.has(cacheKey)) return cache.get(cacheKey);
+                const p = this.buildPipeline(key, module!);
+                cache.set(cacheKey, p);
+                return p;
+            }
+        }
+        return this.pipeline(key);
+    }
+
     /// The material block of `item` for this view: written once a view per
     /// material (and borrowed vertex texture slots), its version bumped when
     /// its bytes change; its bind groups rebuilt when its views do.
@@ -4175,6 +4353,22 @@ export class GPURenderer {
         if (!same) {
             b.u8.set(this.objU8);
             b.version++;
+            // Its share of the program key, as the shader's v_* read it.
+            o = OBJ_TEX_FLAGS >> 2;
+            b.vkind = u[o];
+            b.vpresent = u[o + 1];
+            b.vflags = u[(OBJ_FLAGS >> 2) + 1];
+            const xpresent = u[OBJ_X_FLAGS >> 2];
+            let roles: u32 = 0;
+            for (let r = 0; r < ROLE_COUNT; r++) {
+                const word = u[(OBJ_X_ROLES >> 2) + (r >= 8 ? 1 : 0)];
+                const slot = (word >> <u32>((r % 8) * 4)) & 0xf;
+                if (slot < 5 && ((xpresent >> slot) & 1) != 0) roles |= <u32>1 << <u32>r;
+            }
+            b.vroles = roles;
+            b.vcutout = f[(OBJ_EMISSIVE >> 2) + 3] > 0 || f[(OBJ_MISC1 >> 2) + 1] > 0.5 || f[(OBJ_CLIP >> 2) + 1] > 0;
+            b.vflat = f[(OBJ_PBR >> 2) + 2] > 0.5;
+            b.vownEnv = f[OBJ_ENV >> 2] > 0.5;
         }
         for (let s = 0; s < TEXTURE_SLOTS; s++) {
             b.views[s] = views[s];
@@ -4213,10 +4407,14 @@ export class GPURenderer {
         const au = this.arenaU32;
         const receives = this.tileCount > 0;
         const words = this.lightWords;
+        const variants = this.recordKeys || (this.useBakedShaders && this.bakedVariants());
         for (let i = 0; i < list.length; i++) {
             const item = unchecked(list[i]);
             const state = item.state;
-            if (state.frame == frame) continue;
+            if (state.frame == frame) {
+                if (variants && item.custom == null) item.variant = state.variant;
+                continue;
+            }
             state.frame = frame;
             const object = item.object;
             const b = this.materialBlock(item, frame, canvas);
@@ -4234,6 +4432,7 @@ export class GPURenderer {
             const g = item.geometry;
             const patch = (object.receiveShadow && receives ? 1 : 0) | (g != null && g.hasTangents ? 2 : 0);
             this.writeLightList(object);
+            if (variants) item.variant = item.custom != null ? -1 : this.variantOf(state, b, patch, item.pipelineKey & KEY_ENTRY_MASK);
             const me = object.matrixWorld.elements;
             let dirty = state.slot < 0 || state.block !== b || state.blockVersion != b.version || state.patch != patch
                 || item.skinned;
@@ -4305,6 +4504,7 @@ export class GPURenderer {
         const transmissionPass = transmissionGroup != null;
         const frameGroup = transmissionPass ? transmissionGroup! : this.frameGroup!;
         let lastKey = -1;
+        let lastVariant = -1;
         // Bindings already set (draws sharing a geometry or material skip them).
         let lastMat: GPUBindGroup? = null, lastSamplers: GPUBindGroup? = null;
         let lastStencilRef: u32 = 0;
@@ -4348,10 +4548,14 @@ export class GPURenderer {
             }
             if (state.matGroup == null) continue;
             const key = transmissionPass ? item.pipelineKey & ~KEY_MSAA : item.pipelineKey;
-            if (key != lastKey) {
-                pass.setPipeline(this.pipeline(key));
+            // The transmission pass writes linear colour from its own frame
+            // block: the uber-shader (variants bake the main pass's output).
+            const variant = transmissionPass ? -1 : item.variant;
+            if (key != lastKey || variant != lastVariant) {
+                pass.setPipeline(this.drawPipeline(key, variant));
                 pass.setBindGroup(0, frameGroup);
                 lastKey = key;
+                lastVariant = variant;
             }
             if (item.stencilRef != lastStencilRef) {
                 pass.setStencilReference(item.stencilRef);

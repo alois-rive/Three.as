@@ -239,6 +239,33 @@ struct LtcTable {
 @group(3) @binding(6) var s_alpha: sampler;
 @group(3) @binding(7) var s_envmap: sampler;
 
+// ---------------------------------------------------------------- variant
+// What the fragment stage reads to pick its features: from the uniforms
+// here (the uber-shader). tools/bake_shaders.sh replaces the lines between
+// the markers with constant answers for one program key (three.js's
+// getProgramCacheKey and #defines), so the compiler drops the branches and
+// samples a draw does not need, keeps `discard` out of pipelines that never
+// cut out, and unrolls the light loop. Keep these signatures: GPURenderer's
+// programKey writes the key the baked answers come from.
+// @variant-begin
+fn v_kind() -> u32 { return O.tex_flags.x; }
+fn v_present() -> u32 { return O.tex_flags.y; }
+fn v_flags() -> u32 { return O.flags.y; }
+fn v_role(role: u32) -> bool {
+    let slot = role_slot(role);
+    return slot < 5u && has_flag(O.x_flags.x, slot);
+}
+fn v_cutout() -> bool { return true; }
+fn v_flat() -> bool { return O.pbr.z > 0.5; }
+fn v_own_env() -> bool { return O.env.x > 0.5; }
+fn v_scene_env() -> bool { return F.env.x > 0.5; }
+fn v_fog() -> f32 { return F.fog_color.w; }
+fn v_hemi() -> bool { return F.hemi_dir.w > 0.5; }
+fn v_linear() -> bool { return F.shadow_params.z > 0.5; }
+fn v_light_count() -> u32 { return object_light_count(); }
+fn v_light_type(k: u32, light: Light) -> f32 { return light.position.w; }
+// @variant-end
+
 struct VsIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -637,17 +664,16 @@ struct ExtraUVs {
 };
 
 fn has_role(role: u32) -> bool {
-    let slot = role_slot(role);
-    return slot < 5u && has_flag(O.x_flags.x, slot);
+    return v_role(role);
 }
 
 /// `role`'s texel as three.js sees it (straight alpha, linear colour), or
 /// `fallback` when the material has no such map.
 fn role_texel(role: u32, x: ExtraUVs, fallback: vec4<f32>) -> vec4<f32> {
-    let slot = role_slot(role);
-    if (slot >= 5u || !has_flag(O.x_flags.x, slot)) {
+    if (!v_role(role)) {
         return fallback;
     }
+    let slot = role_slot(role);
     let t = x_sample_grad(slot, x.uv[slot], x.dx[slot], x.dy[slot]);
     return decode(t, has_flag(O.x_flags.z, slot), has_flag(O.x_flags.y, slot));
 }
@@ -1040,7 +1066,7 @@ fn BRDF_Sheen(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, sheen_color: vec3<f32>, 
 /// The environment's colour along world direction `dir` (equirectangular),
 /// at mip `lod`.
 fn env_sample(dir: vec3<f32>, lod: f32) -> vec3<f32> {
-    if (O.env.x > 0.5) {
+    if (v_own_env()) {
         // The material's own envMap (equirectangular; cube maps arrive
         // converted).
         var uv = vec2<f32>(atan2(dir.z, dir.x) * 0.5 * RECIPROCAL_PI + 0.5,
@@ -1250,9 +1276,9 @@ fn distance_attenuation(d: f32, cutoff: f32, decay: f32) -> f32 {
 
 // The colour of a fragment (fs_main, fs_main_logdepth).
 fn surface(in: VsOut, front: bool) -> vec4<f32> {
-    let kind = O.tex_flags.x;
-    let present = O.tex_flags.y;
-    let flags = O.flags.y;
+    let kind = v_kind();
+    let present = v_present();
+    let flags = v_flags();
 
     // Derivatives and the view, in uniform control flow.
     let dpx = dpdx(in.world);
@@ -1278,7 +1304,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
 
     // The geometric normal: interpolated or flat, flipped on back faces.
     var N = normalize(in.normal) * face;
-    if (O.pbr.z > 0.5) {
+    if (v_flat()) {
         N = normalize(cross(dpx, dpy));
         if (dot(N, V) < 0.0) {
             N = -N;
@@ -1311,7 +1337,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
     if (has_flag(present, SLOT_ALPHA)) {
         diffuse.a *= c_alpha.g;
     }
-    if (diffuse.a < O.emissive.w || clipped(in.world) || (O.misc1.y > 0.5 && diffuse.a < hash_threshold)) {
+    if (v_cutout() && (diffuse.a < O.emissive.w || clipped(in.world) || (O.misc1.y > 0.5 && diffuse.a < hash_threshold))) {
         discard;
     }
     if (kind == KIND_SHADOW) {
@@ -1321,7 +1347,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
             mask = shadow_mask(in.world, normalize(in.normal) * face);
         }
         let sa = O.color.a * (1.0 - mask);
-        let sc = select(linear_to_srgb(O.color.rgb), O.color.rgb, F.shadow_params.z > 0.5);
+        let sc = select(linear_to_srgb(O.color.rgb), O.color.rgb, v_linear());
         return vec4<f32>(sc * sa, sa);
     }
     if (kind == KIND_DISTANCE) {
@@ -1419,7 +1445,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
         // three.js: a lightMap replaces the unit indirect light.
         let indirect = select(vec3<f32>(1.0), light_map * RECIPROCAL_PI, has_role(ROLE_LIGHT));
         rgb = diffuse.rgb * indirect * ao;
-        if (kind == KIND_BASIC && O.env.x > 0.5) {
+        if (kind == KIND_BASIC && v_own_env()) {
             rgb = env_combine(rgb, in.world, N, specular_strength);
         }
     } else if (kind == KIND_MATCAP) {
@@ -1515,7 +1541,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
 
         // Indirect: ambient, hemisphere and lightMap light, occluded by the aoMap.
         var indirect = F.ambient.rgb + light_map + probe_irradiance(N);
-        if (F.hemi_dir.w > 0.5) {
+        if (v_hemi()) {
             let w = 0.5 * dot(N, F.hemi_dir.xyz) + 0.5;
             indirect += mix(F.hemi_ground.rgb, F.hemi_sky.rgb, w);
         }
@@ -1545,14 +1571,14 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
         }
 
         // The lights reaching this draw (culled per object by the renderer).
-        let count = object_light_count();
+        let count = v_light_count();
         for (var k = 0u; k < count; k++) {
             let light = F.lights[object_light(k)];
             // A CSM cascade lights only the view depths it covers.
             if (light.shadow2.w > 0.0 && (in.view_depth < light.shadow2.z || in.view_depth >= light.shadow2.w)) {
                 continue;
             }
-            if (light.position.w == LIGHT_RECT) {
+            if (v_light_type(k, light) == LIGHT_RECT) {
                 // RectAreaLight (three.js's RE_Direct_RectArea_Physical):
                 // physically based materials only.
                 if (pbr) {
@@ -1577,14 +1603,14 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
             }
             var L: vec3<f32>;
             var radiance = light.color.rgb;
-            if (light.position.w == LIGHT_DIRECTIONAL) {
+            if (v_light_type(k, light) == LIGHT_DIRECTIONAL) {
                 L = light.direction.xyz;
             } else {
                 let to_light = light.position.xyz - in.world;
                 let d = length(to_light);
                 L = to_light / max(d, 1e-6);
                 radiance *= distance_attenuation(d, light.color.w, light.params.x);
-                if (light.position.w == LIGHT_SPOT) {
+                if (v_light_type(k, light) == LIGHT_SPOT) {
                     let angle_cos = dot(L, light.direction.xyz);
                     radiance *= smoothstep(light.direction.w, light.params.y, angle_cos);
                 }
@@ -1623,8 +1649,8 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
         }
         var total_diffuse = diffuse_light * (diffuse_color * RECIPROCAL_PI);
         var total_specular = specular;
-        let own_env = O.env.x > 0.5;
-        if (pbr && (own_env || F.env.x > 0.5)) {
+        let own_env = v_own_env();
+        if (pbr && (own_env || v_scene_env())) {
             // Image-based light (three.js's getIBLIrradiance / getIBLRadiance
             // and multiscattering), from the environment's mip chain:
             // envMap, else scene.environment (with environmentIntensity).
@@ -1685,19 +1711,19 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
             let fcc = F_Schlick(vec3<f32>(0.04), 1.0, saturate(dot(cc_n, V)));
             rgb = rgb * (1.0 - clearcoat * fcc) + clearcoat_spec * clearcoat;
         }
-        if (!pbr && O.env.x > 0.5) {
+        if (!pbr && v_own_env()) {
             // Lambert and Phong envMap (three.js's envmap_fragment).
             rgb = env_combine(rgb, in.world, N, specular_strength);
         }
     }
 
-    let linear_output = F.shadow_params.z > 0.5;
+    let linear_output = v_linear();
     if ((flags & FLAG_TONE_MAPPED) != 0u && !linear_output) {
         rgb = tone_map(rgb);
     }
-    if ((flags & FLAG_FOG) != 0u && F.fog_color.w > 0.5) {
+    if ((flags & FLAG_FOG) != 0u && v_fog() > 0.5) {
         var fog = 0.0;
-        if (F.fog_color.w == FOG_LINEAR) {
+        if (v_fog() == FOG_LINEAR) {
             fog = smoothstep(F.fog_params.x, F.fog_params.y, in.view_depth);
         } else {
             let d = F.fog_params.z * in.view_depth;

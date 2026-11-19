@@ -75,6 +75,32 @@ export class Demo extends Layout {
 | (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
 | uniforms uploaded per program | each draw keeps one 1536-byte block in a shared uniform buffer across frames (bound at a dynamic offset), rewritten and uploaded only when its world matrix, light list or material changed; a material's share of the block is built once a view however many draws use it |
 
+### Shader programs: the uber-shader and baked variants
+
+three.js compiles a program per material configuration (`#define`s from
+`getProgramCacheKey`). ThreeAS draws every built-in material with **one
+uber-shader** (`three/shaders/three.wgsl`) whose features are uniform
+branches, so there is no compile per material and no `onBeforeCompile` /
+`customProgramCacheKey` (`material.version` / `needsUpdate` cost nothing).
+The **optional "optimized" mode** bakes three.js-style variants ahead of
+time: `tools/bake_shaders.sh` records the program keys a project draws
+(`--arg threeShaderKeys=1`) and generates `three/shaders/baked/*.wgsl`,
+three.wgsl with the fragment features as constants (shading model, maps,
+extra maps, flags, cut-out or not, flat shading, environments, fog type,
+hemisphere light, linear output, the light count and types in list order)
+and only the draw's two entry points, plus the registry
+`three/renderers/gpu/BakedShaders.as`. At runtime a draw whose key is baked
+from the current three.wgsl (`THREE_WGSL_HASH`) uses its variant; any other
+draw, the transmission pass, shadow passes and ShaderMaterials use the
+uber-shader. Unbaked keys are logged once (silence with
+`--define=THREE_RELEASE`); `renderer.useBakedShaders = false` or
+`--arg threeUberShader=1` ignores the bake. Baked and uber renders match
+except for a few high-contrast or grazing-angle pixels (compiling without
+`discard` and with folded constants changes derivatives and rounding: up to
+about 1% of a scene's pixels, mostly by a few levels). Each variant adds
+about 0.5 MB to the .riv (five backends) and a pipeline compile on first
+use. The default repository state bakes nothing.
+
 ## Language (AnimaScript is typed and compiled)
 
 - **No union types or overloads.** Where three.js takes "a number or a
