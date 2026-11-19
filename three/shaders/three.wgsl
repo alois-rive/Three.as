@@ -748,9 +748,11 @@ fn F_Schlick(f0: vec3<f32>, f90: f32, dotVH: f32) -> vec3<f32> {
 
 fn V_GGX_SmithCorrelated(alpha: f32, dotNL: f32, dotNV: f32) -> f32 {
     let a2 = alpha * alpha;
-    let gv = dotNL * sqrt(a2 + (1.0 - a2) * dotNV * dotNV);
-    let gl = dotNV * sqrt(a2 + (1.0 - a2) * dotNL * dotNL);
-    return 0.5 / max(gv + gl, 1e-6);
+    // Not `gl`: GLSL reserves every gl_ name, and the GL backend escapes
+    // `gl` to `gl_1` (a compile error on WebGL2).
+    let vis_v = dotNL * sqrt(a2 + (1.0 - a2) * dotNV * dotNV);
+    let vis_l = dotNV * sqrt(a2 + (1.0 - a2) * dotNL * dotNL);
+    return 0.5 / max(vis_v + vis_l, 1e-6);
 }
 
 fn D_GGX(alpha: f32, dotNH: f32) -> f32 {
@@ -793,9 +795,9 @@ fn BRDF_GGX_physical(L: vec3<f32>, V: vec3<f32>, N: vec3<f32>, f0: vec3<f32>, f9
     let dotBL = dot(B, L);
     let dotBV = dot(B, V);
     let dotBH = dot(B, H);
-    let gv = dotNL * length(vec3<f32>(alpha_t * dotTV, alpha * dotBV, dotNV));
-    let gl = dotNV * length(vec3<f32>(alpha_t * dotTL, alpha * dotBL, dotNL));
-    let vis = saturate(0.5 / (gv + gl));
+    let vis_v = dotNL * length(vec3<f32>(alpha_t * dotTV, alpha * dotBV, dotNV));
+    let vis_l = dotNV * length(vec3<f32>(alpha_t * dotTL, alpha * dotBL, dotNL));
+    let vis = saturate(0.5 / (vis_v + vis_l));
     let a2 = alpha_t * alpha;
     let v = vec3<f32>(alpha * dotTH, alpha_t * dotBH, a2 * dotNH);
     let w2 = a2 / dot(v, v);
