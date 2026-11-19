@@ -2,10 +2,13 @@
 """Compares two folders of screenshots (tools/screenshots.sh), pixel by pixel.
 
     python3 tools/compare_shots.py build/shots/before build/shots/after [--tolerance=N]
+        [--max-differing=PCT]
 
 Prints, per image, how many pixels differ (any channel by more than the
 tolerance, default 0) and the largest channel difference; exits 1 when an
-image differs or is missing.
+image differs or is missing. --max-differing lets an image pass with up to
+PCT percent of its pixels differing (baked shader variants against the
+uber-shader: about 1%, see docs/DEVIATIONS.md).
 """
 import os
 import sys
@@ -16,9 +19,12 @@ from PIL import Image, ImageChops
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     tolerance = 0
+    max_differing = 0.0
     for a in sys.argv[1:]:
         if a.startswith("--tolerance="):
             tolerance = int(a.split("=", 1)[1])
+        elif a.startswith("--max-differing="):
+            max_differing = float(a.split("=", 1)[1])
     if len(args) != 2:
         print(__doc__)
         return 2
@@ -44,9 +50,12 @@ def main():
             for px in diff.getdata():
                 if max(px) > tolerance:
                     count += 1
-        status = "same" if count == 0 else f"{count} pixels differ (max {worst})"
-        if count:
+        share = 100.0 * count / (a.size[0] * a.size[1])
+        status = "same" if count == 0 else f"{count} pixels differ ({share:.2f}%, max {worst})"
+        if share > max_differing or (count and max_differing == 0):
             failed = True
+            if max_differing > 0:
+                status += f" > {max_differing}%"
         print(f"{name}: {status}")
     return 1 if failed else 0
 
