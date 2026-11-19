@@ -508,7 +508,9 @@ export class Demo extends Layout {
   an (animated) Rive node.
 - ThreeLayout's `overlay` (an `ArtboardOverlayRenderer`) is placed and
   advanced after `animate` and the controls, drawn after the canvas is
-  presented, and gets pointer events first.
+  presented, and gets pointer events first; its `bindings` (a
+  `SceneBindings`) sync after `animate`, and are made by ThreeLayout itself
+  when the bound view model has a `threeBindings` string.
 
 ## Animation
 
@@ -1174,6 +1176,41 @@ artboards are drawn over it by the script's 2D renderer, in
   `autoAdvance` (off when something else advances a shared instance) are
   per object. Objects are placed from the last `render` (ThreeLayout
   renders them in `advance`, so headless pointer tests hit them).
+
+### Data binding (SceneBindings)
+
+`three/rive/SceneBindings` binds scene properties to Rive view model
+properties, so a state machine, a timeline (through a bind written back
+with `direction="true"`), a listener, the host or the editor drives the
+scene, and the scene can write Rive UI:
+
+- `new SceneBindings(root, viewModel)`; `bind(property, path, direction =
+  BindBoth, scale = 1, offset = 0)` with a PropertyBinding path
+  ("Lamp.intensity", "Cube.position[y]", "Car.material.color",
+  "Lamp.visible", "Face.morphTargetInfluences[smile]" ...) or
+  "@action.field" for an action named with `addAction(name, action)`
+  (fields `weight`, `time`, `timeScale`, `paused`, `enabled`, `running`,
+  and the triggers `play`, `stop`); `bindAction(property, action, field)`,
+  `bindTarget(property, SceneBindingTarget)` for anything else (subclass
+  it: no closures), `unbind`, `setViewModel`, `errors` (what did not
+  resolve).
+- Directions: `BindToScene` (the view model drives), `BindToViewModel`
+  (the scene writes), `BindBoth` (whichever changed since the last
+  `update()` wins; the view model on the first). Numbers map as `scene =
+  viewModel x scale + offset`; colours convert sRGB to linear; booleans
+  are 0 / 1; a trigger fires the target (plays an action, toggles a
+  boolean). The view model property's own kind picks the conversion (a
+  number or boolean for one value, a colour for a colour path).
+- **A spec string**: `parse("lamp -> Lamp.intensity * 0.03; height <-
+  Crate.position[y]; tint <-> Car.material.color")` (`->` to the scene,
+  `<-` to the view model, `<->` or `=` both; lines or `;`; `#` comments).
+  `SceneBindings.fromViewModel(root, vm)` reads the view model's
+  `threeBindings` string (`BINDINGS_PROPERTY`) at the first update and
+  again when it changes, an action is added or `refresh()` is called:
+  edit the string in the Rive editor to rewire the scene without code.
+- Polling, not listeners: `update()` compares values each frame (ThreeLayout
+  calls it after `animate`). View model properties cannot be enumerated
+  from a script, so bindings name them.
 
 ### Other
 

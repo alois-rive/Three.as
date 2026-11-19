@@ -158,6 +158,7 @@ export * from "./rive/RivePaths";
 export * from "./rive/RiveNodes";
 export * from "./rive/ThreeLayout";
 export * from "./rive/ArtboardOverlay";
+export * from "./rive/SceneBindings";
 export * from "./helpers/AxesHelper";
 export * from "./helpers/GridHelper";
 export * from "./helpers/PolarGridHelper";

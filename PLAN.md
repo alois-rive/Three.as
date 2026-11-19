@@ -336,7 +336,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   Rive artboards drawn in 2D at projected 3D positions (labels, tooltips,
   HUD markers), occluded on request (by raycast: scripts cannot read
   depth back), taking pointer events.
-- **M13c, data binding.** Helpers that bind scene properties (transforms,
+- **M13c, data binding (done).** Helpers that bind scene properties (transforms,
   material colours, light intensities, animation weights) to Rive view
   model properties both ways, so a Rive state machine or the editor can
   drive a three.js scene without script changes.

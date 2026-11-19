@@ -3,7 +3,9 @@
 // renders and presents every frame, drives `controls`, and forwards
 // pointer events to interactive ArtboardTextures under the pointer. With
 // `overlay` set it also places, draws and advances the scene's artboard
-// overlays (Artboard2DObject ...), which get the pointer first.
+// overlays (Artboard2DObject ...), which get the pointer first; with
+// `bindings` set it syncs them with the view model every frame (and makes
+// them itself when the bound view model has a `threeBindings` string).
 //
 //     export class Demo extends ThreeLayout {
 //         cube: Mesh = new Mesh(new BoxGeometry(), new MeshNormalMaterial());
@@ -38,6 +40,7 @@ import { Vector2 } from "../math/Vector2";
 import { Controls } from "../extras/Controls";
 import { ArtboardTexture } from "./ArtboardTexture";
 import { ArtboardOverlayRenderer } from "./ArtboardOverlay";
+import { SceneBindings, BINDINGS_PROPERTY } from "./SceneBindings";
 
 export abstract class ThreeLayout extends Layout {
     context: Context? = null;
@@ -64,6 +67,9 @@ export abstract class ThreeLayout extends Layout {
     /// counterpart): placed after each render, drawn over the canvas,
     /// advanced each frame, first to get the pointer.
     overlay: ArtboardOverlayRenderer? = null;
+    /// Scene properties synced with view model properties each frame (after
+    /// `animate`, before the controls).
+    bindings: SceneBindings? = null;
     // A press an overlay took: its moves and release go to the overlay.
     private overlayPressed: bool = false;
 
@@ -79,6 +85,13 @@ export abstract class ThreeLayout extends Layout {
     override init(context: Context): bool {
         this.context = context;
         this.renderer = new GPURenderer(context, { antialias: this.antialias });
+        // A bound view model with a `threeBindings` spec binds itself (at
+        // the first update, so setup can build the scene and add actions).
+        const dc = context.dataContext();
+        const vm = dc != null ? dc.viewModel() : null;
+        if (vm != null && vm.getString(BINDINGS_PROPERTY) != null) {
+            this.bindings = SceneBindings.fromViewModel(this.scene, vm);
+        }
         return this.setup(context);
     }
 
@@ -112,6 +125,8 @@ export abstract class ThreeLayout extends Layout {
     override advance(seconds: f64): bool {
         this.delta = seconds;
         this.animate(seconds);
+        const b = this.bindings;
+        if (b != null) b.update();
         const c = this.controls;
         if (c != null) c.update(seconds);
         for (let i = 0; i < this.tools.length; i++) this.tools[i].update(seconds);
