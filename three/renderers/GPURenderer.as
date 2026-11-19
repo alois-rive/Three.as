@@ -41,6 +41,7 @@ import {
     TextureAspect, StencilOp,
 } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
+import { clock } from "rive/os";
 
 import { Object3D } from "../core/Object3D";
 import { BufferGeometry, disposedGeometries } from "../core/BufferGeometry";
@@ -353,11 +354,50 @@ export class MemoryInfo {
     textures: i32 = 0;
 }
 
+/// Where render() spends its time on the CPU (Rive-only): seconds summed
+/// over `renders` views since the last `reset()`, when `enabled`.
+export class RenderTimings {
+    enabled: bool = false;
+    renders: i32 = 0;
+    /// updateMatrixWorld, the camera and frustum.
+    matrices: f64 = 0;
+    /// Walking the scene: culling, draw items, texture and geometry uploads.
+    collect: f64 = 0;
+    /// Background, shadow planning, environment, the frame block, sorting.
+    prepare: f64 = 0;
+    /// Object blocks and bind groups (writeDraws) and their upload.
+    write: f64 = 0;
+    /// Shadow and transmission passes.
+    passes: f64 = 0;
+    /// The main pass's draw calls.
+    draw: f64 = 0;
+
+    reset(): void {
+        this.renders = 0;
+        this.matrices = 0; this.collect = 0; this.prepare = 0; this.write = 0; this.passes = 0; this.draw = 0;
+    }
+
+    /// Average milliseconds per render, one line.
+    summary(): string {
+        const n = <f64>max<i32>(1, this.renders);
+        const k = 1000 / n;
+        return "matrices " + fmtMs(this.matrices * k) + " collect " + fmtMs(this.collect * k) + " prepare "
+            + fmtMs(this.prepare * k) + " write " + fmtMs(this.write * k) + " passes " + fmtMs(this.passes * k)
+            + " draw " + fmtMs(this.draw * k) + " ms (" + this.renders.toString() + " renders)";
+    }
+}
+
+function fmtMs(v: f64): string {
+    return (Math.round(v * 1000) / 1000).toString();
+}
+
 export class RendererInfo {
     /// Reset the render counters at each render() (else call reset()).
     autoReset: bool = true;
     render: RenderInfo = new RenderInfo();
     memory: MemoryInfo = new MemoryInfo();
+    /// CPU time per render stage (off by default; Rive-only).
+    timings: RenderTimings = new RenderTimings();
 
     reset(): void {
         const r = this.render;
@@ -1071,6 +1111,9 @@ export class GPURenderer {
 
     private renderView(scene: Object3D, camera: Camera): void {
         const info = this.info.render;
+        const timings = this.info.timings;
+        const timed = timings.enabled;
+        let t0 = timed ? clock() : 0;
         const frame = ++this.frameId;
         this.arenaUsed = 0;
         if (!this.beginDestination()) return;
@@ -1086,11 +1129,13 @@ export class GPURenderer {
         camera.getWorldPosition(this.cameraPos);
         this.invViewProj.copy(this.viewProj).invert();
         _frustum.setFromProjectionMatrix(this.viewProj);
+        if (timed) { const t = clock(); timings.matrices += t - t0; t0 = t; }
 
         // Collect lights and draws (textures draw and upload here).
         this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
         this.hasTransmission = false;
         this.collect(scene, camera, frame);
+        if (timed) { const t = clock(); timings.collect += t - t0; t0 = t; }
         const background = this.prepareBackground(scene, frame, canvas);
         this.planShadows();
         this.prepareEnvironment(scene, frame, canvas);
@@ -1099,9 +1144,11 @@ export class GPURenderer {
             this.opaque.sort(compareOpaque);
             this.transparent.sort(compareTransparent);
         }
+        if (timed) { const t = clock(); timings.prepare += t - t0; t0 = t; }
         // Per-draw blocks; mip chains render here, before the main pass.
         this.writeDraws(this.opaque, frame, canvas);
         this.writeDraws(this.transparent, frame, canvas);
+        if (timed) { const t = clock(); timings.write += t - t0; t0 = t; }
 
         // Shadow maps: one depth pass per light view, before the main pass.
         if (!this.skipShadows) this.renderShadows(canvas, frame);
@@ -1109,6 +1156,7 @@ export class GPURenderer {
         // Transmission: the opaque scene into a mipmapped HDR target first.
         if (this.hasTransmission) this.renderTransmission(canvas, scene, background, pw, ph, frame);
         this.ensureFrameGroup();
+        if (timed) { const t = clock(); timings.passes += t - t0; t0 = t; }
 
         // The pass.
         let r: f64 = this._clearColor.r, g: f64 = this._clearColor.g, b: f64 = this._clearColor.b;
@@ -1139,6 +1187,10 @@ export class GPURenderer {
         const memory = this.info.memory;
         memory.geometries = this.geometries.count;
         memory.textures = this.textures.count;
+        if (timed) {
+            timings.draw += clock() - t0;
+            timings.renders++;
+        }
     }
 
     /// Prepares everything `render(scene, camera)` would draw (pipelines,
