@@ -118,7 +118,8 @@ export class Demo extends Layout {
   Declare `Array<Object3D>` for what you pass to `intersectObjects` and cast
   elements back (`arr[i] as Mesh`).
 - **No `userData`** (no untyped objects). Subclass, or keep a `Map` keyed by
-  `object.id`.
+  `object.id`. Loaders that fill `userData` return subclasses with typed
+  fields instead (`STLGeometry.groupNames`, `SVGShapePath.userData`).
 - `uuid` and `MathUtils.generateUUID` are missing; `id` is unique.
 
 ## Math
@@ -313,7 +314,11 @@ export class Demo extends Layout {
   `shapesFromRivePath(path, scale, isCCW)` and `shapePathFromRivePath`
   (Rive-only) convert a Rive path (y flipped). A node's path is empty until
   its artboard instance has advanced once: call `instance.advance(0)` before
-  `node.asPath()`.
+  `node.asPath()`. The reverse, `rivePathFromShapePath(shapePath, scale,
+  flipY = false)`, makes a Rive path of a ShapePath (SVGLoader paths: SVG's
+  y already points down, as Rive's): lines and Béziers as they are,
+  ellipse arcs as cubics, a contour per sub-path, closed with `autoClose`;
+  set its `fillRule` from the SVG style.
 
 ## Lines, points and sprites
 
@@ -491,6 +496,44 @@ export class Demo extends Layout {
   frame around the normal (three.js's derivative frame degenerates).
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
   named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
+- **SVGLoader** (`three/addons/loaders/SVGLoader`, r170): `load(name)`
+  reads a BlobAsset, `loadAsync(url)` fetches, `parse(text)` returns an
+  `SVGResult` (`paths`, `xml`: the root element). **`paths` are
+  `SVGShapePath`s**, ShapePaths with a typed `userData` (three.js sets an
+  untyped one): `userData.node` (the XMLNode) and `userData.style`, an
+  `SVGStyle` with three.js's fields (`fill`, `fillOpacity`, `fillRule`,
+  `opacity`, `stroke`, `strokeOpacity`, `strokeWidth`, `strokeLineJoin`,
+  `strokeLineCap`, `strokeMiterLimit`, `visibility`, plus `display` and
+  getStrokeStyle's `strokeColor`). Fields three.js leaves undefined are ""
+  (`fillRule`, `stroke`, `visibility`) or 1 (`opacity`): test
+  `style.stroke != "" && style.stroke != "none"`. `createShapes`,
+  `getStrokeStyle`, `pointsToStroke` and `pointsToStrokeWithBuffers` are
+  static as three.js; the buffers are `Array<f64>?` (null: count only),
+  grown as written, and the count is three.js's (3 per vertex).
+- SVG parsing goes through **`three/addons/libs/dom_parser`** (AnimaScript
+  has no DOM): `new DOMParser().parseFromString(text)` gives an XMLDocument
+  of XMLNodes with the DOM calls loaders use (`nodeName`, `childNodes`,
+  `getAttribute` returning null when missing, `getAttributeNS`,
+  `textContent`, `getElementById`, `getElementsByTagName`,
+  `viewportElement`), `node.style` (a CSSStyleDeclaration of the style
+  attribute) and `node.sheet` (a <style> element's CSSStyleSheet). It reads
+  comments, CDATA, processing instructions, the XML declaration, a DOCTYPE
+  and its internal `<!ENTITY>`s; it recovers from malformed markup
+  (`document.errors`) where a browser would give a `<parsererror>`.
+- SVGLoader differences, all on input three.js mishandles or ignores:
+  CSS element selectors (`rect { ... }`) apply, below class and id
+  selectors (three.js reads only class and id rules); `<use>` takes SVG 2's
+  `href` as well as `xlink:href` (and skips a reference to its own
+  ancestor); `display` is kept in the style (filter on
+  `style.display == "none"` as on `visibility`); polygon and polyline
+  points are read as a number list (three.js's pattern drops pairs written
+  "x, y"); commas between transforms are allowed; `use` with only one of
+  `x` / `y` treats the other as 0 (three.js gets NaN); a malformed number
+  list stops at the error instead of throwing, and an arc or `Z` with no
+  current point starts one. `em` and `%` lengths read as plain numbers, as
+  three.js's `parseFloatWithUnits`. **Rive-only `loader.applyViewBox`**
+  (off by default, as three.js ignores viewBox) maps each `<svg>`'s
+  viewBox onto its width and height with `preserveAspectRatio`.
 
 ## Shadows
 
