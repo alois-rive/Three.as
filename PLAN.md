@@ -456,6 +456,83 @@ The plan this milestone started from:
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
 
+### M15: Draco geometry compression
+
+- **DRACOLoader** (three.js `examples/jsm/loaders/DRACOLoader.js` API:
+  `setDecoderPath` / `setDecoderConfig` / `preload` kept as no-ops or
+  documented, `parse`, `load(name)`, `loadAsync(url)`,
+  `decodeDracoFile`), with the decoder itself **ported to AnimaScript**
+  (`packages/threeas/three/addons/libs/draco/`, from Google's Draco C++
+  decoder or its spec): the `.drc` container, sequential and Edgebreaker
+  (standard and valence) connectivity, the attribute decoders with
+  quantization, the prediction schemes (delta, parallelogram,
+  multi-parallelogram, constrained multi-parallelogram, tex-coords
+  portable, geometric normal) and transforms (octahedron normals,
+  wrap), and the rANS entropy coder. Point clouds too.
+- Decoding runs in a Rive job (the pattern of GLTFLoader's `decodeGLTF`),
+  so big meshes stay off the main lane.
+- **GLTFLoader `KHR_draco_mesh_compression`** through
+  `setDRACOLoader(dracoLoader)`, as three.js, in `load`, `parse` and the
+  async path.
+- Fixtures: real Draco files (Khronos glTF-Sample-Assets' `glTF-Draco`
+  variants, three.js's `bunny.drc`), downloaded as data, licences noted;
+  tests compare decoded attributes with the uncompressed versions.
+- Example: the Models example gains a Draco-compressed glTF and a `.drc`
+  point cloud.
+
+### M16: popular addons
+
+All from three.js r170 `examples/jsm/objects/`, faithful ports in
+`packages/threeas/three/addons/objects/`, each in the gallery:
+- **Reflector**: planar mirror (virtual camera, clip plane, render target,
+  texture matrix), `getRenderTarget`, `dispose`.
+- **Refractor**: planar refraction, same machinery.
+- **Water** (`Water.js`: mirror + normal map scrolling, sun light,
+  distortion) and **Water2** (`Water2.js`: Reflector + Refractor + flow
+  map or flow direction).
+- **Sky** (Preetham model: turbidity, rayleigh, mie, sun position),
+  usable with PMRemGenerator for environment lighting, as three.js's
+  `webgl_shaders_sky` example.
+- **Lensflare** and `LensflareElement` (occlusion through
+  `copyFramebufferToTexture`, no readback needed).
+- **MarchingCubes** (`MarchingCubes.js`: metaballs, planes, the field,
+  `update()`), with its geometry built on the CPU each frame and uploaded.
+- Example `Addons`: a scene with a mirror, refractive glass, an ocean
+  (Water) under a Sky with a lens flare on the sun, and animated
+  metaballs.
+
+### M17: spatial audio
+
+three.js's audio API (`src/audio/`), on Rive's audio API (`rive/audio`)
+instead of Web Audio:
+- **AudioListener** (an Object3D, usually on the camera: `setMasterVolume`,
+  `getMasterVolume`, `context` replaced by the Rive audio engine, filters).
+- **Audio** (non-positional: `setBuffer` / `setMediaElementSource`
+  replaced by Rive audio assets, `play`, `pause`, `stop`, `setLoop`,
+  `setLoopStart/End`, `setVolume`, `setPlaybackRate`, `setDetune`,
+  `offset`, `duration`, `autoplay`, `onEnded` as a listener).
+- **PositionalAudio** (panner and distance model as Web Audio's
+  PannerNode: `setRefDistance`, `setRolloffFactor`, `setDistanceModel`
+  linear / inverse / exponential, `setMaxDistance`,
+  `setDirectionalCone(inner, outer, outerGain)`; equal-power stereo
+  panning, plus a simple interaural delay and head-shadow low-pass for
+  depth; no HRTF).
+- **AudioAnalyser** (`getFrequencyData`, `getAverageFrequency`: an FFT on
+  the mixed signal of an Audio, results back through a snapshot).
+- **AudioLoader** (Rive audio assets by name; `loadAsync`; urls where the
+  host allows fetching and decoding them).
+- **PositionalAudioHelper**.
+- How: each source decodes to PCM in a job (`AudioSource.toBlob`); one
+  `AudioProcessor` mixes every playing voice on the audio thread (looping,
+  playback rate, gain ramps to avoid clicks); the main lane computes each
+  voice's gains, pan, delay and filter from the listener's and the
+  object's world matrices every frame and publishes them through a
+  `Snapshot`. Checked headless with `--render-audio` (levels and panning
+  per channel against expected values).
+- Example `Audio`: a few sound emitters moving around the camera (one
+  with a cone), a non-positional ambience, an analyser bar graph, and
+  the PositionalAudioHelper cones.
+
 ## Deviations from three.js
 
 Every difference is listed in [docs/DEVIATIONS.md](docs/DEVIATIONS.md),
