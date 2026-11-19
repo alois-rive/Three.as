@@ -587,6 +587,69 @@ through Rive's `Audio.play` without panning). The gallery as it ships
 (`tools/release_build.sh` without `--override`, on `.libraries/`) builds
 once the engine library is republished with `three/audio/`.
 
+### M18: shader baking for any project
+
+M14d bakes variants for the gallery only: `tools/bake_shaders.sh` records
+the gallery's example artboards and writes the variants and a compiled-in
+registry (`gpu/BakedShaders.as`) into the engine library. A project that
+imports `lib:threeas` can do neither: it cannot edit the library, and the
+library's variants would be the gallery's, not its own. M18 moves baking
+into the project that draws.
+
+Scenes cannot be analysed statically: materials, lights, fog and shadows
+are built by script code at runtime, and loaded models (glTF, FBX ...)
+add their own. So "analysing the project" means running it with the
+renderer recording, as M14d does, on whatever the project contains.
+
+- **Content-addressed variants, no registry.** A variant's shader asset is
+  named `threeas_baked/v_<h>`, `<h>` a 64-bit FNV-1a hash (16 hex digits)
+  of `THREE_WGSL_HASH + "|" + programKey`. On a program key it has not
+  seen, `GPURenderer` computes the name, asks `context.shader(name)` once
+  and caches the answer (`null`: the uber-shader). The asset can be
+  anywhere the host file's assets are: the project (the normal case) or
+  the engine library. A variant baked from another `three.wgsl` is never
+  found, so a stale bake falls back by itself. `gpu/BakedShaders.as` and
+  the stale-hash check go; `--arg threeShaderKeys=1` keeps logging keys
+  (and says, per key, whether a variant was found). The bash tool and an
+  engine test share test vectors for the hash.
+- **`tools/threeas_bake.sh <project-dir>`**, bash, replacing
+  `tools/bake_shaders.sh` (which becomes a thin wrapper on the gallery, or
+  goes):
+  - The `three.wgsl` to bake from: the project's library snapshot
+    (`.libraries/threeas@<v>/three_shaders_three.wgsl`, the version the
+    project runs) by default; `--engine=DIR` for engine sources (the
+    gallery with its override, or the engine project itself).
+  - Scenes: every artboard in the project's RML (`--artboard=A,B` to
+    choose, `--main` for the main one only), each run headless for a set
+    time (`--time=3s`); `--scenario=FILE` (repeatable) adds `rive
+    --commands` scripts for states reached by interaction (pointer
+    events, view model changes, later frames); `--keys=FILE` adds keys
+    from logs of live sessions (`rive <dir> --arg threeShaderKeys=1` while
+    someone plays it, or a web build's console).
+  - Writes `<project>/threeas_baked/v_<h>.wgsl` (the M14d specialisation:
+    the `@variant` block replaced by the key's constants, only the key's
+    two entry points) and `threeas_baked/keys.txt` (key, asset, the
+    artboards that drew it; for people and `--check`, not read at
+    runtime).
+  - Prints a report: keys per artboard, keys shared, variants written,
+    the estimated .riv growth (about 0.5 MB a variant), what `--max`
+    (default 48, most shared first) left out.
+  - `--check` (CI: re-record, fail when keys.txt or a variant differs, or
+    a variant is stale for the project's `three.wgsl`), `--clean`,
+    `--dry-run`. Works on a project outside this repository.
+- **Gallery and engine.** The engine ships no variants. The gallery bakes
+  as any project (`tools/threeas_bake.sh packages/gallery
+  --engine=packages/threeas`), still optional: the uber-shader stays the
+  default. `tools/bench.sh`'s freshness check and `tools/publish.sh`
+  follow; `tools/check_glsl.py` on a baked release build.
+- **Checks.** Pixel comparison with and without a bake
+  (`tools/screenshots.sh` + `compare_shots.py`, same tolerance as M14d);
+  a test project outside `packages/` (a minimal scene importing the
+  engine) baked end to end; a miss costs one `context.shader` lookup per
+  key, measured with `--bench`.
+- **Docs.** README: "Optimizing shaders for your project" (for library
+  users, with the commands); AGENTS.md, DEVIATIONS.md, PERFORMANCE.md.
+
 ## Deviations from three.js
 
 Every difference is listed in [docs/DEVIATIONS.md](docs/DEVIATIONS.md),
