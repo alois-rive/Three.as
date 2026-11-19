@@ -19,4 +19,7 @@
     <BlobAsset file="examples/models/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/models/threeas_logo.svg" name="threeas_logo" id="0:2313"/>
     <BlobAsset file="examples/models/fbx_scene.fbx" name="fbx_scene" id="0:2371"/>
+    <BlobAsset file="examples/models/avocado_draco.glb" name="avocado_draco" id="0:2372"/>
+    <BlobAsset file="examples/models/bunny.drc" name="bunny" id="0:2373"/>
+    <BlobAsset file="examples/models/pc_kd_color.drc" name="pc_kd_color" id="0:2374"/>
 </Rive>

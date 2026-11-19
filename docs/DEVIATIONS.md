@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 14 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 14 and 15 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -667,8 +667,9 @@ use. The default repository state bakes nothing.
   emissive_strength, clearcoat, sheen, ior, specular, transmission, volume,
   iridescence, anisotropy, dispersion (with their textures),
   KHR_texture_transform, KHR_mesh_quantization, EXT_texture_webp,
-  EXT_mesh_gpu_instancing (with `_COLOR_0`) and EXT_meshopt_compression;
-  sparse accessors too. Not read: Draco, KTX2 / Basis textures
+  EXT_mesh_gpu_instancing (with `_COLOR_0`), EXT_meshopt_compression and
+  KHR_draco_mesh_compression (`setDRACOLoader`); sparse accessors too. Not
+  read: KTX2 / Basis textures
   (KHR_texture_basisu), KHR_materials_variants, TEXCOORD_2 and up (the
   renderer has two uv sets). A file that *requires* another extension
   fails (`loader.error`), as three.js throws. `gltf.parser`,
@@ -678,9 +679,50 @@ use. The default repository state bakes nothing.
   `setMeshoptDecoder`, as three.js's module. It reads the attribute codec
   version 0 (meshoptimizer's default for EXT_meshopt_compression), the
   triangle and index codecs and the three filters.
+- **The Draco decoder is AnimaScript** (`three/addons/libs/draco`, Google's
+  Draco 1.5.7 C++ decoder ported, Apache 2.0), not draco_decoder.js /
+  .wasm in Web Workers. `three/addons/libs/draco/draco_decoder` exports the
+  decoder's JavaScript API under its names (`Decoder` with
+  `GetEncodedGeometryType`, `DecodeArrayToMesh`, `DecodeArrayToPointCloud`,
+  `GetAttributeId`, `GetAttributeByUniqueId`, `GetTrianglesUInt32Array`,
+  `GetAttributeFloatForAllPoints`, `GetAttributeDataArrayForAllPoints`;
+  `Mesh`, `PointCloud`, `PointAttribute`, `Status`, the `POSITION` ... and
+  `DT_*` constants), with no `destroy` (memory is managed) and metadata as
+  `pointCloud.metadata` (a `GeometryMetadata` with `getEntryString`,
+  `getEntryInt` ...) instead of a `MetadataQuerier`;
+  `GetAttributeDataArrayForAllPoints` returns the values (a Float64Array,
+  null when they do not fit the type) instead of filling a heap pointer.
+  It reads bitstreams up to 2.2 (meshes) and 2.3 (point clouds), tested
+  from 1.1 (Draco 0.9) on:
+  sequential and Edgebreaker (standard, valence, predictive) connectivity,
+  every attribute decoder, prediction scheme and transform, metadata, and
+  sequential and kd-tree point clouds. Not read: kd-tree point clouds
+  older than 2.3 (Draco 1.3), whose coders were not ported.
+- **DRACOLoader** (`three/addons/loaders/DRACOLoader`, r170): `load(name)`
+  decodes the BlobAsset at once and returns the BufferGeometry (or null,
+  with `loader.error`), `loadAsync(url)` / `parseAsync(bytes)` return a
+  `Promise<BufferGeometry>` and decode in a Rive job (`decodeDraco`, in
+  place of the worker), `parse(buffer)` returns the geometry (three.js's
+  `parse(buffer, onLoad, onError)`). `decodeDracoFile(buffer, attributeIDs,
+  attributeTypes, vertexColorSpace)` returns the geometry instead of calling
+  back; `attributeIDs` is a `Map<string, i32>` of unique ids (glTF's case;
+  null reads attributes by type, `defaultAttributeIDs`), `attributeTypes` a
+  `Map<string, string>` of typed array names. `decodeGeometry(buffer,
+  taskConfig)` returns the job's promise; `DRACOTaskConfig` holds the task
+  config as arrays (a Map does not cross to a job), with
+  `attributeNormalized` for glTF's accessors. `setDecoderPath`,
+  `setDecoderConfig`, `setWorkerLimit`, `preload` and `dispose` are kept
+  and do nothing. **Attributes are Float32Arrays** (ThreeAS's
+  BufferAttribute): an integer type converts, and where three.js keeps
+  normalized integers (colours, normalized glTF accessors) they are scaled
+  to [0, 1] (signed: [-1, 1]) and `normalized` stays false. A .drc's
+  colours read as Float32Array (the default) are Draco's values (in [0, 1]
+  only when the file flags them normalized), as three.js; read 8-bit ones as
+  `Uint8Array` (`defaultAttributeTypes`) for [0, 1].
 - **`loadAsync(name)` / `parseAsync(bytes)` return a Rive `Promise<GLTF>`**
-  and decode in a Rive job (`decodeGLTF`: the container, meshopt views and
-  every accessor, handed back as one Float32Array); the scene is built on
+  and decode in a Rive job (`decodeGLTF`: the container, meshopt views,
+  Draco primitives and every accessor, handed back as one Float32Array and
+  the Draco geometries); the scene is built on
   the main lane when the job is done. Images decode asynchronously either
   way. Await it in an `async` method, or use the promise's `andThen`. The
   scene's objects are still created in one main-lane call, and vertex data

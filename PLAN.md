@@ -458,7 +458,19 @@ The plan this milestone started from:
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
 
-### M15: Draco geometry compression
+### M15: Draco geometry compression (done)
+
+Done as below. The decoder is in `packages/threeas/three/addons/libs/draco/`
+(Draco 1.5.7's decode paths, Apache 2.0); tests in `tests/draco_test.as`
+against Draco's testdata (OBJ ground truth, bitstreams 1.1 to 2.3),
+three.js's `bunny.drc` (Stanford bunny reference numbers) and Khronos
+glTF-Draco samples beside their glTF variants (Box, Avocado, WaterBottle
+for valence Edgebreaker, RiggedSimple for integer joints). Decode times
+(bunny.drc, 69451 faces): 56 ms interpreted, 5.4 ms AOT. Ported but not
+exercised by any fixture (old encoders wrote them): the deprecated predictive
+Edgebreaker, multi-parallelogram and float tex-coord predictors, the
+non-canonical octahedron transform with geometric normals, kd-tree levels
+below 6. Not ported: kd-tree point clouds before bitstream 2.3.
 
 - **DRACOLoader** (three.js `examples/jsm/loaders/DRACOLoader.js` API:
   `setDecoderPath` / `setDecoderConfig` / `preload` kept as no-ops or
