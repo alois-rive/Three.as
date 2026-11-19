@@ -2,6 +2,7 @@
 // arguments).
 
 import { Matrix4 } from "./Matrix4";
+import { Vector2 } from "./Vector2";
 
 export class Matrix3 {
     elements: StaticArray<f64> = new StaticArray<f64>(9);
@@ -112,8 +113,32 @@ export class Matrix3 {
             0, 0, 1);
     }
 
+    // 2D transforms, as three.js.
+
+    scale(sx: f64, sy: f64): Matrix3 { return this.premultiply(_m3.makeScale(sx, sy)); }
+    rotate(theta: f64): Matrix3 { return this.premultiply(_m3.makeRotation(-theta)); }
+    translate(tx: f64, ty: f64): Matrix3 { return this.premultiply(_m3.makeTranslation(tx, ty)); }
+
+    /// `makeTranslation(x, y)` or `makeTranslation(vector2)`.
+    makeTranslation<T>(x: T, y: f64 = 0): Matrix3 {
+        if (isReference<T>()) {
+            const v = x as Vector2;
+            return this.set(1, 0, v.x, 0, 1, v.y, 0, 0, 1);
+        }
+        return this.set(1, 0, <f64>x, 0, 1, y, 0, 0, 1);
+    }
+
+    makeRotation(theta: f64): Matrix3 {
+        const c = Math.cos(theta), s = Math.sin(theta);
+        return this.set(c, -s, 0, s, c, 0, 0, 0, 1);
+    }
+
+    makeScale(x: f64, y: f64): Matrix3 { return this.set(x, 0, 0, 0, y, 0, 0, 0, 1); }
+
     equals(m: Matrix3): bool {
         for (let i = 0; i < 9; i++) if (this.elements[i] != m.elements[i]) return false;
         return true;
     }
 }
+
+const _m3 = new Matrix3();
