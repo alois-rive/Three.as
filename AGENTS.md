@@ -186,8 +186,8 @@ after a shader change, build release `.riv`s (`tools/release_build.sh
 build/release`) and run `python3 tools/check_glsl.py` on both (needs
 glslangValidator; tools/publish.sh does): WebGL2 rejects what the native
 backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
-`gl_1`). The gallery's release has 95 GLSL shaders (the engine's 89 and the
-examples' 6).
+`gl_1`). The gallery's release has 222 GLSL shaders (the engine's 108, the
+rest the examples').
 
 ## Publishing
 
