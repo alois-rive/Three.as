@@ -296,7 +296,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M11d, other formats.** STLLoader, PLYLoader, SVGLoader (to ShapePaths;
   also usable straight as Rive paths), FontLoader, ObjectLoader and
   `toJSON` (round trips of scenes, geometries, materials), FBXLoader
-  (binary and ASCII), GLTFExporter (to a Blob).
+  (binary and ASCII; done), GLTFExporter (to a Blob).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 

@@ -314,6 +314,10 @@ export class Demo extends Layout {
   (Rive-only) convert a Rive path (y flipped). A node's path is empty until
   its artboard instance has advanced once: call `instance.advance(0)` before
   `node.asPath()`.
+- `NURBSCurve` and `NURBSUtils` are addons in `three/addons/curves/`
+  (`NURBSSurface`, `NURBSVolume` and `toJSON` / `fromJSON` are not ported).
+  `NURBSCurve(degree, knots, controlPoints, startKnot = 0, endKnot = -1)`:
+  -1 (or 0) for `endKnot` is three.js's undefined, the last knot.
 
 ## Lines, points and sprites
 
@@ -430,6 +434,10 @@ export class Demo extends Layout {
 
 ## Skinning and morph targets
 
+- `Skeleton.calculateInverses()` (and `new Skeleton(bones)` without
+  inverses) updates each bone's world matrix first; three.js inverts
+  `matrixWorld` as it is. Pass the inverses to set them from matrices you
+  wrote into `matrixWorld` yourself (FBXLoader does).
 - GPU skinning, up to **256 bones** per skeleton (more: drawn unskinned,
   with a log line). `Skeleton(bones: Array<Bone>, boneInverses)`.
 - **Morph targets are blended on the CPU** (whenever the influences change),
@@ -489,6 +497,35 @@ export class Demo extends Layout {
   `loader.error`).
 - With anisotropy and neither tangents nor uvs, the tangent frame is any
   frame around the normal (three.js's derivative frame degenerates).
+- **FBXLoader** (`three/addons/loaders/FBXLoader`, binary 6400+ and ASCII
+  7000+, as three.js r170): `new FBXLoader(context).load(name)` returns
+  the Group (or null, with `loader.error`; three.js throws) from the
+  BlobAsset `name`; `parse(bytes, path)` too. `loadAsync(url)` /
+  `parseAsync(bytes)` return a `Promise<Group>` and inflate a binary file's
+  zlib arrays in a Rive job (`inflateFBX`, most of a binary parse); the
+  scene is still built in one main-lane call, so files of several MB can
+  pass a host's per-call budget. Clips are `object.animations`, as
+  three.js. Warnings (three.js's console.warn) are in `loader.warnings`.
+  `object.userData.unitScaleFactor` is `loader.unitScaleFactor`, and
+  `userData.originalName` is `loader.originalNames.get(object.id)`;
+  `transformData` and the FBX `ID` are not exposed.
+- FBX textures: embedded Video content (PNG, JPEG) decodes into a
+  DataTexture that fills in once decoded; a texture file is the image or
+  blob asset named after it without folders or extension (`resourcePath`,
+  else the `load` path, prefixes it), or, for a url load, fetched beside
+  the file. Embedded BMP, TIFF and TGA are not decoded (Rive's decoder),
+  and TGA, TIFF, EXR, DDS, HDR and KTX2 files give an empty placeholder
+  texture, as three.js without a loader handler (LoadingManager has no
+  `addHandler` here). Image-asset textures get `NoColorSpace`, as
+  three.js's loaded textures (colour maps are then set to sRGB).
+- FBX differences from three.js: IDs are exact 64-bit integers (three.js
+  rounds them to doubles); a camera without AspectWidth/AspectHeight gets
+  aspect 1 (three.js uses the window); a rotation curve node missing an
+  axis gives no track, with a warning (three.js emits a one-value track
+  that cannot play); the ASCII parser reads `Vector` properties as numbers
+  (three.js keeps them strings, so a texture's Scaling / Translation read
+  wrong there). The parsed tree is typed (`FBXTree`, `FBXNode`, `FBXValue`,
+  `FBXProperty`) and walks objects in three.js's for-in order.
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
   named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
 

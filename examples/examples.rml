@@ -526,4 +526,8 @@
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
+    <BlobAsset file="examples/assets/fbx_scene.fbx" name="fbx_scene" id="0:2371"/>
+    <BlobAsset file="examples/assets/fbx_v7500.fbx" name="fbx_v7500" id="0:2372"/>
+    <BlobAsset file="examples/assets/fbx_ascii.fbx" name="fbx_ascii" id="0:2373"/>
+    <BlobAsset file="examples/assets/fbx_nurbs.fbx" name="fbx_nurbs" id="0:2374"/>
 </Rive>

@@ -10,6 +10,7 @@ import { Matrix4 } from "../math/Matrix4";
 import { Matrix3 } from "../math/Matrix3";
 import { Layers } from "./Layers";
 import { Raycaster, Intersection } from "./Raycaster";
+import { AnimationClip } from "../animation/AnimationClip";
 
 let _object3DId: i32 = 0;
 
@@ -57,6 +58,8 @@ export class Object3D extends EventDispatcher {
     frustumCulled: bool = true;
     /// Draws sort by renderOrder first (lower first), then by depth.
     renderOrder: i32 = 0;
+    /// Animation clips of this object (loaders fill it), as three.js.
+    animations: Array<AnimationClip> = [];
 
     constructor() {
         super();
@@ -339,6 +342,7 @@ export class Object3D extends EventDispatcher {
         this.matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;
         this.customDepthMaterial = source.customDepthMaterial;
         this.customDistanceMaterial = source.customDistanceMaterial;
+        this.animations = source.animations.slice();
         if (recursive) {
             for (let i = 0; i < source.children.length; i++) this.add(source.children[i].clone(true));
         }

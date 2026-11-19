@@ -5,11 +5,13 @@
 // meshopt-compressed track, its rings as compressed line indices; an
 // iridescent quantized torus (KHR_mesh_quantization) with a sparse morph
 // target; a row of brushed-metal instances (EXT_mesh_gpu_instancing,
-// KHR_materials_anisotropy). Lit by a RoomEnvironment.
+// KHR_materials_anisotropy). On the left, a binary FBX (FBXLoader; made by
+// tools/make_fbx_samples.py) with its animation. Lit by a RoomEnvironment.
 
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
 import { GLTFLoader } from "../three/addons/loaders/GLTFLoader";
+import { FBXLoader } from "../three/addons/loaders/FBXLoader";
 import { MeshoptDecoder } from "../three/addons/libs/meshopt_decoder";
 import { RoomEnvironment } from "../three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
@@ -19,6 +21,7 @@ const DUCK_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Ass
 
 export class Models extends THREE.ThreeLayout {
     mixer: THREE.AnimationMixer? = null;
+    fbxMixer: THREE.AnimationMixer? = null;
 
     override setup(context: Context): bool {
         const scene = this.scene;
@@ -40,6 +43,10 @@ export class Models extends THREE.ThreeLayout {
         // A .gltf with external .bin and .png files, over the network where
         // the host allows it.
         this.loadDuck(new GLTFLoader(context));
+        // An FBX (binary, made by tools/make_fbx_samples.py): a textured
+        // cube, a vertex-coloured pentagon with a blend shape, a skinned
+        // strip and a NURBS curve, with their animation.
+        this.loadFBX(new FBXLoader(context));
 
         this.camera.position.set(0, 3.2, 6.2);
         const controls = new OrbitControls(this.camera, this.renderer);
@@ -61,6 +68,25 @@ export class Models extends THREE.ThreeLayout {
         const mixer = new THREE.AnimationMixer(gltf.scene);
         for (let i = 0; i < gltf.animations.length; i++) mixer.clipAction(gltf.animations[i]).play();
         this.mixer = mixer;
+    }
+
+    async loadFBX(loader: FBXLoader): Promise<void> {
+        const settled = await loader.loadAsync("fbx_scene").settled();
+        if (!settled.ok) {
+            this.context!.log("fbx_scene.fbx: " + settled.error);
+            return;
+        }
+        const object = settled.value;
+        // the file's light stays out of this scene
+        const sun = object.getObjectByName("Sun");
+        if (sun != null) sun.removeFromParent();
+        object.scale.setScalar(0.4);
+        object.position.set(-1.8, -0.2, 1.1);
+        object.rotation.y = 0.35;
+        this.scene.add(object);
+        const mixer = new THREE.AnimationMixer(object);
+        for (let i = 0; i < object.animations.length; i++) mixer.clipAction(object.animations[i]).play();
+        this.fbxMixer = mixer;
     }
 
     async loadDuck(loader: GLTFLoader): Promise<void> {
@@ -96,5 +122,7 @@ export class Models extends THREE.ThreeLayout {
     override animate(seconds: f64): void {
         const mixer = this.mixer;
         if (mixer != null) mixer.update(seconds);
+        const fbxMixer = this.fbxMixer;
+        if (fbxMixer != null) fbxMixer.update(seconds);
     }
 }

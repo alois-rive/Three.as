@@ -41,3 +41,6 @@ export * from "./controls/FlyControls";
 export * from "./controls/FirstPersonControls";
 export * from "./controls/DragControls";
 export * from "./controls/TransformControls";
+// FBXLoader's parsers and helpers stay in its module (import by path).
+export { FBXLoader } from "./loaders/FBXLoader";
+export * from "./curves/NURBSCurve";
