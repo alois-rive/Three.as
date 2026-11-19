@@ -134,7 +134,8 @@ export class ObjectLoader extends Loader {
     load(name: string): Object3D? {
         const context = this.context;
         const full = LoaderUtils.resolveURL(name, this.path);
-        const bytes = context != null ? context.blob(full) : null;
+        const bytesAsset = context != null ? context.blob(full) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.fail("no blob asset named '" + full + "'");
             return null;

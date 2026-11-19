@@ -155,7 +155,8 @@ export class GLTFLoader extends Loader {
             if (context != null) context.log("three: GLTFLoader: " + this.error);
             return null;
         }
-        const bytes = context != null ? context.blob(full) : null;
+        const bytesAsset = context != null ? context.blob(full) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.error = "no blob asset named '" + full + "'";
             if (context != null) context.log("three: GLTFLoader: " + this.error);
@@ -180,14 +181,16 @@ export class GLTFLoader extends Loader {
             for (let i = 0; i < buffers.length; i++) {
                 const uri = str(buffers[i], "uri", "");
                 if (uri.length == 0 || uri.startsWith("data:")) continue;
-                const bytes = context.blob(assetName(uri));
+                const bytesAsset = context.blob(assetName(uri));
+                const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
                 if (bytes != null) gd.external.set(i, Uint8Array.wrap(bytes!));
             }
             const images = arr(gd.json, "images");
             for (let i = 0; i < images.length; i++) {
                 const uri = str(images[i], "uri", "");
                 if (uri.length == 0 || uri.startsWith("data:")) continue;
-                const bytes = context.blob(assetName(uri));
+                const bytesAsset = context.blob(assetName(uri));
+                const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
                 if (bytes != null) gd.externalImages.set(i, Uint8Array.wrap(bytes!));
             }
         }

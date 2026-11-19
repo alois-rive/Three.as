@@ -48,7 +48,8 @@ export class OBJLoader {
     load(name: string): Group? {
         const c = this.context;
         if (c == null) return null;
-        const bytes = c.blob(name);
+        const bytesAsset = c.blob(name);
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             c.log("three: OBJLoader: no blob asset named '" + name + "'");
             return null;

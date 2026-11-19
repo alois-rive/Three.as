@@ -56,7 +56,8 @@ export class MaterialLoader extends Loader {
     load(name: string): Material? {
         const context = this.context;
         const full = LoaderUtils.resolveURL(name, this.path);
-        const bytes = context != null ? context.blob(full) : null;
+        const bytesAsset = context != null ? context.blob(full) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.warn("no blob asset named '" + full + "'");
             return null;

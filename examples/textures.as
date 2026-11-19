@@ -90,7 +90,8 @@ export class Textures extends THREE.ThreeLayout {
         const loader = new KTX2Loader(context).detectSupport(renderer);
         const names: StaticArray<string> = ["checker_bc1", "checker_astc"];
         for (let i = 0; i < 2; i++) {
-            const packed = context.blob(names[i]);
+            const packedAsset = context.blob(names[i]);
+            const packed = packedAsset != null ? packedAsset!.toArrayBuffer() : null;
             const t = packed != null ? loader.parse(unzlibSync(Uint8Array.wrap(packed!))) : null;
             const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1),
                 new THREE.MeshStandardMaterial({ color: t != null ? 0xffffff : 0xff00ff, map: t, roughness: 0.5 }));

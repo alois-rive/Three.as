@@ -39,7 +39,8 @@ export async function fetchBytes(loader: Loader, url: string, path: string? = nu
     manager.itemStart(resolved);
     if (!LoaderUtils.isURL(resolved)) {
         const context = loader.context;
-        const bytes = context != null ? context.blob(resolved) : null;
+        const bytesAsset = context != null ? context.blob(resolved) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             manager.itemError(resolved);
             manager.itemEnd(resolved);

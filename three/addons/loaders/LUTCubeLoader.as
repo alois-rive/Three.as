@@ -55,7 +55,8 @@ export class LUTCubeLoader extends Loader {
     /// The .cube BlobAsset `name`; null when missing or malformed.
     load(name: string): LUTCubeResult? {
         const context = this.context;
-        const bytes = context != null ? context.blob(this.path + name) : null;
+        const bytesAsset = context != null ? context.blob(this.path + name) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.error = "LUTCubeLoader: no blob asset named '" + this.path + name + "'";
             if (context != null) context.log("three: " + this.error);

@@ -32,7 +32,8 @@ export class STLLoader extends Loader {
     /// The STL BlobAsset `name`; null when missing.
     load(name: string): STLGeometry? {
         const context = this.context;
-        const bytes = context != null ? context.blob(this.path + name) : null;
+        const bytesAsset = context != null ? context.blob(this.path + name) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             if (context != null) context.log("three: STLLoader: no blob asset named '" + this.path + name + "'");
             return null;

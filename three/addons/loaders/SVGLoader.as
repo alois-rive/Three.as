@@ -128,7 +128,8 @@ export class SVGLoader extends Loader {
     /// The SVG BlobAsset `name`; null when missing.
     load(name: string): SVGResult? {
         const context = this.context;
-        const bytes = context != null ? context.blob(this.path + name) : null;
+        const bytesAsset = context != null ? context.blob(this.path + name) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             if (context != null) context.log("three: SVGLoader: no blob asset named '" + this.path + name + "'");
             return null;

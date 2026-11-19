@@ -50,7 +50,8 @@ export class LUT3dlLoader extends Loader {
     /// The .3dl BlobAsset `name`; null when missing or malformed.
     load(name: string): LUT3dlResult? {
         const context = this.context;
-        const bytes = context != null ? context.blob(this.path + name) : null;
+        const bytesAsset = context != null ? context.blob(this.path + name) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.error = "LUT3dlLoader: no blob asset named '" + this.path + name + "'";
             if (context != null) context.log("three: " + this.error);

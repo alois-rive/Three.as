@@ -106,7 +106,8 @@ export class FBXLoader extends Loader {
             this.fail("urls load with loadAsync");
             return null;
         }
-        const bytes = context != null ? context.blob(full) : null;
+        const bytesAsset = context != null ? context.blob(full) : null;
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             this.fail("no blob asset named '" + full + "'");
             return null;
@@ -617,7 +618,8 @@ class FBXTreeParser {
             texture.colorSpace = NoColorSpace;   // as three.js's loaded textures; colour maps are set to sRGB
             return texture;
         }
-        const bytes = context.blob(name);
+        const bytesAsset = context.blob(name);
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes != null) return decodeTexture(context, bytes!, true).texture;
         this.state.warn("no image or blob asset named '" + name + "' (texture " + fileName + ")");
         const texture = new Texture();

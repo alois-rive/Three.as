@@ -87,7 +87,8 @@ export class FontLoader {
     load(name: string): Font? {
         const context = this.context;
         if (context == null) return null;
-        const bytes = context.blob(name);
+        const bytesAsset = context.blob(name);
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             context.log("three: FontLoader: no blob asset named '" + name + "'");
             return null;

@@ -83,7 +83,8 @@ export class KTX2Loader {
     load(name: string): Texture? {
         const context = this.context;
         if (context == null) return null;
-        const bytes = context.blob(name);
+        const bytesAsset = context.blob(name);
+        const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
             context.log("three: KTX2Loader: no blob asset named '" + name + "'");
             return null;
