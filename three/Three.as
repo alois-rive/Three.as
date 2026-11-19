@@ -57,6 +57,8 @@ export * from "./scenes/Fog";
 export * from "./cameras/Camera";
 export * from "./cameras/PerspectiveCamera";
 export * from "./cameras/OrthographicCamera";
+export * from "./cameras/ArrayCamera";
+export * from "./cameras/StereoCamera";
 
 export * from "./lights/Light";
 export * from "./lights/AmbientLight";
@@ -119,6 +121,8 @@ export * from "./extras/Controls";
 export * from "./textures/Texture";
 export * from "./textures/Source";
 export * from "./textures/DataTexture";
+export * from "./textures/DepthTexture";
+export * from "./textures/FramebufferTexture";
 export * from "./textures/DataArrayTexture";
 export { toHalf, fromHalf } from "./textures/DataUpload";
 export * from "./textures/CanvasTexture";

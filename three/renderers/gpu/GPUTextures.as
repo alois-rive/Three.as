@@ -78,6 +78,23 @@ class MipChain {
     }
 }
 
+/// A GPU texture standing in for a texture that copies were written into
+/// (an image, a canvas, a FramebufferTexture), valid while the texture's
+/// version is the one recorded.
+export class CopyTarget {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    format: u32;
+    version: i32;
+
+    constructor(texture: GPUTexture, view: GPUTextureView, format: u32, version: i32) {
+        this.texture = texture;
+        this.view = view;
+        this.format = format;
+        this.version = version;
+    }
+}
+
 export function wantsMipmaps(t: Texture): bool {
     const f = t.minFilter;
     return t.generateMipmaps && (f == NearestMipmapNearestFilter || f == NearestMipmapLinearFilter
@@ -88,6 +105,7 @@ export class GPUTextures {
     private context: Context;
     private frames: Map<i32, i32> = new Map<i32, i32>();
     private chains: Map<i32, MipChain> = new Map<i32, MipChain>();
+    private overrides: Map<i32, CopyTarget> = new Map<i32, CopyTarget>();
     private mipModule: GPUShaderModule? = null;
     private mipPipeline: GPUPipeline? = null;
     private mipPipelineHDR: GPUPipeline? = null;
@@ -133,10 +151,11 @@ export class GPUTextures {
             h = ce.height;
             format = <u32>TextureFormat.rgba16float;
         } else {
-            source = t.getView();
+            source = this.baseView(t);
             w = t.width;
             h = t.height;
             if (t.isHDRSource) format = <u32>TextureFormat.rgba16float;
+            if (this.overrides.has(t.id)) format = this.overrides.get(t.id).format;
         }
         if (source == null) return null;
         if (!wantsMipmaps(t) || (w <= 1 && h <= 1) || this.mipBroken) return source;
@@ -155,6 +174,49 @@ export class GPUTextures {
         return this.chains.get(t.id).texture.numMipmaps;
     }
 
+    /// Textures the renderer has prepared and not disposed
+    /// (renderer.info.memory.textures).
+    get count(): i32 { return this.frames.size; }
+
+    /// The texture's own view (no mip chain): what a texture copy wrote
+    /// into it (copyTextureToTexture into an image or a
+    /// FramebufferTexture), else `t.getView()`.
+    baseView(t: Texture): GPUTextureView? {
+        if (this.overrides.has(t.id)) {
+            const o = this.overrides.get(t.id);
+            // The texture changed on its own since (a new image, a redraw):
+            // its content wins.
+            if (o.version == t.version) return o.view;
+            o.texture.release();
+            this.overrides.delete(t.id);
+        }
+        return t.getView();
+    }
+
+    /// The GPU texture copies write into for `t` (internal:
+    /// copyTextureToTexture), or null.
+    copyTarget(t: Texture): CopyTarget? {
+        if (!this.overrides.has(t.id)) return null;
+        const o = this.overrides.get(t.id);
+        return o.version == t.version ? o : null;
+    }
+
+    /// Rebuilds `t`'s mip chain at its next use (its level 0 was written).
+    invalidate(t: Texture): void {
+        if (this.chains.has(t.id)) this.chains.get(t.id).version = -0x7fffffff;
+    }
+
+    /// Makes `t` sample `texture` from now on, until `t` changes on its own.
+    setCopyTarget(t: Texture, texture: GPUTexture, view: GPUTextureView, format: u32): CopyTarget {
+        if (this.overrides.has(t.id)) {
+            const old = this.overrides.get(t.id);
+            if (old.texture !== texture) old.texture.release();
+        }
+        const o = new CopyTarget(texture, view, format, t.version);
+        this.overrides.set(t.id, o);
+        return o;
+    }
+
     dispose(id: i32): void {
         this.frames.delete(id);
         if (this.cubes.has(id)) {
@@ -168,6 +230,10 @@ export class GPUTextures {
         if (this.chains.has(id)) {
             this.chains.get(id).texture.release();
             this.chains.delete(id);
+        }
+        if (this.overrides.has(id)) {
+            this.overrides.get(id).texture.release();
+            this.overrides.delete(id);
         }
     }
 

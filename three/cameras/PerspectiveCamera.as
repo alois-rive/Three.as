@@ -64,16 +64,32 @@ export class PerspectiveCamera extends Camera {
     getFilmWidth(): f64 { return this.filmGauge * Math.min(this.aspect, 1); }
     getFilmHeight(): f64 { return this.filmGauge / Math.max(this.aspect, 1); }
 
+    /// As Camera.setViewOffset; the aspect becomes fullWidth / fullHeight.
+    override setViewOffset(fullWidth: f64, fullHeight: f64, x: f64, y: f64, width: f64, height: f64): void {
+        this.aspect = fullWidth / fullHeight;
+        super.setViewOffset(fullWidth, fullHeight, x, y, width, height);
+    }
+
     override updateProjectionMatrix(): void {
         const near = this.near;
-        if (this.filmOffset == 0) {
+        const view = this.view;
+        const offset = view != null && view.enabled;
+        if (this.filmOffset == 0 && !offset) {
             Mat4.perspectiveInto(this.projectionMatrix.mat4, <f32>(this.getEffectiveFOV() * DEG2RAD),
                 <f32>this.aspect, <f32>near, <f32>this.far);
         } else {
-            const top = near * Math.tan(DEG2RAD * 0.5 * this.fov) / this.zoom;
-            const height = 2 * top;
-            const width = this.aspect * height;
-            const left = -0.5 * width + near * this.filmOffset / this.getFilmWidth();
+            let top = near * Math.tan(DEG2RAD * 0.5 * this.fov) / this.zoom;
+            let height = 2 * top;
+            let width = this.aspect * height;
+            let left = -0.5 * width;
+            if (offset) {
+                const v = view!;
+                left += v.offsetX * width / v.fullWidth;
+                top -= v.offsetY * height / v.fullHeight;
+                width *= v.width / v.fullWidth;
+                height *= v.height / v.fullHeight;
+            }
+            if (this.filmOffset != 0) left += near * this.filmOffset / this.getFilmWidth();
             this.projectionMatrix.makePerspective(left, left + width, top, top - height, near, this.far);
         }
         this.projectionMatrixInverse.copy(this.projectionMatrix).invert();

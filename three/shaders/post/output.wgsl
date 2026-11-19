@@ -97,7 +97,9 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let texel = textureSample(tDiffuse, s_tex, in.uv);
-    let a = texel.a;
+    // Additive passes (bloom mixes, three.js shaders summing colours) can
+    // leave alpha above 1, which WebGL ignores: clamp it.
+    let a = min(texel.a, 1.0);
     let straight = select(vec3<f32>(0.0), texel.rgb / a, a > 0.0);
     let mapped = tone_map(straight, u32(u.toneMapping), u.exposure);
     return vec4<f32>(linear_to_srgb(mapped) * a, a);

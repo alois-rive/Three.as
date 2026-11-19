@@ -65,12 +65,12 @@ export class Demo extends Layout {
 | `render()` anywhere | `render()` only inside the script's `draw()`; then `present(renderer)` composites the canvas into the artboard |
 | `setSize(w, h, updateStyle)` | `setSize(w, h)` in points; there is no style |
 | `setAnimationLoop(fn)` | the script's `advance(seconds)` (or ThreeLayout's `animate`) |
-| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
+| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear), `logarithmicDepthBuffer` only (no `reverseDepthBuffer`, see [Render target features](#render-target-features)) |
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
 | custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
-| `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
+| `info.render.calls/triangles/lines/points`, `info.memory`, `info.autoReset` / `reset()` | same, plus `info.render.culled` (objects frustum culled); `info.memory` counts `geometries` and `textures` (no `info.programs`) |
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -407,12 +407,90 @@ export class Demo extends Layout {
 - **Render targets**: `RenderTarget(width, height, options)` (alias
   `WebGLRenderTarget`), `renderer.setRenderTarget(rt)`. Size in pixels;
   `options` is a `RenderTargetOptions` (`depthBuffer`, `samples`,
-  `generateMipmaps`). Its texture holds the renderer's output: sRGB,
-  premultiplied, top row first (`colorSpace = SRGBColorSpace`,
-  `premultiplyAlpha = true`, `flipY = true`), so sampling it gives the same
-  colours as three.js. `rt.image` is a Rive `Image` for 2D drawing.
-  `readRenderTargetPixels`, depth textures and multiple render targets are
-  not ported.
+  `generateMipmaps`, `type`, `count`, `depthTexture`). Its texture holds
+  the renderer's output: sRGB, premultiplied, top row first (`colorSpace =
+  SRGBColorSpace`, `premultiplyAlpha = true`, `flipY = true`), so sampling
+  it gives the same colours as three.js. `rt.image` is a Rive `Image` for
+  2D drawing. Multiple render targets, depth textures and copies: see
+  [Render target features](#render-target-features).
+
+## Render target features
+
+- **Multiple render targets**: `{ count: n }` (1 to 4) gives `rt.textures`
+  (`rt.texture` is `textures[0]`), as three.js. ShaderMaterials write them
+  with `@location(n)` outputs (every location: a pipeline cannot leave one
+  unwritten); built-in materials write the first only. The extra textures
+  have the first one's format and hold what the shader wrote
+  (`NoColorSpace`, not premultiplied). `samples` is ignored (no MSAA) with
+  `count` > 1 or a depth texture.
+- **`DepthTexture(width, height, type, format)`**, set as
+  `options.depthTexture` or `rt.depthTexture`: it is the pass's depth
+  attachment itself (24-bit depth plus stencil, whatever `type` says),
+  sized with the target and kept after the render. ShaderMaterials declare
+  it `texture_depth_2d` and read it with `textureLoad` or `textureSample`
+  (window depth, 0 near, 1 far); built-in materials ignore it (a log line).
+  Its rows are top first (`flipY` true; three.js: false), as every render
+  target texture here: sample at `(u, 1 - v)` from a fullscreen quad.
+- **`readRenderTargetPixels` / `readRenderTargetPixelsAsync` are not
+  ported**: Rive's GPU API has no readback (no buffer mapping or texture to
+  buffer copy), so pixels cannot come back to a script. Keep the data on
+  the GPU (render targets, copies) or compute it on the CPU.
+- **`copyFramebufferToTexture(texture, position, level)`** copies from the
+  current render target, or the canvas, at `position` (pixels from the
+  bottom left) into a `FramebufferTexture` (its size); the texture takes
+  the source's colour space and premultiplied alpha.
+  **`copyTextureToTexture(src, dst, srcRegion, dstPosition, level)`**: a
+  `Box2` region and a `Vector2` position (texels, from the bottom in uv
+  terms; three.js's Box3 / 3D and array textures are not supported), rows
+  flipped where `flipY` differs. Render target textures are written in
+  place; any other destination (an image, a DataTexture, a canvas, a
+  FramebufferTexture) samples a GPU copy of itself from then on, until its
+  own content changes (a new `version`). Level 0 only; depth textures
+  cannot be copied. Both are passes: call them from `draw()`.
+- **`logarithmicDepthBuffer`** (a GPURendererParameters option) as
+  three.js for built-in materials: depth `log2(1 + w) / log2(1 + far)`
+  written from the fragment shader (orthographic cameras keep the window
+  depth). ShaderMaterials do not get it: write `@builtin(frag_depth)`
+  yourself (the frame block's `viewport.w` holds `1 / log2(far + 1)`), or
+  they will not sort against the rest. MeshDepthMaterial still draws the
+  linear window depth.
+- **`reverseDepthBuffer` is not ported**: colour passes use a
+  depth24plus-stencil8 attachment (fixed point on some backends, and the
+  stencil must stay), where a reversed depth range gains little;
+  `logarithmicDepthBuffer` covers scenes of huge depth ranges.
+
+## Views: viewports, scissors, several renders a frame
+
+- `setViewport`, `setScissor` (both `(x, y, width, height)` or a
+  `Vector4`, in points from the bottom left), `setScissorTest`,
+  `getViewport`, `getScissor`, `getCurrentViewport` (pixels), and a render
+  target's `viewport`, `scissor`, `scissorTest` (pixels) work as three.js;
+  `setSize` resets the viewport. With the scissor test on, `autoClear` and
+  `clear()` clear only inside the scissor (a fullscreen draw, since a pass's
+  load op clears the whole target). `clear(color, depth, stencil)`,
+  `clearColor()`, `clearDepth()`, `clearStencil()`, `autoClearColor`,
+  `autoClearDepth` and `autoClearStencil` are three.js's. Viewports are
+  clamped to the target (WebGPU rejects one that overflows it).
+- Several renders into one target in a frame (split screens, insets,
+  overlays with `autoClear = false`) keep the earlier ones' colour and depth
+  (stencil does not survive, see above). With `antialias`, the MSAA samples
+  and depth are stored at the end of a pass only once a render of that
+  target was partial (a viewport or scissor), loaded (`autoClear` off) or
+  followed `clear()`: an overlay after a full render, without `clear()`,
+  starts from an undefined MSAA buffer in its first frame only.
+- **`ArrayCamera`**: each sub-camera's `viewport` (a `Vector4`, drawing-buffer
+  pixels from the bottom left, as three.js) gets a full render of its own:
+  culled by that sub-camera, the first one clearing (three.js culls with
+  the array camera and draws the lists once per sub-camera). Shadow maps
+  render once. **`StereoCamera`** as three.js (`update(camera)`, then render
+  `cameraL` / `cameraR` into the halves).
+- `setViewOffset` / `clearViewOffset` (and `view`) on PerspectiveCamera and
+  OrthographicCamera as three.js (they live on the Camera base class).
+- **`renderer.compile(scene, camera, targetScene)`** builds every
+  pipeline, bind group, upload and mip chain the render would need (culling
+  off) without drawing, and returns the materials as an `Array<Material>`
+  (three.js: a Set). Call it from `draw()`, as `render`; `targetScene`'s
+  lights are not merged in, and there is no `compileAsync`.
 
 ## Rive app structure (Rive-only)
 
@@ -631,7 +709,7 @@ export class Demo extends Layout {
     three.js); here the flag means "the source is premultiplied", so
     ObjectLoader sets it for images Rive decodes.
   - Not written: BatchedMesh's batches (it loads as an Object3D), camera
-    `view` offsets (not ported), `blendSrc` & co. and the other material
+    `view` offsets (setViewOffset is ported, not written), `blendSrc` & co. and the other material
     members this port does not have, `clippingPlanes` (as three.js).
 - **`ObjectLoader(context, manager)`**: `load(name)` reads the BlobAsset
   `name` at once; `parse(json)` takes the text (a string) or a parsed
@@ -862,8 +940,114 @@ export class Demo extends Layout {
   replaces `pass.uniforms.name.value`.
 - `UnrealBloomPass` has no `bloomTintColors`; one shader holds its three
   stages, so every stage material carries all its uniforms.
-- Not ported: MaskPass/ClearMaskPass, SMAA, SSAO, BokehPass, the other
-  shader passes; `Uniform.clone()` is UniformsUtils.clone per uniform.
+- `Uniform.clone()` is UniformsUtils.clone per uniform.
+- The other passes (M12) are three.js r170's, with its constructors,
+  fields, defaults and `OUTPUT` values, and their shaders are
+  ShaderDefinitions, one file per three.js shader file in
+  `three/addons/shaders/` (SMAAShader, SSAOShader, SAOShader,
+  DepthLimitedBlurShader, GTAOShader, PoissonDenoiseShader, BokehShader,
+  AfterimageShader, FilmShader, DigitalGlitch, DotScreenShader,
+  HalftoneShader; LUTPass's, OutlinePass's and RenderPixelatedPass's stay in
+  their pass files, as three.js). What changes everywhere:
+  - **`defines` are uniforms or WGSL constants** (Rive pipelines take no
+    overridable constants); boolean and integer uniforms are numbers (0 or
+    1: FilmShader `grayscale`, DigitalGlitch `byp`, HalftoneShader
+    `greyscale` / `disable`); `PERSPECTIVE_CAMERA` is a `perspective`
+    uniform. three.js's uniform arrays are `Uniform<Float32Array>` (WGSL
+    `array<vec4<f32>, N>`).
+  - Depth is always a `DepthTexture` read with `textureLoad`, never
+    RGBA-packed (DepthLimitedBlur supports `DEPTH_PACKING` 0 only; GTAO and
+    the Poisson denoise read depth from x only, no `DEPTH_SWIZZLING`).
+  - A shader's textures share one sampler (the first texture's): textures
+    that need another filter or wrapping are read with `textureLoad` and
+    wrapped by hand (noise textures, SMAA's search texture, the glitch
+    heightmap). SSAODepthShader and GTAODepthShader have an unused
+    `tDiffuse` so their sampler pairs with a colour texture.
+  - New HalfFloat targets start undefined (WebGL zero-fills them), so
+    passes that keep history clear it first (AfterimagePass, SMAA's stages).
+  - `OutputPass` clamps alpha to 1 before un-premultiplying: additive passes
+    that sum alpha (a bloom mix, the bloom blend) no longer brighten the
+    result (three.js ignores alpha there).
+- **SMAAPass(width, height)**: three.js's SMAA 1x stages in its GL texture
+  coordinates; `SMAA_THRESHOLD` and the search and area constants are WGSL
+  constants. The area and search textures are three.js's texels, stored in
+  `SMAATextures.as` as zlib-compressed bytes (RG8 and R8 DataTextures,
+  `flipY` false) and inflated when the pass is made (decoding three.js's
+  PNGs takes longer than a script call's budget). `round` rounds halves away
+  from zero, as GLSL on GPUs.
+- **SSAARenderPass(scene, camera, clearColor, clearAlpha)**: `clearColor`
+  is a hex number; `sampleLevel` (0 to 5, default 4: 16 renders a frame),
+  `unbiased`, jitter by `camera.setViewOffset` (an earlier view offset is
+  restored), additive accumulation into HalfFloat targets; `stencilBuffer`
+  is ignored. Each sample is a full render, shadow maps included.
+  **TAARenderPass** as three.js (`accumulate`, `accumulateIndex`,
+  2^`sampleLevel` of 32 samples a frame); as the last pass its accumulating
+  path renders to the screen, and `setSize` restarts accumulation.
+- **SSAOPass, SAOPass, GTAOPass**: as three.js, a MeshNormalMaterial
+  prepass into a HalfFloatType target with a DepthTexture (points and lines
+  hidden for SSAO and GTAO), and the occlusion multiplied onto the read
+  buffer (put a RenderPass first; three.js's CustomBlending DstColor copies
+  are MultiplyBlending). The camera's projection, near and far are re-read
+  every render. SSAO's `kernelSize` is at most 32, DepthLimitedBlur's
+  `kernelRadius` 64 (`saoBlurRadius` is clamped), Poisson denoise `samples`
+  32; `generatePdSamplePointInitializer` returns the sample floats (the
+  `poissonDisk` uniform) instead of GLSL. SimplexNoise is not ported: the
+  rotation and denoise noise textures are uniform random values (random
+  noise either way). `SAOPass.params` is a typed `SAOPassParams`;
+  `updateGtaoMaterial(GTAOParameters)` and
+  `updatePdMaterial(PoissonDenoiseParameters)` take typed objects where NaN
+  (or -1 for `samples`) means "leave as is"; GTAO's constructor
+  `parameters` is a `GTAOPassParameters`. `GTAOPass.setGBuffer(depth,
+  normals)` takes a DepthTexture and optional packed view normals (an
+  attachment of a multiple render target works); without normals they are
+  rebuilt from depth.
+- **OutlinePass(resolution, scene, camera, selectedObjects)**: three.js's
+  stages and parameters (`visibleEdgeColor`, `hiddenEdgeColor`,
+  `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`,
+  `usePatternTexture` / `patternTexture`, `downSampleRatio`). The other
+  objects' depth is a DepthTexture read at the mask's own pixel
+  (`textureMatrix` unused); selected meshes are drawn instanced but not
+  skinned or morphed; the pulse follows the accumulated `deltaTime`; the
+  overlay's additive blend is done in the shader.
+- **BokehPass(scene, camera, params)**: a `BokehPassParameters` (focus 1,
+  aperture 0.025, maxblur 1); depth from a MeshDepthMaterial render whose
+  DepthTexture the shader reads. **AfterimagePass(damp)**,
+  **FilmPass(intensity, grayscale)**, **DotScreenPass(center, angle,
+  scale)** (a null center is (0.5, 0.5)) and **GlitchPass(dt_size)**
+  (counts frames, as three.js; its heightmap is a float DataTexture) as
+  three.js. DotScreen thresholds colour, so tone mapping whitens it: put it
+  after the OutputPass.
+- **HalftonePass(width, height, params)** takes a `HalftonePassParameters`.
+  **LUTPass(params)** takes a `LUTPassParameters` (`lut`, a Data3DTexture
+  sampled as a `texture_3d`, and `intensity`); without the `texture3D`
+  feature, or while `lut` is null, it copies its input (three.js samples a
+  null LUT as black). **LUTCubeLoader / LUT3dlLoader**: `load(name)` reads
+  a BlobAsset, `loadAsync(url)` fetches, `parse(text)`, `setType`; they
+  return a `LUTCubeResult` (`title` "" where three.js has null, `size`,
+  `domainMin`, `domainMax`, `texture3D`) or a `LUT3dlResult`, or null with
+  `loader.error` on a malformed file (three.js throws).
+- **RenderPixelatedPass(pixelSize, scene, camera, options)** as three.js;
+  an explicit 0 in `RenderPixelatedPassOptions` stays 0 (three.js's `||`
+  turns it into the default). **TexturePass(map, opacity)** decodes what the
+  texture holds (sRGB, premultiplied, flipY) before drawing over the
+  composer's linear buffer (three.js lets the texture format decode sRGB).
+  **ClearPass(clearColor, clearAlpha)** takes a hex colour.
+- **MaskPass / ClearMaskPass are emulated without stencil** (stencil does
+  not survive Rive passes): MaskPass renders its scene in white into its own
+  `maskTarget` (`inverse` and `clear` as three.js), and while a mask is
+  active EffectComposer restores, outside the mask, what each pass changed,
+  with a shader that discards inside it: a swapping pass gets the read
+  buffer drawn back into its write buffer (three.js's NOTEQUAL copy), a
+  non-swapping pass (RenderPass, TexturePass, ClearPass) has its buffer
+  backed up first and restored. Passes rendering to the screen are not
+  masked (end with a copy, as the Effects example does); the mask is
+  binary; each masked pass costs one or two fullscreen draws.
+  `EffectComposer.maskActiveAfter(pass, active)` is three.js's `instanceof
+  MaskPass / ClearMaskPass` step.
+- **Selective bloom** works as three.js's example (a second composer with
+  `renderToScreen = false`, the other objects' materials swapped to black,
+  a mix ShaderPass): see `examples/effects.as` and
+  `examples/shaders/bloom_mix.wgsl`.
 
 ## Cube maps and CubeCamera
 
@@ -914,4 +1098,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-more post-processing passes (SMAA, SSAO, bokeh), 
+the rest of M13 and M14 (GPU morph targets, 2D overlays, data binding helpers).

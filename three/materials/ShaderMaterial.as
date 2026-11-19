@@ -22,6 +22,9 @@
 //         // with WGSL's alignment (f32 4, vec2 8, vec3/vec4/Color 16, mat4 16)
 //     @group(2) @binding(1..n) var t_name: texture_2d<f32>;  // texture
 //         // uniforms in insertion order, then one sampler at binding n + 1
+//         // (the first texture's); a DepthTexture is a texture_depth_2d, a
+//         // Data3DTexture a texture_3d<f32>, a Float32Array uniform an
+//         // array<vec4<f32>, N>
 //
 // Vertex inputs: @location(0) position, (1) normal, (2) uv, (3) colour
 // (vec4). The output goes straight to the canvas: write sRGB, premultiplied
@@ -56,7 +59,8 @@ export abstract class UniformBase {
 }
 
 /// A uniform holding `value`: f64 (f32 in WGSL), Vector2, Vector3,
-/// Vector4, Color (vec3), Matrix4 or Texture.
+/// Vector4, Color (vec3), Matrix4, Texture, or a Float32Array of 4N floats
+/// (WGSL `array<vec4<f32>, N>`: three.js's uniform arrays, as vec4s).
 export class Uniform<T> extends UniformBase {
     value: T;
 
@@ -72,6 +76,8 @@ export class Uniform<T> extends UniformBase {
             if (v instanceof Vector3 || v instanceof Color) return 12;
             if (v instanceof Vector4) return 16;
             if (v instanceof Matrix4) return 64;
+            // An array of vec4s (array<vec4<f32>, N>: 4N floats).
+            if (v instanceof Float32Array) return ((v as Float32Array).length + 3) / 4 * 16;
             return 0;
         }
         return 4;
@@ -103,6 +109,9 @@ export class Uniform<T> extends UniformBase {
             } else if (v instanceof Matrix4) {
                 const e = (v as Matrix4).elements;
                 for (let k = 0; k < 16; k++) f[o + k] = e[k];
+            } else if (v instanceof Float32Array) {
+                const a = v as Float32Array;
+                for (let k = 0; k < a.length; k++) f[o + k] = a[k];
             }
         } else if (isFloat<T>()) {
             f[o] = <f32>(<f64>this.value);
@@ -127,6 +136,7 @@ export class Uniform<T> extends UniformBase {
             if (v instanceof Color) return new Uniform<Color>((v as Color).clone());
             if (v instanceof Vector4) return new Uniform<Vector4>((v as Vector4).clone());
             if (v instanceof Matrix4) return new Uniform<Matrix4>((v as Matrix4).clone());
+            if (v instanceof Float32Array) return new Uniform<Float32Array>((v as Float32Array).slice(0));
         }
         return new Uniform<T>(this.value);
     }
@@ -156,6 +166,11 @@ export class Uniform<T> extends UniformBase {
             } else if (v instanceof Matrix4) {
                 setString(data, "type", "m4");
                 setNumbers(data, "value", (v as Matrix4).toArray());
+            } else if (v instanceof Float32Array) {
+                const a = v as Float32Array;
+                const values: Array<f64> = [];
+                for (let k = 0; k < a.length; k++) values.push(<f64>a[k]);
+                setNumbers(data, "value", values);
             }
         } else {
             setNumber(data, "value", <f64>this.value);

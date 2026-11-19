@@ -30,6 +30,7 @@ export const AlphaFormat: i32 = 1021;
 export const RGBFormat: i32 = 1022;
 export const RGBAFormat: i32 = 1023;
 export const DepthFormat: i32 = 1026;
+export const DepthStencilFormat: i32 = 1027;
 export const RedFormat: i32 = 1028;
 export const RGFormat: i32 = 1030;
 // Compressed formats (CompressedTexture.format).
@@ -47,6 +48,7 @@ export const RGBA_ASTC_8x8_Format: i32 = 37818;
 export const UnsignedByteType: i32 = 1009;
 export const UnsignedShortType: i32 = 1012;
 export const UnsignedIntType: i32 = 1014;
+export const UnsignedInt248Type: i32 = 1020;
 export const FloatType: i32 = 1015;
 export const HalfFloatType: i32 = 1016;
 
