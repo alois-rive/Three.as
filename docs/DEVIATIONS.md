@@ -506,6 +506,9 @@ export class Demo extends Layout {
   texture coordinate; `artboardPoint(uv)` converts.
 - `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
   an (animated) Rive node.
+- ThreeLayout's `overlay` (an `ArtboardOverlayRenderer`) is placed and
+  advanced after `animate` and the controls, drawn after the canvas is
+  presented, and gets pointer events first.
 
 ## Animation
 
@@ -1139,6 +1142,41 @@ export class Demo extends Layout {
 
 ## Rive-only additions
 
+### 2D overlays (CSS2DRenderer / CSS3DRenderer)
+
+three.js's CSS renderers place DOM elements over the canvas; here Rive
+artboards are drawn over it by the script's 2D renderer, in
+`three/rive/ArtboardOverlay`:
+
+| three.js | ThreeAS |
+|---|---|
+| `CSS2DRenderer` / `CSS3DRenderer` | one `ArtboardOverlayRenderer` for both: `setSize`, `getSize`, `render(scene, camera)` places, `draw(renderer)` paints (from the script's `draw`, after `present`), `advance(seconds)`, `pointerDown/Move/Up/Exit(event)`; or set it as ThreeLayout's `overlay` |
+| `CSS2DObject(element)`, `center` | `Artboard2DObject(artboard)` (instanced unless `instance = false`), `center` the same; `screenScale` sizes it |
+| `CSS3DObject(element)` | `Artboard3DObject(artboard)`: one artboard unit per world unit in the object's XY plane |
+| `CSS3DSprite(element)` | `Artboard3DSprite(artboard)`, `rotation2D` for the screen-plane rotation |
+| `element.style.zIndex` by distance | `sortObjects` (near on top), `objects` lists them far to near |
+| `renderer.domElement` | none: the artboards draw into the layout |
+
+- **Rive's renderer draws affine 2D transforms only**, so an
+  Artboard3DObject seen in perspective is drawn with the affine map through
+  three of its projected corners (exact for orthographic cameras, close
+  for small or distant objects); one with a corner behind the camera is
+  hidden. CSS3D's perspective is exact.
+- **Occlusion (not in three.js)**: `occlude` on an object fades it to
+  `occludedOpacity` while a visible mesh lies between the camera and its
+  position (a raycast against `renderer.occluders`, the scene by default,
+  stopping `occlusionBias` short of the object). Rive scripts cannot read
+  the depth buffer back; for per-pixel depth, draw the artboard as an
+  ArtboardTexture on a Sprite instead.
+- Pointer events go to the topmost interactive object whose artboard bounds
+  contain the point, in its artboard's coordinates; a press an artboard
+  took keeps its moves and release. `opacity`, `interactive` and
+  `autoAdvance` (off when something else advances a shared instance) are
+  per object. Objects are placed from the last `render` (ThreeLayout
+  renders them in `advance`, so headless pointer tests hit them).
+
+### Other
+
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
   texture. Call `texture.advance(seconds)` from the script's `advance`; it
   redraws only after a change. `texture.artboard` is the instance.
@@ -1149,4 +1187,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-the rest of M13 and M14 (2D overlays, data binding helpers).
+the rest of M13 and M14.

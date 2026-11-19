@@ -332,9 +332,10 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   targets on the GPU (target texture, any number of targets),
   InstancedMesh morphs (`setMorphAt`), skeletons above 256 bones (bone
   texture).
-- **M13b, 2D overlays.** The CSS2DRenderer / CSS3DRenderer counterpart:
+- **M13b, 2D overlays (done).** The CSS2DRenderer / CSS3DRenderer counterpart:
   Rive artboards drawn in 2D at projected 3D positions (labels, tooltips,
-  HUD markers), occluded by depth on request, taking pointer events.
+  HUD markers), occluded on request (by raycast: scripts cannot read
+  depth back), taking pointer events.
 - **M13c, data binding.** Helpers that bind scene properties (transforms,
   material colours, light intensities, animation weights) to Rive view
   model properties both ways, so a Rive state machine or the editor can

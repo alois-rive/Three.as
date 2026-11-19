@@ -1,7 +1,9 @@
 // ThreeLayout: a Rive Layout that is a three.js app. It makes the renderer,
 // keeps the camera's aspect and the pixel ratio in step with the layout,
 // renders and presents every frame, drives `controls`, and forwards
-// pointer events to interactive ArtboardTextures under the pointer.
+// pointer events to interactive ArtboardTextures under the pointer. With
+// `overlay` set it also places, draws and advances the scene's artboard
+// overlays (Artboard2DObject ...), which get the pointer first.
 //
 //     export class Demo extends ThreeLayout {
 //         cube: Mesh = new Mesh(new BoxGeometry(), new MeshNormalMaterial());
@@ -35,6 +37,7 @@ import { MaterialUniforms, SLOT_MAP } from "../materials/MaterialUniforms";
 import { Vector2 } from "../math/Vector2";
 import { Controls } from "../extras/Controls";
 import { ArtboardTexture } from "./ArtboardTexture";
+import { ArtboardOverlayRenderer } from "./ArtboardOverlay";
 
 export abstract class ThreeLayout extends Layout {
     context: Context? = null;
@@ -57,6 +60,12 @@ export abstract class ThreeLayout extends Layout {
     antialias: bool = true;
     /// Raycast pointer events into interactive ArtboardTextures.
     forwardToArtboards: bool = true;
+    /// Artboards drawn over the scene (CSS2DRenderer / CSS3DRenderer's
+    /// counterpart): placed after each render, drawn over the canvas,
+    /// advanced each frame, first to get the pointer.
+    overlay: ArtboardOverlayRenderer? = null;
+    // A press an overlay took: its moves and release go to the overlay.
+    private overlayPressed: bool = false;
 
     private hovered: ArtboardTexture? = null;
     private captured: ArtboardTexture? = null;
@@ -90,6 +99,8 @@ export abstract class ThreeLayout extends Layout {
             r.setPixelRatio(scale);
             r.setSize(width, height);
         }
+        const overlay = this.overlay;
+        if (overlay != null) overlay.setSize(width, height);
         const camera = this.camera;
         if (camera instanceof PerspectiveCamera && height > 0) {
             (camera as PerspectiveCamera).aspect = width / height;
@@ -104,6 +115,14 @@ export abstract class ThreeLayout extends Layout {
         const c = this.controls;
         if (c != null) c.update(seconds);
         for (let i = 0; i < this.tools.length; i++) this.tools[i].update(seconds);
+        // Overlays are placed here (pointer events between frames hit
+        // where they were drawn) and drawn after the render.
+        const overlay = this.overlay;
+        if (overlay != null) {
+            if (overlay.width != this.width || overlay.height != this.height) overlay.setSize(this.width, this.height);
+            overlay.advance(seconds);
+            overlay.render(this.scene, this.camera);
+        }
         return true;
     }
 
@@ -119,6 +138,8 @@ export abstract class ThreeLayout extends Layout {
         if (r == null) return;
         this.renderFrame();
         r.present(renderer);
+        const overlay = this.overlay;
+        if (overlay != null) overlay.draw(renderer);
     }
 
     // ------------------------------------------------------------ pointer
@@ -139,6 +160,13 @@ export abstract class ThreeLayout extends Layout {
         if (!this.contains(<f64>event.position.x, <f64>event.position.y)) return;
         this.pressed++;
         this.setPointer(event);
+        const overlay = this.overlay;
+        if (overlay != null && overlay.pointerDown(event)) {
+            this.overlayPressed = true;
+            event.hit();
+            this.onPointerDown(event);
+            return;
+        }
         const t = this.artboardUnderPointer();
         if (t != null && t.pointerDown(this.hitUv, event.id)) {
             this.captured = t;
@@ -162,6 +190,15 @@ export abstract class ThreeLayout extends Layout {
             return;
         }
         this.setPointer(event);
+        const overlay = this.overlay;
+        if (overlay != null) {
+            const took = overlay.pointerMove(event);
+            if (this.overlayPressed || took) {
+                event.hit();
+                this.onPointerMove(event);
+                return;
+            }
+        }
         const t = this.artboardUnderPointer();
         const hovered = this.hovered;
         if (hovered != null && hovered !== t) hovered.pointerExit(this.hitUv, event.id);
@@ -187,6 +224,14 @@ export abstract class ThreeLayout extends Layout {
         if (this.pressed == 0) return;
         this.pressed--;
         this.setPointer(event);
+        if (this.overlayPressed) {
+            this.overlayPressed = false;
+            const overlay = this.overlay;
+            if (overlay != null) overlay.pointerUp(event);
+            event.hit();
+            this.onPointerUp(event);
+            return;
+        }
         const t = this.artboardUnderPointer();
         const captured = this.captured;
         if (captured != null) {
@@ -204,6 +249,9 @@ export abstract class ThreeLayout extends Layout {
 
     override pointerExit(event: PointerEvent): void {
         this.pressed = 0;
+        this.overlayPressed = false;
+        const overlay = this.overlay;
+        if (overlay != null) overlay.pointerExit(event);
         const hovered = this.hovered;
         if (hovered != null) hovered.pointerExit(this.hitUv, event.id);
         this.hovered = null;
