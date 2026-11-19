@@ -325,7 +325,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   MaskPass/ClearMaskPass (stencil), selective bloom with layers.
 - Example `Effects` (done): a pass picker (a Rive layout and view model) over one scene.
 
-### M13: animation depth and Rive integration
+### M13: animation depth and Rive integration (done)
 
 - **M13a, animation utilities (done).** AnimationUtils (`subclip`,
   `makeClipAdditive`), additive blending, AnimationObjectGroup, morph
@@ -340,9 +340,11 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   material colours, light intensities, animation weights) to Rive view
   model properties both ways, so a Rive state machine or the editor can
   drive a three.js scene without script changes.
-- **M13d, Rive-driven animation.** Retarget Rive skeleton/bone animations
+- **M13d, Rive-driven animation (done, within the scripting API: bones
+  by name, timelines sampled; see DEVIATIONS).** Retarget Rive skeleton/bone animations
   onto three.js Skeletons, and Rive timelines onto Object3D transforms
   (beyond `copyNodeTransform`).
+- Examples `Animation` (done) and `RiveDriven` (done).
 - Not planned: audio (no Rive scripting audio API yet), XR, node materials
   and TSL (WGSL is the shading language here).
 
@@ -379,6 +381,14 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   benchmark both modes (load time and frame time, WebGL2 and mobile
   especially) before making it the recommended setup. `renderer.compile`
   pre-warms baked pipelines.
+- From M13: morph textures are converted to half floats on the main lane
+  when first drawn (the Animation example spreads its setup over frames
+  to stay in the per-call budget: move the conversion into a job, or
+  cache it); a big skeleton's bone texture is re-uploaded every
+  frame; the MorphU block is a 16 KB buffer per morphed mesh; overlay
+  occlusion raycasts the whole scene per label (pass `occluders`). The
+  morph, bone-texture and instanced-morph paths are uniform branches in
+  the uber-shader's vertex stage: candidates for baked variant flags.
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
 

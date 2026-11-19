@@ -84,6 +84,7 @@ EXAMPLES = [
     ("Editor", "0:2100", "0:2107", "Helpers for grids, axes, lights, cameras, boxes, planes and normals.", True),
     ("Batched", "0:2200", "0:2207", "A BatchedMesh: four geometries, 600 instances, one draw each.", True),
     ("Animation", "0:3600", "0:3607", "Additive clips and subclips, 48 GPU morph targets, instanced morphs, a 320-bone serpent.", True),
+    ("RiveDriven", "0:3700", "0:3707", "Rive drives three.js: labels over 3D, a state machine through data binding, Rive bones posing a skeleton.", True),
     ("Models", "0:2300", "0:2307", "glTF extensions and meshopt, loaded in a job; a duck over the network.", True),
     ("Effects", "0:3100", "0:3107", "Every post-processing pass: AA, AO, outlines, bokeh, LUTs, masks and more, picked from a Rive panel.", True),
     ("Views", "0:3000", "0:3007", "Viewports and scissors: an ArrayCamera, a StereoCamera and two scenes in one canvas.", False),
@@ -97,6 +98,8 @@ def hint(name, interactive):
         return "DRAG TO ORBIT · CLICK THE SWITCH"
     if name == "Effects":
         return "PICK A PASS · DRAG TO ORBIT"
+    if name == "RiveDriven":
+        return "CLICK A LABEL · DAY / NIGHT · DRAG TO ORBIT"
     return "DRAG TO ORBIT · SCROLL TO ZOOM" if interactive else "AUTOPLAY"
 
 
@@ -148,7 +151,8 @@ FEATURES = [
     ("Animation", "glTF and FBX loaders, AnimationMixer with additive blending, GPU skinning and morph targets."),
     ("Primitives", "Instancing, points, lines, sprites, LOD, clipping planes and helpers."),
     ("Post-processing", "EffectComposer with bloom, FXAA and tone mapping passes."),
-    ("Made for Rive", "ThreeLayout, orbit controls on Rive pointer events, live artboards as textures."),
+    ("Made for Rive", "ThreeLayout, Rive pointer events, live artboards as textures, artboard labels over 3D, "
+                      "view model bindings and Rive bones driving skeletons."),
 ]
 
 # Section order inside the scroll content (their index is `scrollIndex`).

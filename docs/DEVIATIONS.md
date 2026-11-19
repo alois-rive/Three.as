@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 13 in progress (see [../PLAN.md](../PLAN.md)). Features not yet ported
+Status: Milestone 13 done (see [../PLAN.md](../PLAN.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
 
@@ -505,7 +505,8 @@ export class Demo extends Layout {
 - `ArtboardTexture.pointerDown/Move/Up/Exit(uv, id)` forward events by
   texture coordinate; `artboardPoint(uv)` converts.
 - `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
-  an (animated) Rive node.
+  an (animated) Rive node; `RiveRig` does more (see
+  [Rive-driven animation](#rive-driven-animation-rive-only)).
 - ThreeLayout's `overlay` (an `ArtboardOverlayRenderer`) is placed and
   advanced after `animate` and the controls, drawn after the canvas is
   presented, and gets pointer events first; its `bindings` (a
@@ -1212,6 +1213,37 @@ scene, and the scene can write Rive UI:
   calls it after `animate`). View model properties cannot be enumerated
   from a script, so bindings name them.
 
+### Rive-driven animation
+
+`three/rive/RiveRig` retargets a Rive artboard's bones and nodes onto
+three.js objects:
+
+- `new RiveRig(artboard)` (an artboard input, instanced), `unitsPerPixel`
+  (0.01), `axis` (Rive's clockwise rotation about -Z in a y-up XY plane);
+  `map(name, object, mode)`, `mapSkeleton(skeleton, prefix)` (bones by
+  name), `mappingOf(object)`; per mapping `position` / `rotation` /
+  `scale` switches and `captureRest()`.
+- `RiveRig.RELATIVE` (default) applies the node's change from its pose
+  when mapped onto the object's own rest pose (a 3D skeleton modelled in
+  another pose follows the 2D rig's motion); `RiveRig.ABSOLUTE` copies
+  the local transform as `copyNodeTransform`.
+- `advance(seconds)` advances the artboard (its state machine, or a
+  timeline started with `play(name)`, looping with `loop`) and poses the
+  objects; `apply()` poses them as the artboard stands.
+- `bake(name, fps)` samples a timeline into a three.js `AnimationClip`
+  (position, quaternion and scale tracks named after the mapped objects),
+  to blend, cross-fade or play on copies with the mixer.
+- **Limits of Rive's scripting API**: nodes and bones are found only by
+  name (`artboard.node(name)`; exported names) and cannot be listed or
+  typed (bone or node); a bone's length, a mesh's vertices and skin
+  weights, and a timeline's keyframes cannot be read (`bake` samples by
+  setting the time); a timeline played by hand is overridden by a default
+  state machine keying the same properties (give the rig artboard an empty
+  state machine, as RiveDrivenRig does); a script cannot reach the
+  artboard it is attached to, so the rig is an artboard input. Rive's
+  meshes and skins therefore cannot become three.js geometry: only the
+  bones' motion transfers.
+
 ### Other
 
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
@@ -1224,4 +1256,4 @@ scene, and the scene can write Rive UI:
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-the rest of M13 and M14.
+M14 (performance and shipping).

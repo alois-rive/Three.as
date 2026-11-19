@@ -74,6 +74,10 @@ Gotchas: integer `/` truncates and `<f64>(a / b)` divides as floats (see
 DEVIATIONS.md); `Array.splice` cannot insert; arrays are invariant; Rive
 paints the first-declared shape on top; `Layout` already has an `update()`
 hook; generic code is only type-checked once instantiated, so test it.
+`context.viewModel()` on an artboard with no view model stops the script
+silently (nothing renders): go through `context.dataContext()`. A
+script's `init` and each `advance`/`draw` have a time budget (about
+200 ms headless): spread heavy setup over frames.
 
 ## Layout
 
