@@ -574,6 +574,8 @@ export class GPURenderer {
     private scH: u32 = 0;
     // ArrayCamera views after the first reuse its shadow maps.
     private skipShadows: bool = false;
+    // ArrayCamera views after the first: the background was drawn already.
+    private arraySubView: bool = false;
     // compile(): collect everything, culled or not.
     private noCull: bool = false;
     // GPURendererParameters.logarithmicDepthBuffer.
@@ -740,12 +742,14 @@ export class GPURenderer {
                 const sub = cameras[i];
                 this.viewportOverride = sub.viewport;
                 this.skipShadows = i > 0;
+                this.arraySubView = i > 0;
                 this.renderView(scene, sub);
                 this.autoClear = false;
             }
             this.autoClear = autoClear;
             this.viewportOverride = null;
             this.skipShadows = false;
+            this.arraySubView = false;
             return;
         }
         this.renderView(scene, camera);
@@ -1068,15 +1072,19 @@ export class GPURenderer {
         // The pass.
         let r: f64 = this._clearColor.r, g: f64 = this._clearColor.g, b: f64 = this._clearColor.b;
         let a = this.clearAlpha;
+        // A colour background clears even with autoClear off, as three.js's
+        // WebGLBackground forces the clear (once for an ArrayCamera).
+        let forceClear = false;
         if (scene instanceof Scene) {
             const bg = (scene as Scene).background;
             if (bg != null && bg instanceof Color) {
                 const c = bg as Color;
                 const k = (scene as Scene).backgroundIntensity;
                 r = c.r * k; g = c.g * k; b = c.b * k; a = 1;
+                forceClear = !this.arraySubView;
             }
         }
-        const clear = this.autoClear;
+        const clear = this.autoClear || forceClear;
         const pass = this.openPass(clear && this.autoClearColor, clear && this.autoClearDepth,
             clear && this.autoClearStencil, r, g, b, a, "three");
         if (background) {
