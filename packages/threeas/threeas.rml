@@ -1,0 +1,7 @@
+<Rive version="1" kind="fragment">
+    <!-- The library's file holds no content of its own: what it publishes is
+         its scripts (three/**/*.as) and shaders (three/shaders/**/*.wgsl).
+         This artboard is here because a Rive file needs one, and because a
+         local `override` of the library must be a project with markup. -->
+    <Artboard width="64" height="64" name="ThreeAS" id="0:1"/>
+</Rive>

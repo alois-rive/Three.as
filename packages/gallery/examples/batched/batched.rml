@@ -1,0 +1,19 @@
+<Rive version="1" kind="fragment">
+    <!-- Batched: a BatchedMesh (examples/batched/batched.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2207" clip="true" x="0" y="4900" width="800" height="600" styleId="0:2201" name="Batched" id="0:2200">
+        <LayoutComponentStyle name="Artboard Style" id="0:2201"/>
+        <LayoutComponent width="800" height="600" styleId="0:2203" name="Root" id="0:2202">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2203"/>
+            <ScriptedLayout scriptAssetId="0:2290" name="Scene" id="0:2204"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2207">
+            <StateMachineLayer name="Layer 1" id="0:2208">
+                <AnyState x="0" y="-120" id="0:2768"/>
+                <ExitState x="120" y="-120" id="0:2769"/>
+                <EntryState id="0:2770"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/batched/batched.as" name="batched" id="0:2290" codeFileId="0:111653"/>
+</Rive>

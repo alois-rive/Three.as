@@ -1,0 +1,22 @@
+<Rive version="1" kind="fragment">
+    <!-- Models: glTF extensions, other formats (examples/models/models.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2307" clip="true" x="0" y="5600" width="800" height="600" styleId="0:2311" name="Models" id="0:2300">
+        <LayoutComponentStyle name="Artboard Style" id="0:2311"/>
+        <LayoutComponent width="800" height="600" styleId="0:2303" name="Root" id="0:2312">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2303"/>
+            <ScriptedLayout scriptAssetId="0:2390" name="Scene" id="0:2304"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2307">
+            <StateMachineLayer name="Layer 1" id="0:2308">
+                <AnyState x="0" y="-120" id="0:2771"/>
+                <ExitState x="120" y="-120" id="0:2772"/>
+                <EntryState id="0:2773"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/models/models.as" name="models" id="0:2390" codeFileId="0:115080"/>
+    <BlobAsset file="examples/models/features.glb" name="features" id="0:2301"/>
+    <BlobAsset file="examples/models/threeas_logo.svg" name="threeas_logo" id="0:2313"/>
+    <BlobAsset file="examples/models/fbx_scene.fbx" name="fbx_scene" id="0:2371"/>
+</Rive>

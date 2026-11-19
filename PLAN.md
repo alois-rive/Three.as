@@ -27,21 +27,28 @@ composited into the artboard like any other drawing.
 
 ## Layout
 
+Two Rive CLI projects (see README.md); the root holds docs/ and tools/.
+
 ```
-three/            the library (no protocol classes; import "three/Three")
-  Three.as        re-exports everything: import * as THREE from "../three/Three"
-  constants.as    three.js's constants
-  math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
-  textures/ loaders/ animation/ extras/
-                  as three.js's src/
-  renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
-  rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
-  shaders/        WGSL (three.wgsl, mips, post/)
-  addons/         three.js's examples/jsm ports, imported by path:
-                  controls/, loaders/, postprocessing/, shaders/
-examples/         example artboards (examples.rml + one .as each)
-tests/            rive --test suites
-docs/             DEVIATIONS.md, screenshots
+packages/threeas/   the engine, published as the Rive library "threeas"
+  three/            the library (no protocol classes; import "three/Three",
+                    from another project "lib:threeas/three/Three")
+    Three.as        re-exports everything: import * as THREE from "../three/Three"
+    constants.as    three.js's constants
+    math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
+    textures/ loaders/ animation/ extras/
+                    as three.js's src/
+    renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
+    rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
+    shaders/        WGSL (three.wgsl, mips, post/)
+    addons/         three.js's examples/jsm ports, imported by path:
+                    controls/, loaders/, postprocessing/, shaders/
+  tests/            rive --test suites, fixtures/
+packages/gallery/   the gallery page and the example artboards
+  gallery/          the landing page (gallery.rml, make_gallery.py)
+  examples/<name>/  one example each (<name>.as, <name>.rml, its assets)
+tools/              cross-package scripts (publish, bench, screenshots, ...)
+docs/               DEVIATIONS.md, screenshots
 ```
 
 ## Milestones
@@ -246,7 +253,7 @@ render as authored.
 - Example `Lights`: a night street of point and area lights with cascaded
   sun shadows.
 
-### M10: scene tools
+### M10: scene tools (done)
 
 Goal: the helpers, utilities and controls that three.js examples lean on.
 
@@ -277,67 +284,135 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - Examples `Editor` (TransformControls, helpers, wide lines, addon
   geometry) and `Batched` (600 instances of four geometries).
 
-### M11: loaders and formats
+### M11: loaders and formats (done)
 
-- **M11a, glTF breadth.** KHR_texture_transform, KHR_materials_*
+- **M11a, glTF breadth (done; Draco, Basis and variants left out).** KHR_texture_transform, KHR_materials_*
   (transmission, volume, ior, specular, iridescence, anisotropy,
   emissive_strength, dispersion, unlit), KHR_mesh_quantization, sparse
   accessors, multiple UV sets, texture samplers per texture,
   EXT_meshopt_compression (meshopt decoder ported to AnimaScript).
   Draco and Basis later (decoder size and speed to be measured).
-- **M11b, loading off the main lane.** Parsing and decoding in Rive jobs
+- **M11b, loading off the main lane (done: decoding in a job; Blob
+  uploads left for later).** Parsing and decoding in Rive jobs
   (`rive/jobs`), vertex and index buffers created from Blobs
   (`GPUBuffer.fromBlob`), `loadAsync` returning a Rive `Promise`, so big
   models stay within the init budget and never stall a frame.
-- **M11c, URLs.** `load(url)` through `rive/net` `fetch` where the host
+- **M11c, URLs (done).** `load(url)` through `rive/net` `fetch` where the host
   allows it (LoadingManager, `setPath`, progress callbacks as a listener
   interface).
-- **M11d, other formats.** STLLoader, PLYLoader, SVGLoader (to ShapePaths;
-  also usable straight as Rive paths), FontLoader, ObjectLoader and
-  `toJSON` (round trips of scenes, geometries, materials), FBXLoader
-  (binary and ASCII), GLTFExporter (to a Blob).
+- **M11d, other formats.** STLLoader, PLYLoader (done), SVGLoader (done: to
+  ShapePaths, createShapes, strokes; also usable straight as Rive paths
+  with `rivePathFromShapePath`; XML through `addons/libs/dom_parser`),
+  FontLoader, ObjectLoader and `toJSON` (round trips of scenes, geometries,
+  materials; **done**: toJSON returns a Dynamic, `THREE.JSON.stringify`
+  writes it; ObjectLoader, MaterialLoader, BufferGeometryLoader; BatchedMesh
+  and addon geometries' parameters left out), FBXLoader (binary and ASCII; done),
+  GLTFExporter (**done**: r170's writer and default plugins, .glb bytes or
+  .gltf text; images as PNGs encoded from pixels in memory, so Rive images,
+  canvases and compressed textures are left out; no JPEG, no compression
+  of PNGs, no KHR_mesh_quantization output).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 
-### M12: rendering features and post-processing breadth
+### M12: rendering features and post-processing breadth (done)
 
-- **M12a, views.** `setViewport`, `setScissor`, `setScissorTest` (split
+- **M12a, views (done; example `Views`).** `setViewport`, `setScissor`, `setScissorTest` (split
   screens, insets), ArrayCamera, StereoCamera, multiple scenes in one
   canvas, `renderer.compile`, `info.memory`.
-- **M12b, render target features.** Multiple render targets (`count`,
+- **M12b, render target features (done; no readRenderTargetPixels: Rive has no GPU readback; logarithmic depth, not reversed).** Multiple render targets (`count`,
   textures array), depth textures, `readRenderTargetPixels`,
   `copyFramebufferToTexture`, `copyTextureToTexture`, reversed or
   logarithmic depth for large scenes.
-- **M12c, anti-aliasing and AO passes.** SMAAPass, SSAARenderPass,
+- **M12c, anti-aliasing and AO passes (done; prepasses as three.js r170, MRT only through GTAOPass.setGBuffer).** SMAAPass, SSAARenderPass,
   TAARenderPass, SSAOPass, GTAOPass, SAOPass (normal and depth prepass
   via MRT).
-- **M12d, effect passes.** OutlinePass, BokehPass, AfterimagePass,
+- **M12d, effect passes (done; masks emulated without stencil).** OutlinePass, BokehPass, AfterimagePass,
   FilmPass, GlitchPass, DotScreenPass, HalftonePass, LUTPass (+ LUT
   loaders), RenderPixelatedPass, TexturePass, ClearPass,
   MaskPass/ClearMaskPass (stencil), selective bloom with layers.
-- Example `Effects`: a pass picker artboard (Rive UI) over one scene.
+- Example `Effects` (done): a pass picker (a Rive layout and view model) over one scene.
 
-### M13: animation depth and Rive integration
+### M13: animation depth and Rive integration (done)
 
-- **M13a, animation utilities.** AnimationUtils (`subclip`,
+- **M13a, animation utilities (done).** AnimationUtils (`subclip`,
   `makeClipAdditive`), additive blending, AnimationObjectGroup, morph
   targets on the GPU (target texture, any number of targets),
   InstancedMesh morphs (`setMorphAt`), skeletons above 256 bones (bone
   texture).
-- **M13b, 2D overlays.** The CSS2DRenderer / CSS3DRenderer counterpart:
+- **M13b, 2D overlays (done).** The CSS2DRenderer / CSS3DRenderer counterpart:
   Rive artboards drawn in 2D at projected 3D positions (labels, tooltips,
-  HUD markers), occluded by depth on request, taking pointer events.
-- **M13c, data binding.** Helpers that bind scene properties (transforms,
+  HUD markers), occluded on request (by raycast: scripts cannot read
+  depth back), taking pointer events.
+- **M13c, data binding (done).** Helpers that bind scene properties (transforms,
   material colours, light intensities, animation weights) to Rive view
   model properties both ways, so a Rive state machine or the editor can
   drive a three.js scene without script changes.
-- **M13d, Rive-driven animation.** Retarget Rive skeleton/bone animations
+- **M13d, Rive-driven animation (done, within the scripting API: bones
+  by name, timelines sampled; see DEVIATIONS).** Retarget Rive skeleton/bone animations
   onto three.js Skeletons, and Rive timelines onto Object3D transforms
   (beyond `copyNodeTransform`).
+- Examples `Animation` (done) and `RiveDriven` (done).
 - Not planned: audio (no Rive scripting audio API yet), XR, node materials
   and TSL (WGSL is the shading language here).
 
-### M14: performance and shipping
+### M14: performance and shipping (done)
+
+Numbers, method and the three.js comparison recipe: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+- **M14a, measure (done).** `renderer.info.timings` (CPU per render
+  stage), Benchmark `--arg profile|meshes|instances|still|serialcull`,
+  `tools/screenshots.sh` + `tools/compare_shots.py` (every example, twice,
+  before/after). Baseline: interpreted render 7.21 ms, AOT 2.46 ms.
+- **M14b, CPU work per frame (done).** Object blocks keep their arena slot
+  and are rewritten and uploaded (in runs) only when they change; material
+  blocks once a view per material; per-view caches (geometries, material
+  state, ShaderMaterial pipelines), pooled draw items, no per-frame garbage
+  in the renderer's frame path. Interpreted render 7.21 -> 3.7 ms (still
+  boxes 7.43 -> 3.24). From M13: morph texel conversion in a Rive job
+  joined before the first pass (115 ms on the main lane interpreted for the
+  Animation blob), MorphU blocks in one shared buffer at dynamic offsets,
+  big bone textures upload only moved bones, overlay occlusion stops at
+  the first hit. Pixel-identical (58 screenshots).
+- **M14c, parallelism (done, partial by measurement).** Frustum culling in
+  a `rive/parallel` call from 2048 candidates (pays from about that size
+  compiled; interpreted from 1000). Skinning is on the GPU and
+  Skeleton.update uses native Mat4 (parts cannot call the host); the CPU
+  morph blend is a rare fallback: neither moved.
+- **M14d, prebaked shader variants (done, optional).** As planned below:
+  three.wgsl reads its fragment features through `v_*` functions;
+  `GPURenderer.programKey`; `tools/bake_shaders.sh` (bash: record with
+  `--arg threeShaderKeys=1`, generate `three/shaders/baked/*.wgsl` with
+  only the key's two entry points, write `gpu/BakedShaders.as` with
+  three.wgsl's hash; `--check`, `--clean`, `--max`, `--keys`); runtime
+  fallback to the uber-shader, unbaked keys logged once unless
+  `THREE_RELEASE`; same bind group layouts; `renderer.compile` pre-warms
+  baked pipelines. AOT render with all 94 example keys baked: Benchmark
+  2.43 -> 0.98 ms, Lights 2.71 -> 0.99, Environment 0.82 -> 0.08; the
+  .riv grows about 0.5 MB a variant (9.2 -> 58.7 MB). Baked renders differ
+  from the uber-shader at a few edge pixels (no `discard` plus folded
+  constants; each feature alone is bit-exact). The repository ships no
+  bake; WebGL2 and mobile timing still to do before recommending it.
+- **M14e, CI (done).** `tools/bench.sh`: verify, test, bake freshness,
+  release-build GLSL check, Benchmark interpreted and AOT against
+  `tools/bench_baseline.txt` (30% + 0.1 ms), optional `--manifests`.
+  `make_gallery.py --thumbs` fails on blank or tiny thumbnails.
+- **M14f, WebGPU validation (done, own validator).** Rive's
+  `tools/webgpu_validate` is not shipped; `tools/validate_manifest.py`
+  checks every example's `--gpu-manifest` descriptors against WebGPU rules
+  and the web limits (all pass). Not covered: draw-time dynamic offsets,
+  same-pass read/write hazards, device-specific format support.
+- **M14g, three.js comparison (documented, not run).** The matching
+  scenes and what to measure: docs/PERFORMANCE.md.
+- Not done: `--publish=web` and publishing the library (left to the main
+  session), three.js measurements, baked-mode timing on WebGL2 and mobile.
+- **Packaging (done).** The repository is two Rive projects:
+  packages/threeas (the engine, published as the library `threeas`, on UAT
+  for now) and packages/gallery (the page and the examples, one folder
+  each), which imports the engine with `lib:threeas/...` and builds it from
+  the sources next door through a library override. `tools/publish.sh`
+  publishes the library (UAT or production) and the gallery.
+
+The plan this milestone started from:
 
 - Skip unchanged object blocks and uploads; per-frame allocation audit
   (no garbage in steady state).
@@ -345,6 +420,39 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   (`rive/parallel`) or compute, where Rive exposes it.
 - Benchmarks with the ahead-of-time tier (`--aot`), against the same
   scenes in three.js in a browser; a regression bench in CI.
+- **Prebaked shader variants (optional, "optimized" mode).** The default
+  stays the uber-shader (one `three.wgsl`, features chosen by uniform
+  flags), which always works. A bash script, `tools/bake_shaders.sh`, bakes
+  specialized variants for what a project actually draws:
+  1. The renderer computes a program key per draw, as three.js's
+     `getProgramCacheKey`: material kind, maps present, skinning, morphs,
+     fog, shadows, clipping, light counts by type.
+  2. The script runs every artboard headless with a recording flag
+     (`--arg`), collecting the keys the renderer logs.
+  3. It generates WGSL per key from `three.wgsl`, the features as `const`
+     booleans and constant light counts, so the compiler drops dead
+     branches and unrolls loops (three.js's `#ifdef`s), as entry points of
+     one generated asset (or one asset each), plus a registry module
+     (key -> module and entry point, and a hash of `three.wgsl`).
+  4. At runtime the renderer uses a baked variant when the key is in the
+     registry and the hash matches, else falls back to the uber-shader
+     (logging the unbaked key once in development builds).
+  5. Variants keep the uber-shader's bind group layout first, so groups
+     and the pipeline cache stay shared; stripping unused bindings per
+     variant (more texture slots) comes after.
+  Check freshness in CI (rerun the script, fail on a diff, then
+  `tools/check_glsl.py` on the release .riv), cap the variant count, and
+  benchmark both modes (load time and frame time, WebGL2 and mobile
+  especially) before making it the recommended setup. `renderer.compile`
+  pre-warms baked pipelines.
+- From M13: morph textures are converted to half floats on the main lane
+  when first drawn (the Animation example spreads its setup over frames
+  to stay in the per-call budget: move the conversion into a job, or
+  cache it); a big skeleton's bone texture is re-uploaded every
+  frame; the MorphU block is a 16 KB buffer per morphed mesh; overlay
+  occlusion raycasts the whole scene per label (pass `occluders`). The
+  morph, bone-texture and instanced-morph paths are uniform branches in
+  the uber-shader's vertex stage: candidates for baked variant flags.
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
 

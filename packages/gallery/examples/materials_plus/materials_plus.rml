@@ -1,0 +1,21 @@
+<Rive version="1" kind="fragment">
+    <!-- MaterialsPlus: bump, displacement, light, normal (tangent and object
+         space), specular and env maps, clearcoat and sheen maps
+         (examples/materials_plus/materials_plus.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1807" clip="true" x="1800" y="3500" width="800" height="600" styleId="0:1801" name="MaterialsPlus" id="0:1800">
+        <LayoutComponentStyle name="Artboard Style" id="0:1801"/>
+        <LayoutComponent width="800" height="600" styleId="0:1803" name="Root" id="0:1802">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1803"/>
+            <ScriptedLayout scriptAssetId="0:1890" name="Scene" id="0:1804"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1807">
+            <StateMachineLayer name="Layer 1" id="0:1808">
+                <AnyState x="0" y="-120" id="0:2756"/>
+                <ExitState x="120" y="-120" id="0:2757"/>
+                <EntryState id="0:2758"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/materials_plus/materials_plus.as" name="materials_plus" id="0:1890" codeFileId="0:80323"/>
+</Rive>

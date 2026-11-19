@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Shadows: directional, spot and point light shadow maps
+         (examples/shadows/shadows.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1307" clip="true" x="1800" y="2800" width="800" height="600" styleId="0:1301" name="Shadows" id="0:1300">
+        <LayoutComponentStyle name="Artboard Style" id="0:1301"/>
+        <LayoutComponent width="800" height="600" styleId="0:1303" name="Root" id="0:1302">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1303"/>
+            <ScriptedLayout scriptAssetId="0:1390" name="Scene" id="0:1304"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1307">
+            <StateMachineLayer name="Layer 1" id="0:1308">
+                <AnyState x="0" y="-120" id="0:2741"/>
+                <ExitState x="120" y="-120" id="0:2742"/>
+                <EntryState id="0:2743"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/shadows/shadows.as" name="shadows" id="0:1390" codeFileId="0:59585"/>
+</Rive>

@@ -1,0 +1,253 @@
+{
+	"metadata": {
+		"version": 4.6,
+		"type": "Object",
+		"generator": "Object3D.toJSON"
+	},
+	"geometries": [
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000a001",
+			"type": "CapsuleGeometry",
+			"radius": 0.5,
+			"length": 1.5,
+			"capSegments": 4,
+			"radialSegments": 8
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000a002",
+			"type": "LatheGeometry",
+			"points": [
+				{ "x": 0, "y": -1 },
+				{ "x": 0.8, "y": 0 },
+				{ "x": 0.2, "y": 1 }
+			],
+			"segments": 10,
+			"phiStart": 0,
+			"phiLength": 6.283185307179586
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000a003",
+			"type": "ShapeGeometry",
+			"shapes": [
+				"9a1f0c2e-7d34-4b1a-9f00-00000000c001"
+			],
+			"curveSegments": 8
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000a004",
+			"type": "IcosahedronGeometry",
+			"radius": 1,
+			"detail": 0
+		}
+	],
+	"materials": [
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000b001",
+			"type": "MeshPhongMaterial",
+			"color": 16777215,
+			"emissive": 0,
+			"specular": 1118481,
+			"shininess": 30,
+			"map": "9a1f0c2e-7d34-4b1a-9f00-00000000d001",
+			"normalMap": "9a1f0c2e-7d34-4b1a-9f00-00000000d002",
+			"normalMapType": 0,
+			"normalScale": [1, -1],
+			"envMapRotation": [0, 0, 0, "XYZ"],
+			"reflectivity": 1,
+			"refractionRatio": 0.98,
+			"blendColor": 0
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000b002",
+			"type": "PointsMaterial",
+			"color": 65280,
+			"size": 3,
+			"sizeAttenuation": false,
+			"blendColor": 0
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000b003",
+			"type": "MeshNormalMaterial",
+			"flatShading": true,
+			"blendColor": 0
+		}
+	],
+	"textures": [
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000d001",
+			"name": "red",
+			"image": "9a1f0c2e-7d34-4b1a-9f00-00000000e001",
+			"mapping": 300,
+			"channel": 0,
+			"repeat": [1, 1],
+			"offset": [0, 0],
+			"center": [0, 0],
+			"rotation": 0,
+			"wrap": [1001, 1001],
+			"format": 1023,
+			"internalFormat": null,
+			"type": 1009,
+			"colorSpace": "srgb",
+			"minFilter": 1008,
+			"magFilter": 1006,
+			"anisotropy": 1,
+			"flipY": true,
+			"generateMipmaps": true,
+			"premultiplyAlpha": false,
+			"unpackAlignment": 4
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000d002",
+			"name": "bumps",
+			"image": "9a1f0c2e-7d34-4b1a-9f00-00000000e002",
+			"mapping": 300,
+			"channel": 0,
+			"repeat": [3, 3],
+			"offset": [0, 0],
+			"center": [0, 0],
+			"rotation": 0,
+			"wrap": [1000, 1000],
+			"format": 1023,
+			"internalFormat": null,
+			"type": 1009,
+			"colorSpace": "",
+			"minFilter": 1008,
+			"magFilter": 1006,
+			"anisotropy": 4,
+			"flipY": true,
+			"generateMipmaps": true,
+			"premultiplyAlpha": false,
+			"unpackAlignment": 4
+		}
+	],
+	"images": [
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000e001",
+			"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+		},
+		{
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000e002",
+			"url": "textures/studio_px.png"
+		}
+	],
+	"shapes": [
+		{
+			"arcLengthDivisions": 200,
+			"type": "Shape",
+			"autoClose": false,
+			"curves": [
+				{
+					"metadata": { "version": 4.6, "type": "Curve", "generator": "Curve.toJSON" },
+					"arcLengthDivisions": 200,
+					"type": "LineCurve",
+					"v1": [0, 0],
+					"v2": [2, 0]
+				},
+				{
+					"metadata": { "version": 4.6, "type": "Curve", "generator": "Curve.toJSON" },
+					"arcLengthDivisions": 200,
+					"type": "QuadraticBezierCurve",
+					"v0": [2, 0],
+					"v1": [2, 2],
+					"v2": [0, 2]
+				},
+				{
+					"metadata": { "version": 4.6, "type": "Curve", "generator": "Curve.toJSON" },
+					"arcLengthDivisions": 200,
+					"type": "LineCurve",
+					"v1": [0, 2],
+					"v2": [0, 0]
+				}
+			],
+			"currentPoint": [0, 0],
+			"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000c001",
+			"holes": [
+				{
+					"metadata": { "version": 4.6, "type": "Path", "generator": "Path.toJSON" },
+					"arcLengthDivisions": 200,
+					"type": "Path",
+					"autoClose": false,
+					"curves": [
+						{
+							"metadata": { "version": 4.6, "type": "Curve", "generator": "Curve.toJSON" },
+							"arcLengthDivisions": 200,
+							"type": "EllipseCurve",
+							"aX": 0.7,
+							"aY": 0.7,
+							"xRadius": 0.2,
+							"yRadius": 0.2,
+							"aStartAngle": 0,
+							"aEndAngle": 6.283185307179586,
+							"aClockwise": true,
+							"aRotation": 0
+						}
+					],
+					"currentPoint": [0.9, 0.7]
+				}
+			]
+		}
+	],
+	"object": {
+		"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f000",
+		"type": "Group",
+		"name": "Props",
+		"layers": 1,
+		"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+		"up": [0, 1, 0],
+		"children": [
+			{
+				"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f001",
+				"type": "Mesh",
+				"name": "Pill",
+				"layers": 1,
+				"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -2, 0, 0, 1],
+				"up": [0, 1, 0],
+				"geometry": "9a1f0c2e-7d34-4b1a-9f00-00000000a001",
+				"material": "9a1f0c2e-7d34-4b1a-9f00-00000000b001"
+			},
+			{
+				"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f002",
+				"type": "Mesh",
+				"name": "Vase",
+				"receiveShadow": true,
+				"layers": 1,
+				"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+				"up": [0, 1, 0],
+				"geometry": "9a1f0c2e-7d34-4b1a-9f00-00000000a002",
+				"material": "9a1f0c2e-7d34-4b1a-9f00-00000000b003"
+			},
+			{
+				"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f003",
+				"type": "Mesh",
+				"name": "Plate",
+				"layers": 1,
+				"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 0, 1],
+				"up": [0, 1, 0],
+				"geometry": "9a1f0c2e-7d34-4b1a-9f00-00000000a003",
+				"material": "9a1f0c2e-7d34-4b1a-9f00-00000000b003"
+			},
+			{
+				"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f004",
+				"type": "Points",
+				"name": "Stars",
+				"visible": false,
+				"layers": 1,
+				"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 1],
+				"up": [0, 1, 0],
+				"geometry": "9a1f0c2e-7d34-4b1a-9f00-00000000a004",
+				"material": "9a1f0c2e-7d34-4b1a-9f00-00000000b002"
+			},
+			{
+				"uuid": "9a1f0c2e-7d34-4b1a-9f00-00000000f005",
+				"type": "HemisphereLight",
+				"name": "Sky",
+				"layers": 1,
+				"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1],
+				"up": [0, 1, 0],
+				"color": 16777215,
+				"intensity": 1.5,
+				"groundColor": 4473924
+			}
+		]
+	}
+}

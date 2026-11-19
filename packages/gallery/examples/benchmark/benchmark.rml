@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Benchmark: 1000 meshes and 10000 instances, moving
+         (examples/benchmark/benchmark.as; rive . --artboard=Benchmark --bench=300). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1507" clip="true" x="3600" y="2800" width="800" height="600" styleId="0:1501" name="Benchmark" id="0:1500">
+        <LayoutComponentStyle name="Artboard Style" id="0:1501"/>
+        <LayoutComponent width="800" height="600" styleId="0:1503" name="Root" id="0:1502">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1503"/>
+            <ScriptedLayout scriptAssetId="0:1590" name="Scene" id="0:1504"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1507">
+            <StateMachineLayer name="Layer 1" id="0:1508">
+                <AnyState x="0" y="-120" id="0:2747"/>
+                <ExitState x="120" y="-120" id="0:2748"/>
+                <EntryState id="0:2749"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/benchmark/benchmark.as" name="benchmark" id="0:1590" codeFileId="0:68771"/>
+</Rive>

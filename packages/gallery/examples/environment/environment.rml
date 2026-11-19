@@ -1,0 +1,19 @@
+<Rive version="1" kind="fragment">
+    <!-- Environment: image-based lighting (examples/environment/environment.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1207" clip="true" x="900" y="2800" width="800" height="600" styleId="0:1201" name="Environment" id="0:1200">
+        <LayoutComponentStyle name="Artboard Style" id="0:1201"/>
+        <LayoutComponent width="800" height="600" styleId="0:1203" name="Root" id="0:1202">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1203"/>
+            <ScriptedLayout scriptAssetId="0:1290" name="Scene" id="0:1204"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1207">
+            <StateMachineLayer name="Layer 1" id="0:1208">
+                <AnyState x="0" y="-120" id="0:2738"/>
+                <ExitState x="120" y="-120" id="0:2739"/>
+                <EntryState id="0:2740"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/environment/environment.as" name="environment" id="0:1290" codeFileId="0:56032"/>
+</Rive>

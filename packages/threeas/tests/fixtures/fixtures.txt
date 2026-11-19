@@ -1,0 +1,16 @@
+checker_astc.ktx2
+checker_bc1.ktx2
+cube_ascii
+fbx_ascii
+fbx_nurbs
+fbx_scene
+fbx_v7500
+features
+features_embedded
+pyramid_ascii
+pyramid_binary
+quad_binary
+studio_exr
+studio_rgbe
+threeas_logo
+threejs_scene

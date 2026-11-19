@@ -1,0 +1,66 @@
+<Rive version="1" kind="fragment">
+    <!-- Screen: plain Rive content, animated by its own state machine. The
+         scene shows it on every face of the cube. -->
+    <Artboard defaultStateMachineId="0:290" x="900" width="512" height="512" styleId="0:201" name="Screen" id="0:200">
+        <LayoutComponentStyle name="Screen Style" id="0:201"/>
+        <Fill name="Background" id="0:2618">
+            <SolidColor colorValue="FF1B1F3B" name="Color" id="0:2619"/>
+        </Fill>
+        <Shape x="256" y="256" name="Frame" id="0:202">
+            <Rectangle width="464" height="464" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="56" cornerRadiusTR="56" cornerRadiusBL="56" cornerRadiusBR="56" name="Path" id="0:2620"/>
+            <Stroke thickness="18" name="Stroke" id="0:2621">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2622"/>
+            </Stroke>
+        </Shape>
+        <Node x="256" y="256" name="Spinner" id="0:210">
+            <Shape x="0" y="-150" name="Dot1" id="0:2623"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2624"/><Fill name="Fill" id="0:2625"><SolidColor colorValue="FFFF5A5F" name="Color" id="0:2626"/></Fill></Shape>
+            <Shape x="129.9" y="-75" name="Dot2" id="0:2627"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2628"/><Fill name="Fill" id="0:2629"><SolidColor colorValue="FFFFB400" name="Color" id="0:2630"/></Fill></Shape>
+            <Shape x="129.9" y="75" name="Dot3" id="0:2631"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2632"/><Fill name="Fill" id="0:2633"><SolidColor colorValue="FF7AE582" name="Color" id="0:2634"/></Fill></Shape>
+            <Shape x="0" y="150" name="Dot4" id="0:2635"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2636"/><Fill name="Fill" id="0:2637"><SolidColor colorValue="FF2EC4B6" name="Color" id="0:2638"/></Fill></Shape>
+            <Shape x="-129.9" y="75" name="Dot5" id="0:2639"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2640"/><Fill name="Fill" id="0:2641"><SolidColor colorValue="FF4D9DE0" name="Color" id="0:2642"/></Fill></Shape>
+            <Shape x="-129.9" y="-75" name="Dot6" id="0:2643"><Ellipse width="72" height="72" originX="0.5" originY="0.5" name="Path" id="0:2644"/><Fill name="Fill" id="0:2645"><SolidColor colorValue="FFB388EB" name="Color" id="0:2646"/></Fill></Shape>
+        </Node>
+        <Shape x="256" y="256" name="Core" id="0:220">
+            <Triangle width="150" height="130" originX="0.5" originY="0.6" name="Path" id="0:2647"/>
+            <Fill name="Fill" id="0:2648">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2649"/>
+            </Fill>
+        </Shape>
+        <StateMachine name="State Machine 1" id="0:290">
+            <StateMachineLayer name="Layer 1" id="0:291">
+                <AnyState x="0" y="-120" id="0:2650"/>
+                <ExitState x="120" y="-120" id="0:2651"/>
+                <EntryState id="0:2652">
+                    <StateTransition stateToId="0:292" id="0:2653"/>
+                </EntryState>
+                <AnimationState x="200" animationId="0:280" id="0:292"/>
+            </StateMachineLayer>
+        </StateMachine>
+        <LinearAnimation loopValue="loop" duration="240" name="Spin" id="0:280">
+            <KeyedObject objectId="0:210" id="0:2654">
+                <KeyedProperty property="rotation" id="0:2655">
+                    <KeyFrameDouble value="0" interpolationType="linear" id="0:2656"/>
+                    <KeyFrameDouble value="6.2831855" interpolationType="linear" frame="240" id="0:2657"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:220" id="0:2658">
+                <KeyedProperty property="scaleX" id="0:2659">
+                    <KeyFrameDouble value="1" interpolationType="linear" id="0:2660"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120" id="0:2661"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240" id="0:2662"/>
+                </KeyedProperty>
+                <KeyedProperty property="scaleY" id="0:2663">
+                    <KeyFrameDouble value="1" interpolationType="linear" id="0:2664"/>
+                    <KeyFrameDouble value="1.3" interpolationType="linear" frame="120" id="0:2665"/>
+                    <KeyFrameDouble value="1" interpolationType="linear" frame="240" id="0:2666"/>
+                </KeyedProperty>
+                <KeyedProperty property="rotation" id="0:2667">
+                    <KeyFrameDouble value="0" interpolationType="linear" id="0:2668"/>
+                    <KeyFrameDouble value="-6.2831855" interpolationType="linear" frame="240" id="0:2669"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+    </Artboard>
+
+    <BlobAsset file="examples/shared/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
+</Rive>

@@ -1,0 +1,6 @@
+# tools/bench.sh baseline: Benchmark artboard means in ms (arm64, 2026-11-19).
+# Refresh with tools/bench.sh --update after an intended change.
+interp.advance 5.125
+interp.render 3.779
+aot.advance 0.421
+aot.render 2.412

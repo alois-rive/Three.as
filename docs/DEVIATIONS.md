@@ -6,14 +6,16 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 2 in progress (see [../PLAN.md](../PLAN.md)). Features not yet ported
+Status: Milestone 14 done (see [../PLAN.md](../PLAN.md); performance notes in
+[PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
 
 ## Porting checklist
 
-1. Import the namespace: `import * as THREE from "../three/Three";` (a
-   relative path, not `"three"`).
+1. Import the namespace: `import * as THREE from "lib:threeas/three/Three";`
+   (the `threeas` Rive library, not `"three"`; a relative path such as
+   `"../three/Three"` with a copy of `three/`, or inside the engine).
 2. Replace `new THREE.WebGLRenderer(params)` with
    `new THREE.GPURenderer(context, params)` in the script's `init`.
 3. Replace the window: no `domElement` to append. `resize(width, height,
@@ -30,7 +32,7 @@ not different.
    [Lighting](#lighting)).
 
 ```as
-import * as THREE from "../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 
@@ -65,12 +67,41 @@ export class Demo extends Layout {
 | `render()` anywhere | `render()` only inside the script's `draw()`; then `present(renderer)` composites the canvas into the artboard |
 | `setSize(w, h, updateStyle)` | `setSize(w, h)` in points; there is no style |
 | `setAnimationLoop(fn)` | the script's `advance(seconds)` (or ThreeLayout's `animate`) |
-| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
+| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear), `logarithmicDepthBuffer` only (no `reverseDepthBuffer`, see [Render target features](#render-target-features)) |
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
 | custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
-| `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
+| `info.render.calls/triangles/lines/points`, `info.memory`, `info.autoReset` / `reset()` | same, plus `info.render.culled` (objects frustum culled); `info.memory` counts `geometries` and `textures` (no `info.programs`) |
+| (none) | `renderer.parallelCulling` (Rive-only, default true): views with 2048 or more frustum-culled candidates test them in a Rive parallel call (`three/renderers/gpu/Culling`), with the same result as on the main lane |
+| (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
+| uniforms uploaded per program | each draw keeps one 1536-byte block in a shared uniform buffer across frames (bound at a dynamic offset), rewritten and uploaded only when its world matrix, light list or material changed; a material's share of the block is built once a view however many draws use it |
+
+### Shader programs: the uber-shader and baked variants
+
+three.js compiles a program per material configuration (`#define`s from
+`getProgramCacheKey`). ThreeAS draws every built-in material with **one
+uber-shader** (`three/shaders/three.wgsl`) whose features are uniform
+branches, so there is no compile per material and no `onBeforeCompile` /
+`customProgramCacheKey` (`material.version` / `needsUpdate` cost nothing).
+The **optional "optimized" mode** bakes three.js-style variants ahead of
+time: `tools/bake_shaders.sh` records the program keys a project draws
+(`--arg threeShaderKeys=1`) and generates `three/shaders/baked/*.wgsl`,
+three.wgsl with the fragment features as constants (shading model, maps,
+extra maps, flags, cut-out or not, flat shading, environments, fog type,
+hemisphere light, linear output, the light count and types in list order)
+and only the draw's two entry points, plus the registry
+`three/renderers/gpu/BakedShaders.as`. At runtime a draw whose key is baked
+from the current three.wgsl (`THREE_WGSL_HASH`) uses its variant; any other
+draw, the transmission pass, shadow passes and ShaderMaterials use the
+uber-shader. Unbaked keys are logged once (silence with
+`--define=THREE_RELEASE`); `renderer.useBakedShaders = false` or
+`--arg threeUberShader=1` ignores the bake. Baked and uber renders match
+except for a few high-contrast or grazing-angle pixels (compiling without
+`discard` and with folded constants changes derivatives and rounding: up to
+about 1% of a scene's pixels, mostly by a few levels). Each variant adds
+about 0.5 MB to the .riv (five backends) and a pipeline compile on first
+use. The default repository state bakes nothing.
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -117,9 +148,16 @@ export class Demo extends Layout {
 - **Arrays are invariant**: an `Array<Mesh>` is not an `Array<Object3D>`.
   Declare `Array<Object3D>` for what you pass to `intersectObjects` and cast
   elements back (`arr[i] as Mesh`).
-- **No `userData`** (no untyped objects). Subclass, or keep a `Map` keyed by
-  `object.id`.
-- `uuid` and `MathUtils.generateUUID` are missing; `id` is unique.
+- **`userData` is a `Dynamic` table** (`rive/dynamic`, AnimaScript's
+  untyped value) on objects, geometries, materials and textures:
+  `object.userData.set("hp", Dynamic.fromNumber(3))`,
+  `Dynamic.asNumber(object.userData.get("hp"))`. It holds what JSON holds;
+  `copy` / `clone` deep-copy it (geometries share it), and toJSON writes it.
+- `uuid` (objects, geometries, materials, textures, sources, skeletons,
+  clips, shapes) is made by `MathUtils.generateUUID()` on first read, not
+  in the constructor; `id` is unique too.
+- Loaders that set typed data return subclasses with typed fields as well
+  (`STLGeometry.groupNames`, `SVGShapePath.userData`).
 
 ## Math
 
@@ -191,7 +229,9 @@ export class Demo extends Layout {
   displacement, specular, and the physical maps; maps sharing a texture
   count once, as glTF packs them), beyond the eight base slots (map,
   normal, roughness/specular/gradient/matcap, metalness, ao, emissive,
-  alpha, envMap); further ones are ignored with a log line. **Extra map k
+  alpha, envMap); further ones are ignored with a log line. Morphed meshes
+  and skeletons over 256 bones lend slots to their vertex textures (see
+  [Skinning and morph targets](#skinning-and-morph-targets)). **Extra map k
   shares base slot k's sampler** (map, normal, roughness, metalness, ao): the renderer prefers a slot whose base map is absent or has
   the same wrapping and filters, else the extra map is sampled with the
   base map's sampler. (Rive allows 8 bindings a group and the web 16
@@ -313,7 +353,15 @@ export class Demo extends Layout {
   `shapesFromRivePath(path, scale, isCCW)` and `shapePathFromRivePath`
   (Rive-only) convert a Rive path (y flipped). A node's path is empty until
   its artboard instance has advanced once: call `instance.advance(0)` before
-  `node.asPath()`.
+  `node.asPath()`. The reverse, `rivePathFromShapePath(shapePath, scale,
+  flipY = false)`, makes a Rive path of a ShapePath (SVGLoader paths: SVG's
+  y already points down, as Rive's): lines and Béziers as they are,
+  ellipse arcs as cubics, a contour per sub-path, closed with `autoClose`;
+  set its `fillRule` from the SVG style.
+- `NURBSCurve` and `NURBSUtils` are addons in `three/addons/curves/`
+  (`NURBSSurface`, `NURBSVolume` and `toJSON` / `fromJSON` are not ported).
+  `NURBSCurve(degree, knots, controlPoints, startKnot = 0, endKnot = -1)`:
+  -1 (or 0) for `endKnot` is three.js's undefined, the last knot.
 
 ## Lines, points and sprites
 
@@ -392,12 +440,90 @@ export class Demo extends Layout {
 - **Render targets**: `RenderTarget(width, height, options)` (alias
   `WebGLRenderTarget`), `renderer.setRenderTarget(rt)`. Size in pixels;
   `options` is a `RenderTargetOptions` (`depthBuffer`, `samples`,
-  `generateMipmaps`). Its texture holds the renderer's output: sRGB,
-  premultiplied, top row first (`colorSpace = SRGBColorSpace`,
-  `premultiplyAlpha = true`, `flipY = true`), so sampling it gives the same
-  colours as three.js. `rt.image` is a Rive `Image` for 2D drawing.
-  `readRenderTargetPixels`, depth textures and multiple render targets are
-  not ported.
+  `generateMipmaps`, `type`, `count`, `depthTexture`). Its texture holds
+  the renderer's output: sRGB, premultiplied, top row first (`colorSpace =
+  SRGBColorSpace`, `premultiplyAlpha = true`, `flipY = true`), so sampling
+  it gives the same colours as three.js. `rt.image` is a Rive `Image` for
+  2D drawing. Multiple render targets, depth textures and copies: see
+  [Render target features](#render-target-features).
+
+## Render target features
+
+- **Multiple render targets**: `{ count: n }` (1 to 4) gives `rt.textures`
+  (`rt.texture` is `textures[0]`), as three.js. ShaderMaterials write them
+  with `@location(n)` outputs (every location: a pipeline cannot leave one
+  unwritten); built-in materials write the first only. The extra textures
+  have the first one's format and hold what the shader wrote
+  (`NoColorSpace`, not premultiplied). `samples` is ignored (no MSAA) with
+  `count` > 1 or a depth texture.
+- **`DepthTexture(width, height, type, format)`**, set as
+  `options.depthTexture` or `rt.depthTexture`: it is the pass's depth
+  attachment itself (24-bit depth plus stencil, whatever `type` says),
+  sized with the target and kept after the render. ShaderMaterials declare
+  it `texture_depth_2d` and read it with `textureLoad` or `textureSample`
+  (window depth, 0 near, 1 far); built-in materials ignore it (a log line).
+  Its rows are top first (`flipY` true; three.js: false), as every render
+  target texture here: sample at `(u, 1 - v)` from a fullscreen quad.
+- **`readRenderTargetPixels` / `readRenderTargetPixelsAsync` are not
+  ported**: Rive's GPU API has no readback (no buffer mapping or texture to
+  buffer copy), so pixels cannot come back to a script. Keep the data on
+  the GPU (render targets, copies) or compute it on the CPU.
+- **`copyFramebufferToTexture(texture, position, level)`** copies from the
+  current render target, or the canvas, at `position` (pixels from the
+  bottom left) into a `FramebufferTexture` (its size); the texture takes
+  the source's colour space and premultiplied alpha.
+  **`copyTextureToTexture(src, dst, srcRegion, dstPosition, level)`**: a
+  `Box2` region and a `Vector2` position (texels, from the bottom in uv
+  terms; three.js's Box3 / 3D and array textures are not supported), rows
+  flipped where `flipY` differs. Render target textures are written in
+  place; any other destination (an image, a DataTexture, a canvas, a
+  FramebufferTexture) samples a GPU copy of itself from then on, until its
+  own content changes (a new `version`). Level 0 only; depth textures
+  cannot be copied. Both are passes: call them from `draw()`.
+- **`logarithmicDepthBuffer`** (a GPURendererParameters option) as
+  three.js for built-in materials: depth `log2(1 + w) / log2(1 + far)`
+  written from the fragment shader (orthographic cameras keep the window
+  depth). ShaderMaterials do not get it: write `@builtin(frag_depth)`
+  yourself (the frame block's `viewport.w` holds `1 / log2(far + 1)`), or
+  they will not sort against the rest. MeshDepthMaterial still draws the
+  linear window depth.
+- **`reverseDepthBuffer` is not ported**: colour passes use a
+  depth24plus-stencil8 attachment (fixed point on some backends, and the
+  stencil must stay), where a reversed depth range gains little;
+  `logarithmicDepthBuffer` covers scenes of huge depth ranges.
+
+## Views: viewports, scissors, several renders a frame
+
+- `setViewport`, `setScissor` (both `(x, y, width, height)` or a
+  `Vector4`, in points from the bottom left), `setScissorTest`,
+  `getViewport`, `getScissor`, `getCurrentViewport` (pixels), and a render
+  target's `viewport`, `scissor`, `scissorTest` (pixels) work as three.js;
+  `setSize` resets the viewport. With the scissor test on, `autoClear` and
+  `clear()` clear only inside the scissor (a fullscreen draw, since a pass's
+  load op clears the whole target). `clear(color, depth, stencil)`,
+  `clearColor()`, `clearDepth()`, `clearStencil()`, `autoClearColor`,
+  `autoClearDepth` and `autoClearStencil` are three.js's. Viewports are
+  clamped to the target (WebGPU rejects one that overflows it).
+- Several renders into one target in a frame (split screens, insets,
+  overlays with `autoClear = false`) keep the earlier ones' colour and depth
+  (stencil does not survive, see above). With `antialias`, the MSAA samples
+  and depth are stored at the end of a pass only once a render of that
+  target was partial (a viewport or scissor), loaded (`autoClear` off) or
+  followed `clear()`: an overlay after a full render, without `clear()`,
+  starts from an undefined MSAA buffer in its first frame only.
+- **`ArrayCamera`**: each sub-camera's `viewport` (a `Vector4`, drawing-buffer
+  pixels from the bottom left, as three.js) gets a full render of its own:
+  culled by that sub-camera, the first one clearing (three.js culls with
+  the array camera and draws the lists once per sub-camera). Shadow maps
+  render once. **`StereoCamera`** as three.js (`update(camera)`, then render
+  `cameraL` / `cameraR` into the halves).
+- `setViewOffset` / `clearViewOffset` (and `view`) on PerspectiveCamera and
+  OrthographicCamera as three.js (they live on the Camera base class).
+- **`renderer.compile(scene, camera, targetScene)`** builds every
+  pipeline, bind group, upload and mip chain the render would need (culling
+  off) without drawing, and returns the materials as an `Array<Material>`
+  (three.js: a Set). Call it from `draw()`, as `render`; `targetScene`'s
+  lights are not merged in, and there is no `compileAsync`.
 
 ## Rive app structure (Rive-only)
 
@@ -410,19 +536,59 @@ export class Demo extends Layout {
 - `ArtboardTexture.pointerDown/Move/Up/Exit(uv, id)` forward events by
   texture coordinate; `artboardPoint(uv)` converts.
 - `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
-  an (animated) Rive node.
+  an (animated) Rive node; `RiveRig` does more (see
+  [Rive-driven animation](#rive-driven-animation-rive-only)).
+- ThreeLayout's `overlay` (an `ArtboardOverlayRenderer`) is placed and
+  advanced after `animate` and the controls, drawn after the canvas is
+  presented, and gets pointer events first; its `bindings` (a
+  `SceneBindings`) sync after `animate`, and are made by ThreeLayout itself
+  when the bound view model has a `threeBindings` string.
 
 ## Animation
 
 - `KeyframeTrack(name, times, values, interpolation)` takes `Array<f64>`
   and stores `Float32Array`s. Interpolations: Discrete, Linear (slerp for
   quaternions), Smooth, plus `InterpolateGLTFCubicSpline` (three.js keeps
-  that inside its GLTFLoader). `StringKeyframeTrack` is not ported.
+  that inside its GLTFLoader). `StringKeyframeTrack` is not ported
+  (`AnimationClip.parse` skips string tracks). Tracks and clips have
+  three.js's `clone`, `trim`, `optimize` and `validate` (validate's
+  reason is in `track.validationError` instead of a console error);
+  `track.getKeyStride()` is the values a key takes (3 x the value size for
+  glTF cubic splines). `AnimationClip.CreateFromMorphTargetSequence` and
+  `CreateClipsFromMorphTargetSequences` take morph attributes
+  (`Array<BufferAttribute>`); `findByName` takes an array of clips only.
+- **Additive blending** as three.js: an action's `blendMode` (the clip's,
+  or `clipAction(clip, root, blendMode)`) of `AdditiveAnimationBlendMode`
+  adds its weighted values on top of the normal blend (quaternions
+  multiplied). A property no action drives this frame keeps its value
+  (three.js writes the original value back while an action is still
+  bound).
+- **AnimationUtils** is a class of static methods (`THREE.AnimationUtils.
+  subclip(...)`; three.js exports a namespace object): `subclip`,
+  `makeClipAdditive`, `getKeyframeOrder`, `sortedArray`, `flattenJSON`
+  (keys as a `Dynamic` array), `convertArray` (to a Float32Array) and
+  `isTypedArray`; the array helpers take `Array<f64>`. The functions are
+  also module exports of `three/animation/AnimationUtils`.
+- **AnimationObjectGroup** is an Object3D subclass so it can be a mixer's
+  root (three.js types the root as either): never add it to a scene. Its
+  `add`, `remove` and `uncache` take one object each and do not parent
+  it; `stats.objects.total / inUse` and `stats.bindingsPerObject` as
+  three.js. Tracks bind on each object (`PropertyBindingComposite`,
+  three.js's `PropertyBinding.Composite`, made by `PropertyBinding.
+  create`); the value's kind comes from the first object, so add objects
+  before the first `clipAction`.
 - `PropertyBinding` resolves `node.position|quaternion|scale|rotation|
-  visible`, `node.morphTargetInfluences[i|name]` and `node.material.color|
-  opacity|emissive`; nodes by name under the root (names cannot hold
+  visible`, one component of them (`node.position[x]`, x/y/z/w or 0-3),
+  `node.morphTargetInfluences[i|name]`, `node.material.color|opacity|
+  emissive|emissiveIntensity|roughness|metalness` (`material[i]` for an
+  entry of `mesh.materials`; colours also by `[r|g|b]`) and lights'
+  `node.intensity|color`; nodes by name under the root (names cannot hold
   dots: `PropertyBinding.sanitizeNodeName`). No uuid paths, no arbitrary
-  properties.
+  properties (there is no reflection). `isBoolean` / `isColor` /
+  `isQuaternion` tell how a value blends. The static
+  `PropertyBinding.findNode(root, nodeName)` is three.js's (the root, a
+  skeleton bone, or a descendant by name or uuid); `parseTrackName` splits
+  "node.bones[Arm].position" with `objectIndex` "Arm".
 - `mixer.clipAction(clip)` takes an `AnimationClip` (not a clip name).
   Mixer events (`finished`, `loop`) are not dispatched: poll
   `action.isRunning()`, `action.enabled`, `action.paused`. Cross-fades
@@ -430,28 +596,311 @@ export class Demo extends Layout {
 
 ## Skinning and morph targets
 
-- GPU skinning, up to **256 bones** per skeleton (more: drawn unskinned,
-  with a log line). `Skeleton(bones: Array<Bone>, boneInverses)`.
-- **Morph targets are blended on the CPU** (whenever the influences change),
-  then uploaded; fine for faces and props, costly for big meshes animating
-  every frame.
+- `Skeleton.calculateInverses()` (and `new Skeleton(bones)` without
+  inverses) updates each bone's world matrix first; three.js inverts
+  `matrixWorld` as it is. Pass the inverses to set them from matrices you
+  wrote into `matrixWorld` yourself (FBXLoader does).
+- GPU skinning: up to 256 bones from a uniform block, **bigger skeletons
+  from a bone texture** (three.js's `boneTexture`, here rgba16float: each
+  bone's three affine rows as half floats plus their half-float
+  remainders, about 22 bits; three.js uses Float32). `Skeleton(bones:
+  Array<Bone>, boneInverses)`; `skeleton.boneTexture` is not exposed.
+- **Morph targets blend on the GPU** from a morph target texture, any
+  number of targets, as three.js's WebGL2 path: the geometry's deltas
+  (relative to the base, whatever `morphTargetsRelative` says) for
+  positions and normals, as rgba16float texels (half floats: three.js
+  stores Float32), rebuilt when a morph attribute's `version` changes.
+  **Above 65536 texels the half-float conversion runs in a Rive job**
+  (`three/renderers/gpu/MorphTexels`), started when the mesh is first
+  collected and joined before the view's first pass, so it overlaps the
+  rest of the frame and several geometries convert at once; a join that
+  would pass the script call's budget leaves the texture zero (the mesh
+  unmorphed) until a later frame. Every morphed or big-skinned mesh's
+  MorphU block (the weighted targets) is packed into one shared uniform
+  buffer per view at 256-byte offsets (group 1 binding 7 is a dynamic
+  binding), taking the bytes it uses instead of 16 KB a mesh. A big
+  skeleton's bone texture converts and uploads only the bones that moved.
+  Only targets with a non-zero weight cost anything, at most 2044 of them
+  at once (the rest are skipped). Morph colours are not read. A texture
+  bigger than the device allows (`maxTextureSize2D` squared texels) falls
+  back to blending on the CPU, with a log line.
+- **InstancedMesh morphs**: `setMorphAt(index, mesh)` / `getMorphAt`,
+  `morphTexture` (a FloatType RedFormat DataTexture, a row per instance:
+  base influence, then the weights; uploaded as half floats) as three.js;
+  set `morphTexture.needsUpdate = true` after changing it.
+- **The vertex textures borrow extra map slots**: the morph texture takes
+  extra slot 4, the bone texture slot 3 and an instanced morphTexture
+  slot 2 (group 1 bindings 6, 5, 4; the web allows 16 textures a stage
+  and the shader already declares 16). A morphed or big-skinned mesh's
+  material keeps the other extra slots for its extra maps (see
+  [Materials](#materials)); maps that do not fit are ignored with a log
+  line. ShaderMaterials do not morph or skin.
 - A SkinnedMesh is frustum culled only after `computeBoundingSphere()` (its
   posed bounds); otherwise it is always drawn.
 
 ## Loaders
 
-- **Loaders are synchronous and read Rive assets by name**: `new
+- **`load(name)` is synchronous and reads Rive assets by name**: `new
   GLTFLoader(context).load("robot")` returns a `GLTF` (or null) from the
-  BlobAsset `robot`; no URLs, no callbacks, no `LoadingManager`. Embedded
-  images decode asynchronously; their textures fill in a few frames later.
-  Import loaders from `three/addons/loaders/...`.
-- GLTFLoader reads binary `.glb` only, without Draco, meshopt, KTX2 or
-  sparse accessors; extensions read: KHR_lights_punctual,
-  KHR_materials_unlit, emissive_strength, clearcoat, sheen, ior, specular,
-  KHR_texture_transform. `gltf.parser`, `gltf.userData` and `extras` are not
-  exposed.
+  BlobAsset `robot`, with no callbacks (three.js's `load(url, onLoad,
+  onProgress, onError)`). Embedded images decode asynchronously; their
+  textures fill in a few frames later. Import loaders from
+  `three/addons/loaders/...`. Loaders take the Rive `Context` first:
+  `new GLTFLoader(context, manager)`.
+- **Urls load with `loadAsync`**, which returns a Rive `Promise`:
+  `FileLoader`, `TextureLoader` and `GLTFLoader` fetch https: urls through
+  `rive/net` `fetch` where the host allows the network (`rive . --allow-net`
+  in the CLI; a host without it rejects with "disabled"), and fall back to
+  the blob asset of that name. A `.gltf`'s external buffers and images load
+  from beside it (or `resourcePath`); with `load(name)` they are blob assets
+  named after the files without extension (`scene.bin` -> `scene`).
+  `FileLoader.loadAsync` resolves with bytes, `loadTextAsync` with text
+  (three.js picks by `responseType`).
+- `LoadingManager` reports through a `LoadingManagerListener` (override
+  `onStart`, `onProgress`, `onLoad`, `onError`) instead of callbacks;
+  `setURLModifier` is `addURLRewrite(prefix, replacement)`. Progress is
+  counted per file, as three.js.
+- GLTFLoader reads `.glb`, and `.gltf` JSON whose buffers and images are
+  base64 `data:` URIs (external files are not read: there are no URLs).
+  Extensions read: KHR_lights_punctual, KHR_materials_unlit,
+  emissive_strength, clearcoat, sheen, ior, specular, transmission, volume,
+  iridescence, anisotropy, dispersion (with their textures),
+  KHR_texture_transform, KHR_mesh_quantization, EXT_texture_webp,
+  EXT_mesh_gpu_instancing (with `_COLOR_0`) and EXT_meshopt_compression;
+  sparse accessors too. Not read: Draco, KTX2 / Basis textures
+  (KHR_texture_basisu), KHR_materials_variants, TEXCOORD_2 and up (the
+  renderer has two uv sets). A file that *requires* another extension
+  fails (`loader.error`), as three.js throws. `gltf.parser`,
+  `gltf.userData` and `extras` are not exposed.
+- **The meshopt decoder is AnimaScript**, not WebAssembly:
+  `three/addons/libs/meshopt_decoder` exports `MeshoptDecoder` for
+  `setMeshoptDecoder`, as three.js's module. It reads the attribute codec
+  version 0 (meshoptimizer's default for EXT_meshopt_compression), the
+  triangle and index codecs and the three filters.
+- **`loadAsync(name)` / `parseAsync(bytes)` return a Rive `Promise<GLTF>`**
+  and decode in a Rive job (`decodeGLTF`: the container, meshopt views and
+  every accessor, handed back as one Float32Array); the scene is built on
+  the main lane when the job is done. Images decode asynchronously either
+  way. Await it in an `async` method, or use the promise's `andThen`. The
+  scene's objects are still created in one main-lane call, and vertex data
+  is uploaded from the decoded arrays (not from Blobs).
+- `GLTFLoader`'s context is optional: without one, `parse` still builds
+  the scene (no images; warnings in `loader.warnings`, the failure in
+  `loader.error`).
+- With anisotropy and neither tangents nor uvs, the tangent frame is any
+  frame around the normal (three.js's derivative frame degenerates).
+- **FBXLoader** (`three/addons/loaders/FBXLoader`, binary 6400+ and ASCII
+  7000+, as three.js r170): `new FBXLoader(context).load(name)` returns
+  the Group (or null, with `loader.error`; three.js throws) from the
+  BlobAsset `name`; `parse(bytes, path)` too. `loadAsync(url)` /
+  `parseAsync(bytes)` return a `Promise<Group>` and inflate a binary file's
+  zlib arrays in a Rive job (`inflateFBX`, most of a binary parse); the
+  scene is still built in one main-lane call, so files of several MB can
+  pass a host's per-call budget. Clips are `object.animations`, as
+  three.js. Warnings (three.js's console.warn) are in `loader.warnings`.
+  `object.userData.unitScaleFactor` is `loader.unitScaleFactor`, and
+  `userData.originalName` is `loader.originalNames.get(object.id)`;
+  `transformData` and the FBX `ID` are not exposed.
+- FBX textures: embedded Video content (PNG, JPEG) decodes into a
+  DataTexture that fills in once decoded; a texture file is the image or
+  blob asset named after it without folders or extension (`resourcePath`,
+  else the `load` path, prefixes it), or, for a url load, fetched beside
+  the file. Embedded BMP, TIFF and TGA are not decoded (Rive's decoder),
+  and TGA, TIFF, EXR, DDS, HDR and KTX2 files give an empty placeholder
+  texture, as three.js without a loader handler (LoadingManager has no
+  `addHandler` here). Image-asset textures get `NoColorSpace`, as
+  three.js's loaded textures (colour maps are then set to sRGB).
+- FBX differences from three.js: IDs are exact 64-bit integers (three.js
+  rounds them to doubles); a camera without AspectWidth/AspectHeight gets
+  aspect 1 (three.js uses the window); a rotation curve node missing an
+  axis gives no track, with a warning (three.js emits a one-value track
+  that cannot play); the ASCII parser reads `Vector` properties as numbers
+  (three.js keeps them strings, so a texture's Scaling / Translation read
+  wrong there). The parsed tree is typed (`FBXTree`, `FBXNode`, `FBXValue`,
+  `FBXProperty`) and walks objects in three.js's for-in order.
 - OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
-  named after `usemtl`. ObjectLoader (three.js JSON) is not ported.
+  named after `usemtl`.
+- **SVGLoader** (`three/addons/loaders/SVGLoader`, r170): `load(name)`
+  reads a BlobAsset, `loadAsync(url)` fetches, `parse(text)` returns an
+  `SVGResult` (`paths`, `xml`: the root element). **`paths` are
+  `SVGShapePath`s**, ShapePaths with a typed `userData` (three.js sets an
+  untyped one): `userData.node` (the XMLNode) and `userData.style`, an
+  `SVGStyle` with three.js's fields (`fill`, `fillOpacity`, `fillRule`,
+  `opacity`, `stroke`, `strokeOpacity`, `strokeWidth`, `strokeLineJoin`,
+  `strokeLineCap`, `strokeMiterLimit`, `visibility`, plus `display` and
+  getStrokeStyle's `strokeColor`). Fields three.js leaves undefined are ""
+  (`fillRule`, `stroke`, `visibility`) or 1 (`opacity`): test
+  `style.stroke != "" && style.stroke != "none"`. `createShapes`,
+  `getStrokeStyle`, `pointsToStroke` and `pointsToStrokeWithBuffers` are
+  static as three.js; the buffers are `Array<f64>?` (null: count only),
+  grown as written, and the count is three.js's (3 per vertex).
+- SVG parsing goes through **`three/addons/libs/dom_parser`** (AnimaScript
+  has no DOM): `new DOMParser().parseFromString(text)` gives an XMLDocument
+  of XMLNodes with the DOM calls loaders use (`nodeName`, `childNodes`,
+  `getAttribute` returning null when missing, `getAttributeNS`,
+  `textContent`, `getElementById`, `getElementsByTagName`,
+  `viewportElement`), `node.style` (a CSSStyleDeclaration of the style
+  attribute) and `node.sheet` (a <style> element's CSSStyleSheet). It reads
+  comments, CDATA, processing instructions, the XML declaration, a DOCTYPE
+  and its internal `<!ENTITY>`s; it recovers from malformed markup
+  (`document.errors`) where a browser would give a `<parsererror>`.
+- SVGLoader differences, all on input three.js mishandles or ignores:
+  CSS element selectors (`rect { ... }`) apply, below class and id
+  selectors (three.js reads only class and id rules); `<use>` takes SVG 2's
+  `href` as well as `xlink:href` (and skips a reference to its own
+  ancestor); `display` is kept in the style (filter on
+  `style.display == "none"` as on `visibility`); polygon and polyline
+  points are read as a number list (three.js's pattern drops pairs written
+  "x, y"); commas between transforms are allowed; `use` with only one of
+  `x` / `y` treats the other as 0 (three.js gets NaN); a malformed number
+  list stops at the error instead of throwing, and an arc or `Z` with no
+  current point starts one. `em` and `%` lengths read as plain numbers, as
+  three.js's `parseFloatWithUnits`. **Rive-only `loader.applyViewBox`**
+  (off by default, as three.js ignores viewBox) maps each `<svg>`'s
+  viewBox onto its width and height with `preserveAspectRatio`.
+
+## JSON: toJSON and ObjectLoader
+
+- **`toJSON()` returns a `Dynamic`** (a `rive/dynamic` table of three.js's
+  JSON shape, format 4.6), where three.js returns a plain object.
+  AnimaScript has a JSON parser but no writer, so **`THREE.JSON.stringify(
+  value, space = 0)`** writes the text (and `THREE.JSON.parse(text)` reads
+  it, `JSON.lastError` saying why it failed): `THREE.JSON.stringify(
+  scene.toJSON())` is three.js's `JSON.stringify(scene.toJSON())`. A table
+  with string keys is written as an object, any other as an array (an empty
+  one as `[]`; three.js leaves empty objects out). Non-finite numbers are
+  written `null`, as JavaScript.
+- `toJSON(meta)` takes a `JSONMeta` (the libraries three.js's `meta` object
+  holds: geometries, materials, textures, images, shapes, skeletons,
+  animations, nodes, keyed by uuid). Subclasses add their members through
+  internal hooks (`toJSONObject`, `toJSONProperties`, `toJSONParameters`,
+  `imageToJSON`) instead of overriding toJSON, so the shared resources are
+  in `meta` before the root collects them. `BufferGeometry.toJSON(meta)`
+  takes an optional meta (shape geometries put their shapes in it).
+  `AnimationClip.toJSON(clip)` / `KeyframeTrack.toJSON(track)` are static as
+  three.js; clips also have `toJSON()`; `AnimationClip.parse(json)` reads one.
+- Written as three.js r170 writes them: Object3D (and Mesh, InstancedMesh,
+  SkinnedMesh + Skeleton, Bone, Group, LOD, Line/LineLoop/LineSegments,
+  Points, Sprite, Scene with background, environment and fog, cameras,
+  every light with its shadow and target), materials (every property the
+  class has; colours as hex, maps as texture uuids; ShaderMaterial adds
+  `shader` and its entry points, the WGSL asset, beside `uniforms` and
+  `lights`), textures, curves and shapes, clips. Differences:
+  - The local matrix is brought up to date before it is written (three.js
+    writes it as last updated).
+  - Built-in geometries write their parameters (Box, Sphere, Plane,
+    Cylinder, Cone, Torus, TorusKnot, Circle, Ring, Capsule, Lathe,
+    Polyhedron and its presets, Shape, Extrude); `CapsuleGeometry` writes
+    both r170's `length` and r174's `height` (and reads either). Every other
+    geometry (Tube, Edges, Wireframe, Text, a transformed clone ...) is
+    written as data with type "BufferGeometry", so three.js reads it too.
+    Attributes are always "Float32Array" (they are f32 here), interleaved
+    ones de-interleaved; an index is "Uint16Array" when it fits.
+  - **Images**: Rive images cannot be read back, so a texture's image is
+    what its `source` (three.js's `Source`, here the record of where the
+    image came from) knows: `source.url` (a data: url, an https: url or the
+    Rive image asset name, set by TextureLoader, CubeTextureLoader and
+    ObjectLoader) or, for a DataTexture without one, its texels as
+    `{ data, width, height, type }`. A texture from a canvas, an artboard
+    or a render target has no image in the JSON. Image-backed textures
+    write `premultiplyAlpha: false` (the file is straight alpha to
+    three.js); here the flag means "the source is premultiplied", so
+    ObjectLoader sets it for images Rive decodes.
+  - Not written: BatchedMesh's batches (it loads as an Object3D), camera
+    `view` offsets (setViewOffset is ported, not written), `blendSrc` & co. and the other material
+    members this port does not have, `clippingPlanes` (as three.js).
+- **`ObjectLoader(context, manager)`**: `load(name)` reads the BlobAsset
+  `name` at once; `parse(json)` takes the text (a string) or a parsed
+  `Dynamic` (a generic method); `loadAsync(url)` fetches an https: url
+  (where the host allows the network; its relative images from beside it
+  or `resourcePath`) or reads the blob asset, and `parseAsync(json)` /
+  `loadAsync` resolve once every image has decoded. `parse` returns null on
+  failure, with `loader.error`; problems met on the way (unknown types,
+  missing references) are in `loader.warnings`. No callbacks.
+  `parseShapes`, `parseGeometries`, `parseMaterials`, `parseAnimations`,
+  `parseImages`, `parseTextures`, `parseObject`, `parseSkeletons`,
+  `bindSkeletons`, `bindLightTargets` keep their names and return `Map`s
+  by uuid (parseImages: `ObjectLoaderImage` records instead of Sources).
+- Images in a document: base64 **data: urls** decode through
+  `context.decodeImage` (the texture is a DataTexture filled a frame or so
+  later); other urls name a **Rive image asset** (the url as is, then its
+  file name without folders or extension: "textures/wood.png" -> "wood");
+  https: urls load with `loadAsync` only; `{ data }` images become
+  DataTextures. Cube textures read six image asset names. Without a
+  Context nothing decodes (a warning, an empty texture).
+- Geometries rebuild from their parameters by type (with pre-r125
+  `*BufferGeometry` names), through `X.fromJSON(data)` (and
+  `ShapeGeometry.fromJSON(data, shapes)`, `ExtrudeGeometry.fromJSON(data,
+  shapes)`, with `extrudePath`); TubeGeometry, TextGeometry and other
+  addon types are not rebuilt from parameters (data with any type is read
+  as a BufferGeometry). `BufferGeometryLoader` reads integer arrays as
+  floats, normalized ones scaled to [0, 1] / [-1, 1] (then `normalized` is
+  false), and interleaved buffers (`arrayBuffers` words) de-interleaved.
+  `MaterialLoader` makes every material class the project has (an unknown
+  type is a MeshBasicMaterial, with a warning); a ShaderMaterial needs
+  its WGSL `shader` in the file (GLSL `vertexShader` / `fragmentShader`
+  cannot run here: a warning). Both loaders also take a string or a
+  Dynamic, and load / loadAsync as ObjectLoader.
+- Object types the loader does not know (helpers, BatchedMesh) load as
+  Object3D with a warning, as three.js's default. A directional or spot
+  light whose target is not in the document gets a new Object3D, as
+  three.js. Meshes get `updateMorphTargets()`.
+- `THREE.JSON.stringify` writes an empty table as `[]`; `emptyObject()`
+  (`three/core/JSON`) makes a table written `{}` (it holds one key set to
+  null, which the writer skips), for JSON whose empty objects matter.
+
+## Exporters
+
+- **GLTFExporter** (`three/addons/exporters/GLTFExporter`, r170) has no
+  callbacks: **`parse(input, options)` returns a `GLTFExporterResult`**
+  at once (three.js's `parse(input, onDone, onError, options)`): `glb`
+  (the .glb bytes, an ArrayBuffer) with `binary`, else `json` (the .gltf
+  text, its buffer and images as base64 data: URIs); `gltf` is the
+  document as a Dynamic either way (three.js hands .gltf callers the JSON
+  object). `parseAsync` returns a Rive `Promise`, already settled. What
+  three.js throws or warns about (an image it cannot read, a morph target
+  name not found, CUBICSPLINE morph tracks to merge, ShaderMaterials) is
+  in `result.warnings`, the item left out.
+- `input` is an `Object3D` or an `Array<Object3D>` (a generic method);
+  `options` a `GLTFExporterOptions` (`{ binary: true, animations: [clip]
+  }` works), not changed by the call.
+- **Plugins are objects**: `register(plugin)` / `unregister(plugin)` take
+  a `GLTFExporterPlugin` subclass overriding the hooks it needs
+  (`beforeParse`, `writeNode`, `writeMesh`, `writeMaterial` for three.js's
+  `writeMaterialAsync`, `writeTexture`, `afterParse`), with `writer` set
+  to the parse's `GLTFWriter` (three.js registers `writer => plugin`
+  factories). The built-in extensions are plugins in
+  `exporter.pluginCallbacks`, in three.js's order. The writer is
+  synchronous: `processTexture`, `processMaterial`, `processMesh`,
+  `processNode` (three.js's `...Async`); `processAccessor(attribute,
+  geometry, start, count)` takes a float attribute and returns -1 for
+  three.js's null, indices go through `processIndexAccessor`;
+  `extensionsUsed` / `extensionsRequired` are `Map<string, bool>`.
+  `GLTFExporter.Utils` has `insertKeyframe` and `mergeMorphTargetTracks`
+  (`toFloat32BufferAttribute` is not needed: attributes are f32).
+- **Images are PNGs encoded by the exporter** (stored deflate blocks: not
+  compressed, so large) from the pixels a texture holds: a DataTexture in
+  RGBA8 (premultiplied ones are divided by alpha), which is what
+  GLTFLoader's textures are once their images have decoded. JPEG is never
+  written (`userData.mimeType` is ignored). A texture with no pixels whose
+  `source.url` is a base64 data: url is written from that url, in its own
+  format. Rive images, canvases, artboards, render targets and compressed
+  textures cannot be read back and are left out, with a warning (three.js
+  draws images into a canvas, and decompresses through
+  `setTextureUtils`, not ported). `maxTextureSize` scales larger images
+  down (nearest; three.js crops DataTextures). Separate metalness and
+  roughness maps are merged into one texture when both are RGBA8
+  DataTextures (nearest scaling), else the one there is written alone.
+- Attributes are f32 here, so accessors are FLOAT, except JOINTS_0
+  (UNSIGNED_SHORT) and indices (UNSIGNED_SHORT when every index fits,
+  else UNSIGNED_INT); KHR_mesh_quantization is never written. Node
+  matrices are written with f32 precision as short decimals. Morph tracks
+  may name targets by index (`morphTargetInfluences[1]`, as GLTFLoader
+  here names them) as well as by name. `_COLOR_0` of
+  EXT_mesh_gpu_instancing holds the `count` drawn instances' colours (as
+  the other instance attributes; three.js writes the whole attribute). A
+  .glb without binary data has no BIN chunk (three.js writes an empty
+  one).
 
 ## Shadows
 
@@ -589,8 +1038,114 @@ export class Demo extends Layout {
   replaces `pass.uniforms.name.value`.
 - `UnrealBloomPass` has no `bloomTintColors`; one shader holds its three
   stages, so every stage material carries all its uniforms.
-- Not ported: MaskPass/ClearMaskPass, SMAA, SSAO, BokehPass, the other
-  shader passes; `Uniform.clone()` is UniformsUtils.clone per uniform.
+- `Uniform.clone()` is UniformsUtils.clone per uniform.
+- The other passes (M12) are three.js r170's, with its constructors,
+  fields, defaults and `OUTPUT` values, and their shaders are
+  ShaderDefinitions, one file per three.js shader file in
+  `three/addons/shaders/` (SMAAShader, SSAOShader, SAOShader,
+  DepthLimitedBlurShader, GTAOShader, PoissonDenoiseShader, BokehShader,
+  AfterimageShader, FilmShader, DigitalGlitch, DotScreenShader,
+  HalftoneShader; LUTPass's, OutlinePass's and RenderPixelatedPass's stay in
+  their pass files, as three.js). What changes everywhere:
+  - **`defines` are uniforms or WGSL constants** (Rive pipelines take no
+    overridable constants); boolean and integer uniforms are numbers (0 or
+    1: FilmShader `grayscale`, DigitalGlitch `byp`, HalftoneShader
+    `greyscale` / `disable`); `PERSPECTIVE_CAMERA` is a `perspective`
+    uniform. three.js's uniform arrays are `Uniform<Float32Array>` (WGSL
+    `array<vec4<f32>, N>`).
+  - Depth is always a `DepthTexture` read with `textureLoad`, never
+    RGBA-packed (DepthLimitedBlur supports `DEPTH_PACKING` 0 only; GTAO and
+    the Poisson denoise read depth from x only, no `DEPTH_SWIZZLING`).
+  - A shader's textures share one sampler (the first texture's): textures
+    that need another filter or wrapping are read with `textureLoad` and
+    wrapped by hand (noise textures, SMAA's search texture, the glitch
+    heightmap). SSAODepthShader and GTAODepthShader have an unused
+    `tDiffuse` so their sampler pairs with a colour texture.
+  - New HalfFloat targets start undefined (WebGL zero-fills them), so
+    passes that keep history clear it first (AfterimagePass, SMAA's stages).
+  - `OutputPass` clamps alpha to 1 before un-premultiplying: additive passes
+    that sum alpha (a bloom mix, the bloom blend) no longer brighten the
+    result (three.js ignores alpha there).
+- **SMAAPass(width, height)**: three.js's SMAA 1x stages in its GL texture
+  coordinates; `SMAA_THRESHOLD` and the search and area constants are WGSL
+  constants. The area and search textures are three.js's texels, stored in
+  `SMAATextures.as` as zlib-compressed bytes (RG8 and R8 DataTextures,
+  `flipY` false) and inflated when the pass is made (decoding three.js's
+  PNGs takes longer than a script call's budget). `round` rounds halves away
+  from zero, as GLSL on GPUs.
+- **SSAARenderPass(scene, camera, clearColor, clearAlpha)**: `clearColor`
+  is a hex number; `sampleLevel` (0 to 5, default 4: 16 renders a frame),
+  `unbiased`, jitter by `camera.setViewOffset` (an earlier view offset is
+  restored), additive accumulation into HalfFloat targets; `stencilBuffer`
+  is ignored. Each sample is a full render, shadow maps included.
+  **TAARenderPass** as three.js (`accumulate`, `accumulateIndex`,
+  2^`sampleLevel` of 32 samples a frame); as the last pass its accumulating
+  path renders to the screen, and `setSize` restarts accumulation.
+- **SSAOPass, SAOPass, GTAOPass**: as three.js, a MeshNormalMaterial
+  prepass into a HalfFloatType target with a DepthTexture (points and lines
+  hidden for SSAO and GTAO), and the occlusion multiplied onto the read
+  buffer (put a RenderPass first; three.js's CustomBlending DstColor copies
+  are MultiplyBlending). The camera's projection, near and far are re-read
+  every render. SSAO's `kernelSize` is at most 32, DepthLimitedBlur's
+  `kernelRadius` 64 (`saoBlurRadius` is clamped), Poisson denoise `samples`
+  32; `generatePdSamplePointInitializer` returns the sample floats (the
+  `poissonDisk` uniform) instead of GLSL. SimplexNoise is not ported: the
+  rotation and denoise noise textures are uniform random values (random
+  noise either way). `SAOPass.params` is a typed `SAOPassParams`;
+  `updateGtaoMaterial(GTAOParameters)` and
+  `updatePdMaterial(PoissonDenoiseParameters)` take typed objects where NaN
+  (or -1 for `samples`) means "leave as is"; GTAO's constructor
+  `parameters` is a `GTAOPassParameters`. `GTAOPass.setGBuffer(depth,
+  normals)` takes a DepthTexture and optional packed view normals (an
+  attachment of a multiple render target works); without normals they are
+  rebuilt from depth.
+- **OutlinePass(resolution, scene, camera, selectedObjects)**: three.js's
+  stages and parameters (`visibleEdgeColor`, `hiddenEdgeColor`,
+  `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`,
+  `usePatternTexture` / `patternTexture`, `downSampleRatio`). The other
+  objects' depth is a DepthTexture read at the mask's own pixel
+  (`textureMatrix` unused); selected meshes are drawn instanced but not
+  skinned or morphed; the pulse follows the accumulated `deltaTime`; the
+  overlay's additive blend is done in the shader.
+- **BokehPass(scene, camera, params)**: a `BokehPassParameters` (focus 1,
+  aperture 0.025, maxblur 1); depth from a MeshDepthMaterial render whose
+  DepthTexture the shader reads. **AfterimagePass(damp)**,
+  **FilmPass(intensity, grayscale)**, **DotScreenPass(center, angle,
+  scale)** (a null center is (0.5, 0.5)) and **GlitchPass(dt_size)**
+  (counts frames, as three.js; its heightmap is a float DataTexture) as
+  three.js. DotScreen thresholds colour, so tone mapping whitens it: put it
+  after the OutputPass.
+- **HalftonePass(width, height, params)** takes a `HalftonePassParameters`.
+  **LUTPass(params)** takes a `LUTPassParameters` (`lut`, a Data3DTexture
+  sampled as a `texture_3d`, and `intensity`); without the `texture3D`
+  feature, or while `lut` is null, it copies its input (three.js samples a
+  null LUT as black). **LUTCubeLoader / LUT3dlLoader**: `load(name)` reads
+  a BlobAsset, `loadAsync(url)` fetches, `parse(text)`, `setType`; they
+  return a `LUTCubeResult` (`title` "" where three.js has null, `size`,
+  `domainMin`, `domainMax`, `texture3D`) or a `LUT3dlResult`, or null with
+  `loader.error` on a malformed file (three.js throws).
+- **RenderPixelatedPass(pixelSize, scene, camera, options)** as three.js;
+  an explicit 0 in `RenderPixelatedPassOptions` stays 0 (three.js's `||`
+  turns it into the default). **TexturePass(map, opacity)** decodes what the
+  texture holds (sRGB, premultiplied, flipY) before drawing over the
+  composer's linear buffer (three.js lets the texture format decode sRGB).
+  **ClearPass(clearColor, clearAlpha)** takes a hex colour.
+- **MaskPass / ClearMaskPass are emulated without stencil** (stencil does
+  not survive Rive passes): MaskPass renders its scene in white into its own
+  `maskTarget` (`inverse` and `clear` as three.js), and while a mask is
+  active EffectComposer restores, outside the mask, what each pass changed,
+  with a shader that discards inside it: a swapping pass gets the read
+  buffer drawn back into its write buffer (three.js's NOTEQUAL copy), a
+  non-swapping pass (RenderPass, TexturePass, ClearPass) has its buffer
+  backed up first and restored. Passes rendering to the screen are not
+  masked (end with a copy, as the Effects example does); the mask is
+  binary; each masked pass costs one or two fullscreen draws.
+  `EffectComposer.maskActiveAfter(pass, active)` is three.js's `instanceof
+  MaskPass / ClearMaskPass` step.
+- **Selective bloom** works as three.js's example (a second composer with
+  `renderToScreen = false`, the other objects' materials swapped to black,
+  a mix ShaderPass): see the gallery's `examples/effects/effects.as` and
+  `examples/effects/bloom_mix.wgsl`.
 
 ## Cube maps and CubeCamera
 
@@ -631,6 +1186,109 @@ export class Demo extends Layout {
 
 ## Rive-only additions
 
+### 2D overlays (CSS2DRenderer / CSS3DRenderer)
+
+three.js's CSS renderers place DOM elements over the canvas; here Rive
+artboards are drawn over it by the script's 2D renderer, in
+`three/rive/ArtboardOverlay`:
+
+| three.js | ThreeAS |
+|---|---|
+| `CSS2DRenderer` / `CSS3DRenderer` | one `ArtboardOverlayRenderer` for both: `setSize`, `getSize`, `render(scene, camera)` places, `draw(renderer)` paints (from the script's `draw`, after `present`), `advance(seconds)`, `pointerDown/Move/Up/Exit(event)`; or set it as ThreeLayout's `overlay` |
+| `CSS2DObject(element)`, `center` | `Artboard2DObject(artboard)` (instanced unless `instance = false`), `center` the same; `screenScale` sizes it |
+| `CSS3DObject(element)` | `Artboard3DObject(artboard)`: one artboard unit per world unit in the object's XY plane |
+| `CSS3DSprite(element)` | `Artboard3DSprite(artboard)`, `rotation2D` for the screen-plane rotation |
+| `element.style.zIndex` by distance | `sortObjects` (near on top), `objects` lists them far to near |
+| `renderer.domElement` | none: the artboards draw into the layout |
+
+- **Rive's renderer draws affine 2D transforms only**, so an
+  Artboard3DObject seen in perspective is drawn with the affine map through
+  three of its projected corners (exact for orthographic cameras, close
+  for small or distant objects); one with a corner behind the camera is
+  hidden. CSS3D's perspective is exact.
+- **Occlusion (not in three.js)**: `occlude` on an object fades it to
+  `occludedOpacity` while a visible mesh lies between the camera and its
+  position (a raycast against `renderer.occluders`, the scene by default,
+  stopping `occlusionBias` short of the object, ending at the first hit
+  and skipping hidden subtrees; set `occluders` to a smaller group of big
+  meshes for crowded scenes). Rive scripts cannot read
+  the depth buffer back; for per-pixel depth, draw the artboard as an
+  ArtboardTexture on a Sprite instead.
+- Pointer events go to the topmost interactive object whose artboard bounds
+  contain the point, in its artboard's coordinates; a press an artboard
+  took keeps its moves and release. `opacity`, `interactive` and
+  `autoAdvance` (off when something else advances a shared instance) are
+  per object. Objects are placed from the last `render` (ThreeLayout
+  renders them in `advance`, so headless pointer tests hit them).
+
+### Data binding (SceneBindings)
+
+`three/rive/SceneBindings` binds scene properties to Rive view model
+properties, so a state machine, a timeline (through a bind written back
+with `direction="true"`), a listener, the host or the editor drives the
+scene, and the scene can write Rive UI:
+
+- `new SceneBindings(root, viewModel)`; `bind(property, path, direction =
+  BindBoth, scale = 1, offset = 0)` with a PropertyBinding path
+  ("Lamp.intensity", "Cube.position[y]", "Car.material.color",
+  "Lamp.visible", "Face.morphTargetInfluences[smile]" ...) or
+  "@action.field" for an action named with `addAction(name, action)`
+  (fields `weight`, `time`, `timeScale`, `paused`, `enabled`, `running`,
+  and the triggers `play`, `stop`); `bindAction(property, action, field)`,
+  `bindTarget(property, SceneBindingTarget)` for anything else (subclass
+  it: no closures), `unbind`, `setViewModel`, `errors` (what did not
+  resolve).
+- Directions: `BindToScene` (the view model drives), `BindToViewModel`
+  (the scene writes), `BindBoth` (whichever changed since the last
+  `update()` wins; the view model on the first). Numbers map as `scene =
+  viewModel x scale + offset`; colours convert sRGB to linear; booleans
+  are 0 / 1; a trigger fires the target (plays an action, toggles a
+  boolean). The view model property's own kind picks the conversion (a
+  number or boolean for one value, a colour for a colour path).
+- **A spec string**: `parse("lamp -> Lamp.intensity * 0.03; height <-
+  Crate.position[y]; tint <-> Car.material.color")` (`->` to the scene,
+  `<-` to the view model, `<->` or `=` both; lines or `;`; `#` comments).
+  `SceneBindings.fromViewModel(root, vm)` reads the view model's
+  `threeBindings` string (`BINDINGS_PROPERTY`) at the first update and
+  again when it changes, an action is added or `refresh()` is called:
+  edit the string in the Rive editor to rewire the scene without code.
+- Polling, not listeners: `update()` compares values each frame (ThreeLayout
+  calls it after `animate`). View model properties cannot be enumerated
+  from a script, so bindings name them.
+
+### Rive-driven animation
+
+`three/rive/RiveRig` retargets a Rive artboard's bones and nodes onto
+three.js objects:
+
+- `new RiveRig(artboard)` (an artboard input, instanced), `unitsPerPixel`
+  (0.01), `axis` (Rive's clockwise rotation about -Z in a y-up XY plane);
+  `map(name, object, mode)`, `mapSkeleton(skeleton, prefix)` (bones by
+  name), `mappingOf(object)`; per mapping `position` / `rotation` /
+  `scale` switches and `captureRest()`.
+- `RiveRig.RELATIVE` (default) applies the node's change from its pose
+  when mapped onto the object's own rest pose (a 3D skeleton modelled in
+  another pose follows the 2D rig's motion); `RiveRig.ABSOLUTE` copies
+  the local transform as `copyNodeTransform`.
+- `advance(seconds)` advances the artboard (its state machine, or a
+  timeline started with `play(name)`, looping with `loop`) and poses the
+  objects; `apply()` poses them as the artboard stands.
+- `bake(name, fps)` samples a timeline into a three.js `AnimationClip`
+  (position, quaternion and scale tracks named after the mapped objects),
+  to blend, cross-fade or play on copies with the mixer.
+- **Limits of Rive's scripting API**: nodes and bones are found only by
+  name (`artboard.node(name)`; exported names) and cannot be listed or
+  typed (bone or node); a bone's length, a mesh's vertices and skin
+  weights, and a timeline's keyframes cannot be read (`bake` samples by
+  setting the time); a timeline played by hand is overridden by a default
+  state machine keying the same properties (give the rig artboard an empty
+  state machine, as RiveDrivenRig does); a script cannot reach the
+  artboard it is attached to, so the rig is an artboard input. Rive's
+  meshes and skins therefore cannot become three.js geometry: only the
+  bones' motion transfers.
+
+### Other
+
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
   texture. Call `texture.advance(seconds)` from the script's `advance`; it
   redraws only after a change. `texture.artboard` is the instance.
@@ -641,4 +1299,6 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-ObjectLoader, more post-processing passes (SMAA, SSAO, bokeh), 
+no milestone is open. Left from M14: publishing (`--publish=web`, the
+library to the Rive community) and a measured comparison with three.js in a
+browser (the method is in [PERFORMANCE.md](PERFORMANCE.md)).

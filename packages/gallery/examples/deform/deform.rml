@@ -1,0 +1,19 @@
+<Rive version="1" kind="fragment">
+    <!-- Deform: GPU skinning and morph targets (examples/deform/deform.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:907" clip="true" x="1800" y="2100" width="800" height="600" styleId="0:901" name="Deform" id="0:900">
+        <LayoutComponentStyle name="Artboard Style" id="0:901"/>
+        <LayoutComponent width="800" height="600" styleId="0:903" name="Root" id="0:902">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:903"/>
+            <ScriptedLayout scriptAssetId="0:197" name="Scene" id="0:904"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:907">
+            <StateMachineLayer name="Layer 1" id="0:908">
+                <AnyState x="0" y="-120" id="0:2729"/>
+                <ExitState x="120" y="-120" id="0:2730"/>
+                <EntryState id="0:2731"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/deform/deform.as" name="deform" id="0:197" codeFileId="0:44722"/>
+</Rive>

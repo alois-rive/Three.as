@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Animation: subclips and additive blending, GPU morph targets,
+         instanced morphs, a 320-bone skeleton (examples/animation/animation.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:3607" clip="true" x="0" y="7000" width="800" height="600" styleId="0:3601" name="Animation" id="0:3600">
+        <LayoutComponentStyle name="Artboard Style" id="0:3601"/>
+        <LayoutComponent width="800" height="600" styleId="0:3603" name="Root" id="0:3602">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:3603"/>
+            <ScriptedLayout scriptAssetId="0:3690" name="Scene" id="0:3604"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:3607">
+            <StateMachineLayer name="Layer 1" id="0:3608">
+                <AnyState x="0" y="-120" id="0:3609"/>
+                <ExitState x="120" y="-120" id="0:3610"/>
+                <EntryState id="0:3611"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/animation/animation.as" name="animation" id="0:3690" codeFileId="0:285045"/>
+</Rive>

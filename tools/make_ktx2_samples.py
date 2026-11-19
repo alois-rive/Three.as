@@ -1,11 +1,13 @@
-"""Writes examples/assets/checker_bc1.ktx2 (BC1/DXT1, sRGB, full mip chain
-down to 4x4) and examples/assets/checker_astc.ktx2 (ASTC 4x4, sRGB, one
+"""Writes checker_bc1.ktx2 (BC1/DXT1, sRGB, full mip chain
+down to 4x4) and checker_astc.ktx2 (ASTC 4x4, sRGB, one
 level of constant-colour "void extent" blocks): a 64 x 64 coloured checker
 for KTX2Loader. Pure Python, no dependencies.
 
     python3 tools/make_ktx2_samples.py
 """
 import os, struct
+
+import sample_paths
 
 SIZE = 64
 
@@ -90,7 +92,7 @@ def ktx2(path, vk_format, levels, size):
         out += b"\0" * (o - len(out)) + lv
     open(path, "wb").write(out)
 
-out = os.path.join(os.path.dirname(__file__), "..", "examples", "assets")
+out = os.path.dirname(sample_paths.path("checker_bc1.ktx2.zlib"))
 px = image(SIZE)
 chain, cur = [], px
 while True:
@@ -100,4 +102,15 @@ while True:
     cur = half(cur)
 ktx2(os.path.join(out, "checker_bc1.ktx2"), 132, chain, SIZE)          # VK_FORMAT_BC1_RGB_SRGB_BLOCK
 ktx2(os.path.join(out, "checker_astc.ktx2"), 158, [astc_void(px)], SIZE)   # VK_FORMAT_ASTC_4x4_SRGB_BLOCK
-print("wrote checker_bc1.ktx2 (%d levels) and checker_astc.ktx2" % len(chain))
+# Shipped zlib-compressed (.ktx2.zlib; the Textures example and the tests
+# inflate them with fflate's unzlibSync): `rive push` rejects KTX2 content in
+# blob assets with HTTP 400.
+import zlib
+for name in ("checker_bc1", "checker_astc"):
+    path = os.path.join(out, name + ".ktx2")
+    data = open(path, "rb").read()
+    open(path + ".zlib", "wb").write(zlib.compress(data, 9))
+    os.remove(path)
+    sample_paths.copy(name + ".ktx2.zlib")
+print("wrote %s (%d levels) and %s" % (sample_paths.rel("checker_bc1.ktx2.zlib"), len(chain),
+                                      sample_paths.rel("checker_astc.ktx2.zlib")))

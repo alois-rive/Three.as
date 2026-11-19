@@ -1,0 +1,94 @@
+; FBX 7.4.0 project file
+; Written by tools/make_fbx_samples.py
+; ---------------------
+
+FBXHeaderExtension:  {
+	FBXHeaderVersion: 1003
+	FBXVersion: 7400
+	Creator: "tools/make_fbx_samples.py"
+}
+
+GlobalSettings:  {
+	Version: 1000
+	Properties70:  {
+		P: "UpAxis", "int", "Integer", "",1
+		P: "UnitScaleFactor", "double", "Number", "",1
+		P: "AmbientColor", "ColorRGB", "Color", "",0,0,0
+	}
+}
+
+Objects:  {
+	Model: 20, "Model::Parent", "Null" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,3
+		}
+		Shading: T
+		Culling: "CullingOff"
+	}
+	Model: 21, "Model::Plane", "Mesh" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",1,0,0
+			P: "Lcl Scaling", "Lcl Scaling", "", "A",2,2,2
+		}
+		Shading: T
+		Culling: "CullingOff"
+	}
+	Geometry: 22, "Geometry::PlaneGeo", "Mesh" {
+		Vertices: *15 {
+			a: 0,0,0,1,0,0,1,1,0,0,1,0,2,0,0
+		} 
+		PolygonVertexIndex: *7 {
+			a: 0,1,2,-4,1,4,-3
+		} 
+		GeometryVersion: 124
+		LayerElementNormal: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByPolygon"
+			ReferenceInformationType: "Direct"
+			Normals: *6 {
+				a: 0,0,1,0,0,1
+			} 
+		}
+		LayerElementUV: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "ByVertice"
+			ReferenceInformationType: "Direct"
+			UV: *10 {
+				a: 0,0,1,0,1,1,0,1,1,0
+			} 
+		}
+	}
+	Material: 23, "Material::Matte", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.5,0.5,0.5
+		}
+	}
+	Video: 24, "Video::dots", "Clip" {
+		Type: "Clip"
+		Filename: "dots.png"
+		RelativeFilename: "dots.png"
+		Content: , 
+			"iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAHElEQVR4nGN4dsLmPwhr2CwAYwYMARgDJoEhAAAwrydhYFooHQAAAABJRU5ErkJggg=="
+	}
+	Texture: 25, "Texture::Dots", "" {
+		Type: "TextureVideoClip"
+		FileName: "dots.png"
+		RelativeFilename: "dots.png"
+	}
+}
+
+Connections:  {
+	C: "OO",20,0
+	C: "OO",21,20
+	C: "OO",22,21
+	C: "OO",23,21
+	C: "OO",24,25
+	C: "OP",25,23,"DiffuseColor"
+}
+
