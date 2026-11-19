@@ -25,7 +25,8 @@
 #     works while the engine pushes to the UAT library file.
 #  3. Gallery (UAT): `rive library update --uat` (newest engine version into
 #     threeas.rml, rive.yaml and .libraries/), verify, `rive push --uat` to
-#     its file (38626), then `--publish=web` to the threeas page, from a copy
+#     its file (38626), then `--publish=web --uat` to the threeas page of the
+#     UAT Rive workspace (41013), from a copy
 #     without the library override, so the page runs the published engine.
 #
 # Afterwards commit what changed: packages/gallery/{threeas.rml,rive.yaml,
@@ -33,6 +34,9 @@
 # packages/threeas/bindings/prod.yaml. Needs `rive login` on each
 # environment used (`rive login --uat` for UAT).
 set -euo pipefail
+
+UAT_PAGES_WORKSPACE=41013   # UAT "Rive" workspace: https://threeas-inksqd.uat.rive.to
+PAGES_NAME=threeas
 cd "$(dirname "$0")/.."
 
 ENGINE=packages/threeas
@@ -154,7 +158,10 @@ if [ "$gallery" = 1 ]; then
     else
         grep -v '^ *override:' "$GALLERY/rive.yaml" > "$WORK/gallery/rive.yaml"
     fi
-    run rive "$WORK/gallery" --publish=web
+    # The gallery is a UAT file: its page goes to the UAT workspace. (The
+    # pages: binding in its rive.yaml is the older production page, which is
+    # only republished by hand.)
+    run rive "$WORK/gallery" --publish=web --uat --workspace="$UAT_PAGES_WORKSPACE" --name="$PAGES_NAME"
 fi
 
 echo "done. Commit packages/gallery/{threeas.rml,rive.yaml,.libraries} (and packages/threeas/bindings/ after a first production publish)."
