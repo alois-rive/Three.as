@@ -19,9 +19,9 @@
 // anisotropy, dispersion; KHR_texture_transform), embedded PNG/JPEG/WebP
 // textures (EXT_texture_webp) and samplers, skins, animations (LINEAR, STEP,
 // CUBICSPLINE), cameras, KHR_lights_punctual, KHR_mesh_quantization,
-// EXT_mesh_gpu_instancing and EXT_meshopt_compression (setMeshoptDecoder).
-// Not read: external files, Draco, KTX2 / Basis textures,
-// KHR_materials_variants.
+// EXT_mesh_gpu_instancing, EXT_meshopt_compression (setMeshoptDecoder) and
+// KHR_draco_mesh_compression (setDRACOLoader).
+// Not read: KTX2 / Basis textures, KHR_materials_variants.
 
 import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { parseJson } from "rive/json";
@@ -33,13 +33,14 @@ import { LoaderUtils } from "../../loaders/LoaderUtils";
 import { fetchBytes } from "../../loaders/FileLoader";
 import { Dynamic } from "rive/dynamic";
 import { MeshoptDecoderModule, MeshoptDecoder } from "../libs/meshopt_decoder";
+import { DRACOLoader, DRACOTaskConfig, DRACOGeometryData, decodeDracoGeometry } from "./DRACOLoader";
 import { InstancedMesh } from "../../objects/InstancedMesh";
 import { Vector3 } from "../../math/Vector3";
 import { Quaternion } from "../../math/Quaternion";
 import { Color } from "../../math/Color";
 import { Object3D } from "../../core/Object3D";
 import { BufferGeometry } from "../../core/BufferGeometry";
-import { BufferAttribute } from "../../core/BufferAttribute";
+import { BufferAttribute, Uint32BufferAttribute } from "../../core/BufferAttribute";
 import { Group } from "../../objects/Group";
 import { Mesh } from "../../objects/Mesh";
 import { SkinnedMesh } from "../../objects/SkinnedMesh";
@@ -120,13 +121,14 @@ const SUPPORTED_EXTENSIONS: StaticArray<string> = [
     "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_transmission", "KHR_materials_volume",
     "KHR_materials_iridescence", "KHR_materials_anisotropy", "KHR_materials_dispersion", "KHR_texture_transform",
     "KHR_lights_punctual", "KHR_mesh_quantization", "EXT_texture_webp", "EXT_mesh_gpu_instancing",
-    "EXT_meshopt_compression",
+    "EXT_meshopt_compression", "KHR_draco_mesh_compression",
 ];
 
 export class GLTFLoader extends Loader {
     // `context` loads blob assets, decodes images and logs; without one,
     // `parse` still builds the scene (images stay empty, errors go to `error`).
     meshoptDecoder: MeshoptDecoderModule? = null;
+    dracoLoader: DRACOLoader? = null;
     /// Why the last load or parse returned null, or a warning.
     error: string = "";
     /// Warnings of the last parse (unsupported features met).
@@ -140,6 +142,14 @@ export class GLTFLoader extends Loader {
     /// three/addons/libs/meshopt_decoder), as three.js.
     setMeshoptDecoder(decoder: MeshoptDecoderModule?): GLTFLoader {
         this.meshoptDecoder = decoder;
+        return this;
+    }
+
+    /// The DRACOLoader for KHR_draco_mesh_compression, as three.js. The
+    /// primitives decode with its decoder (in the decode job, for
+    /// loadAsync and parseAsync).
+    setDRACOLoader(dracoLoader: DRACOLoader?): GLTFLoader {
+        this.dracoLoader = dracoLoader;
         return this;
     }
 
@@ -169,6 +179,7 @@ export class GLTFLoader extends Loader {
     /// blob assets, see load).
     parse(data: ArrayBuffer): GLTF? {
         const gd = new GLTFData(data, this.meshoptDecoder);
+        gd.draco = this.dracoLoader != null;
         if (!gd.readContainer()) {
             this.error = gd.error;
             const context = this.context;
@@ -268,18 +279,18 @@ async function parseInJob(loader: GLTFLoader, data: ArrayBuffer, base: string): 
         const bytes = await externalFile(loader, uri, base);
         if (bytes != null) externalImages.set(i, Uint8Array.wrap(bytes!));
     }
-    const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null, externalBuffers, externalIndices);
+    const draco = loader.dracoLoader != null;
+    const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null, externalBuffers, externalIndices, draco);
     const decoded = await job.promise();
     if (decoded.error.length > 0) {
         loader.error = decoded.error;
         return await Promise.reject<GLTF>(decoded.error);
     }
     const gd = new GLTFData(data, loader.meshoptDecoder);
+    gd.draco = draco;
     for (let i = 0; i < externalIndices.length; i++) gd.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
     gd.externalImages = externalImages;
-    gd.decoded = decoded.floats;
-    gd.decodedOffsets = decoded.offsets;
-    gd.decodedLengths = decoded.lengths;
+    gd.setDecoded(decoded);
     const gltf = loader.parseData(gd);
     if (gltf == null) return await Promise.reject<GLTF>(loader.error);
     return gltf!;
@@ -351,11 +362,58 @@ export class GLTFData {
     decoded: Float32Array? = null;
     decodedOffsets: Int32Array? = null;
     decodedLengths: Int32Array? = null;
+    /// Decode KHR_draco_mesh_compression primitives (a DRACOLoader is set).
+    draco: bool = false;
+    /// Draco primitives decoded (ahead by a job, or on first use), by
+    /// bufferView.
+    dracoDecoded: Map<i32, DRACOGeometryData> = new Map<i32, DRACOGeometryData>();
 
     constructor(data: ArrayBuffer, meshoptDecoder: MeshoptDecoderModule? = null) {
         this.data = data;
         this.bytes = Uint8Array.wrap(data);
         this.meshoptDecoder = meshoptDecoder;
+    }
+
+    /// Takes what decodeGLTF decoded.
+    setDecoded(decoded: GLTFDecoded): void {
+        this.decoded = decoded.floats;
+        this.decodedOffsets = decoded.offsets;
+        this.decodedLengths = decoded.lengths;
+        for (let i = 0; i < decoded.dracoViews.length; i++) this.dracoDecoded.set(decoded.dracoViews[i], decoded.dracoData[i]);
+    }
+
+    /// The primitive's KHR_draco_mesh_compression geometry, by glTF
+    /// attribute name (GLTFDracoMeshCompressionExtension.decodePrimitive);
+    /// null without the extension, or without a DRACOLoader and not
+    /// decoded ahead.
+    dracoPrimitive(prim: Dynamic?): DRACOGeometryData? {
+        const ext = dget(dget(prim, "extensions"), "KHR_draco_mesh_compression");
+        if (ext == null) return null;
+        const bufferView = <i32>num(ext, "bufferView", -1);
+        if (this.dracoDecoded.has(bufferView)) return this.dracoDecoded.get(bufferView);
+        if (!this.draco) return null;
+        const config = new DRACOTaskConfig();
+        config.useUniqueIDs = true;
+        const dracoAttributes = dget(ext, "attributes");
+        const attributes = dget(prim, "attributes");
+        const accessors = arr(this.json, "accessors");
+        const map = Dynamic.asMapOrNull(dracoAttributes);
+        if (map != null) {
+            const names = map.keys();
+            for (let i = 0; i < names.length; i++) {
+                const name = names[i];
+                config.attributeNames.push(name);
+                config.attributeIDs.push(<i32>num(dracoAttributes, name, -1));
+                const accessor = <i32>num(attributes, name, -1);
+                const def = accessor >= 0 && accessor < accessors.length ? accessors[accessor] : null;
+                config.attributeTypes.push(typedArrayName(<i32>num(def, "componentType", 5126)));
+                config.attributeNormalized.push(dbool(dget(def, "normalized")));
+            }
+        }
+        const view = this.viewBytes(bufferView);
+        const data = decodeDracoGeometry(view.slice().buffer, config);
+        this.dracoDecoded.set(bufferView, data);
+        return data;
     }
 
     /// Accessor `index` as floats, decoded ahead or now.
@@ -532,14 +590,20 @@ export class GLTFDecoded {
     floats: Float32Array = new Float32Array(0);
     offsets: Int32Array = new Int32Array(0);
     lengths: Int32Array = new Int32Array(0);
+    /// KHR_draco_mesh_compression primitives, decoded: dracoData[i] is the
+    /// primitive whose compressed data is bufferView dracoViews[i].
+    dracoViews: Array<i32> = [];
+    dracoData: Array<DRACOGeometryData> = [];
 }
 
 /// The job behind loadAsync / parseAsync: parses the container, decodes
-/// meshopt views and every accessor, off the main lane.
+/// meshopt views, every accessor and, with `draco`, every Draco-compressed
+/// primitive, off the main lane.
 @job export function decodeGLTF(data: ArrayBuffer, meshopt: bool, externalBuffers: Array<ArrayBuffer>,
-                                externalIndices: Array<i32>): GLTFDecoded {
+                                externalIndices: Array<i32>, draco: bool): GLTFDecoded {
     const out = new GLTFDecoded();
     const gd = new GLTFData(data, meshopt ? MeshoptDecoder : null);
+    gd.draco = draco;
     for (let i = 0; i < externalIndices.length && i < externalBuffers.length; i++) {
         gd.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
     }
@@ -552,7 +616,10 @@ export class GLTFDecoded {
     const parts: Array<Float32Array> = [];
     let total = 0;
     for (let i = 0; i < n; i++) {
-        const f = gd.floats(i);
+        // Accessors without data (Draco primitives' own) are left to the
+        // main lane, which only reads them as a fallback.
+        const f = dget(accessors[i], "bufferView") == null && dget(accessors[i], "sparse") == null
+            ? new Float32Array(0) : gd.floats(i);
         parts.push(f);
         total += f.length;
     }
@@ -561,10 +628,27 @@ export class GLTFDecoded {
     out.lengths = new Int32Array(n);
     let at = 0;
     for (let i = 0; i < n; i++) {
+        const empty = parts[i].length == 0 && dget(accessors[i], "bufferView") == null;
         out.floats.set(parts[i], at);
-        out.offsets[i] = at;
+        out.offsets[i] = empty ? -1 : at;
         out.lengths[i] = parts[i].length;
         at += parts[i].length;
+    }
+    if (draco) {
+        const meshes = arr(gd.json, "meshes");
+        for (let m = 0; m < meshes.length; m++) {
+            const primitives = arr(meshes[m], "primitives");
+            for (let p = 0; p < primitives.length; p++) {
+                const ext = dget(dget(primitives[p], "extensions"), "KHR_draco_mesh_compression");
+                if (ext == null) continue;
+                const view = <i32>num(ext, "bufferView", -1);
+                if (out.dracoViews.includes(view)) continue;
+                const decoded = gd.dracoPrimitive(primitives[p]);
+                if (decoded == null) continue;
+                out.dracoViews.push(view);
+                out.dracoData.push(decoded);
+            }
+        }
     }
     return out;
 }
@@ -629,6 +713,10 @@ class GLTFParser {
             }
             if (name == "EXT_meshopt_compression" && gd.meshoptDecoder == null && gd.decoded == null) {
                 this.error = "setMeshoptDecoder must be called before loading compressed files";
+                return null;
+            }
+            if (name == "KHR_draco_mesh_compression" && !gd.draco && gd.dracoDecoded.size == 0) {
+                this.error = "No DRACOLoader instance provided.";
                 return null;
             }
         }
@@ -903,32 +991,65 @@ class GLTFParser {
         return out;
     }
 
+    /// A primitive attribute's values: from its Draco geometry when it has
+    /// one there, else from its accessor; null when the primitive has none.
+    private attributeFloats(attrs: Dynamic?, name: string, draco: DRACOGeometryData?): Float32Array? {
+        if (draco != null) {
+            const k = draco.names.indexOf(name);
+            if (k >= 0) return draco.arrays[k];
+        }
+        const accessor = <i32>num(attrs, name, -1);
+        return accessor >= 0 ? this.floats(accessor) : null;
+    }
+
     private buildGeometry(prim: Dynamic?, mode: i32): BufferGeometry? {
         const attrs = dget(prim, "attributes");
-        const position = <i32>num(attrs, "POSITION", -1);
-        if (position < 0) return null;
+        // KHR_draco_mesh_compression: attributes and indices from the
+        // compressed data (others, and morph targets, from accessors).
+        let draco: DRACOGeometryData? = null;
+        if (dget(dget(prim, "extensions"), "KHR_draco_mesh_compression") != null) {
+            draco = this.gd.dracoPrimitive(prim);
+            if (draco != null && draco.error.length > 0) {
+                this.warn("KHR_draco_mesh_compression: " + draco.error);
+                return null;
+            }
+        }
+        const positions = this.attributeFloats(attrs, "POSITION", draco);
+        if (positions == null) return null;
         const g = new BufferGeometry();
-        g.setAttribute("position", new BufferAttribute(this.floats(position), 3));
-        const normal = <i32>num(attrs, "NORMAL", -1);
-        if (normal >= 0) g.setAttribute("normal", new BufferAttribute(this.floats(normal), 3));
-        const uv = <i32>num(attrs, "TEXCOORD_0", -1);
-        if (uv >= 0) g.setAttribute("uv", new BufferAttribute(this.floats(uv), 2));
-        const uv1 = <i32>num(attrs, "TEXCOORD_1", -1);
-        if (uv1 >= 0) g.setAttribute("uv1", new BufferAttribute(this.floats(uv1), 2));
-        const color = <i32>num(attrs, "COLOR_0", -1);
-        if (color >= 0) {
-            const c = this.floats(color);
+        g.setAttribute("position", new BufferAttribute(positions, 3));
+        const normals = this.attributeFloats(attrs, "NORMAL", draco);
+        if (normals != null) g.setAttribute("normal", new BufferAttribute(normals, 3));
+        const uvs = this.attributeFloats(attrs, "TEXCOORD_0", draco);
+        if (uvs != null) g.setAttribute("uv", new BufferAttribute(uvs, 2));
+        const uvs1 = this.attributeFloats(attrs, "TEXCOORD_1", draco);
+        if (uvs1 != null) g.setAttribute("uv1", new BufferAttribute(uvs1, 2));
+        const c = this.attributeFloats(attrs, "COLOR_0", draco);
+        if (c != null) {
             const count = g.getAttribute("position")!.count;
             g.setAttribute("color", new BufferAttribute(c, count > 0 ? c.length / count : 3));
         }
-        const joints = <i32>num(attrs, "JOINTS_0", -1);
-        const weights = <i32>num(attrs, "WEIGHTS_0", -1);
-        if (joints >= 0 && weights >= 0) {
-            g.setAttribute("skinIndex", new BufferAttribute(this.floats(joints), 4));
-            g.setAttribute("skinWeight", new BufferAttribute(this.floats(weights), 4));
+        const joints = this.attributeFloats(attrs, "JOINTS_0", draco);
+        const weights = this.attributeFloats(attrs, "WEIGHTS_0", draco);
+        if (joints != null && weights != null) {
+            g.setAttribute("skinIndex", new BufferAttribute(joints, 4));
+            g.setAttribute("skinWeight", new BufferAttribute(weights, 4));
         }
-        const indices = <i32>num(prim, "indices", -1);
-        let index: Array<i32>? = indices >= 0 ? this.ints(indices) : null;
+        let index: Array<i32>? = null;
+        if (draco != null && draco.hasIndex) {
+            if (mode == MODE_TRIANGLES) {
+                const ia = new Uint32BufferAttribute([]);
+                ia.array = draco.index;
+                g.setIndexAttribute(ia);
+            } else {
+                const di = draco.index;
+                index = new Array<i32>(di.length);
+                for (let i = 0; i < di.length; i++) index[i] = <i32>di[i];
+            }
+        } else {
+            const indices = <i32>num(prim, "indices", -1);
+            if (indices >= 0) index = this.ints(indices);
+        }
         if (mode == MODE_TRIANGLE_STRIP || mode == MODE_TRIANGLE_FAN) {
             index = toTriangles(index, g.getAttribute("position")!.count, mode == MODE_TRIANGLE_FAN);
         }
@@ -937,20 +1058,20 @@ class GLTFParser {
         // Morph targets: glTF targets are offsets.
         const targets = arr(prim, "targets");
         if (targets.length > 0) {
-            const positions: Array<BufferAttribute> = [];
-            const normals: Array<BufferAttribute> = [];
+            const morphPositions: Array<BufferAttribute> = [];
+            const morphNormals: Array<BufferAttribute> = [];
             const count = g.getAttribute("position")!.count;
             for (let t = 0; t < targets.length; t++) {
                 const tp = <i32>num(targets[t], "POSITION", -1);
-                positions.push(new BufferAttribute(tp >= 0 ? this.floats(tp) : new Float32Array(count * 3), 3));
+                morphPositions.push(new BufferAttribute(tp >= 0 ? this.floats(tp) : new Float32Array(count * 3), 3));
                 const tn = <i32>num(targets[t], "NORMAL", -1);
-                if (tn >= 0) normals.push(new BufferAttribute(this.floats(tn), 3));
+                if (tn >= 0) morphNormals.push(new BufferAttribute(this.floats(tn), 3));
             }
-            g.morphAttributes.set("position", positions);
-            if (normals.length == positions.length) g.morphAttributes.set("normal", normals);
+            g.morphAttributes.set("position", morphPositions);
+            if (morphNormals.length == morphPositions.length) g.morphAttributes.set("normal", morphNormals);
             g.morphTargetsRelative = true;
         }
-        if (normal < 0 && (mode == MODE_TRIANGLES || mode == MODE_TRIANGLE_STRIP || mode == MODE_TRIANGLE_FAN)) {
+        if (normals == null && (mode == MODE_TRIANGLES || mode == MODE_TRIANGLE_STRIP || mode == MODE_TRIANGLE_FAN)) {
             g.computeVertexNormals();
         }
         return g;
@@ -1391,6 +1512,16 @@ function componentSize(ct: i32): i32 {
     if (ct == 5120 || ct == 5121) return 1;
     if (ct == 5122 || ct == 5123) return 2;
     return 4;
+}
+
+/// WEBGL_COMPONENT_TYPES[componentType].name.
+function typedArrayName(ct: i32): string {
+    if (ct == 5120) return "Int8Array";
+    if (ct == 5121) return "Uint8Array";
+    if (ct == 5122) return "Int16Array";
+    if (ct == 5123) return "Uint16Array";
+    if (ct == 5125) return "Uint32Array";
+    return "Float32Array";
 }
 
 function u32At(b: Uint8Array, at: i32): u32 {
