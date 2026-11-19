@@ -22,6 +22,16 @@
 //
 // Override setup/animate/onResize (and onPointer* to react to the pointer)
 // rather than init/advance/resize/draw.
+//
+// Pointer events stay cheap in big scenes: world matrices are updated at
+// the first pointer event after each advance (not at every event), and
+// forwarding raycasts only the meshes and sprites that map an interactive
+// ArtboardTexture, then tests the scene in front of the nearest hit for
+// an occluder (see ArtboardPicker; nothing at all without an
+// ArtboardTexture). Moves at the same ray within a frame reuse the last
+// answer. A subclass that moves objects or changes materials in a pointer
+// hook (or anywhere outside advance) calls `invalidatePointer()` so the
+// next event sees the change.
 
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
@@ -30,15 +40,12 @@ import { GPURenderer } from "../renderers/GPURenderer";
 import { Scene } from "../scenes/Scene";
 import { Camera } from "../cameras/Camera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
-import { Raycaster, Intersection } from "../core/Raycaster";
-import { Object3D } from "../core/Object3D";
-import { Mesh } from "../objects/Mesh";
-import { Sprite } from "../objects/Sprite";
-import { Material } from "../materials/Material";
-import { MaterialUniforms, SLOT_MAP } from "../materials/MaterialUniforms";
+import { Raycaster } from "../core/Raycaster";
 import { Vector2 } from "../math/Vector2";
+import { Vector3 } from "../math/Vector3";
 import { Controls } from "../extras/Controls";
 import { ArtboardTexture } from "./ArtboardTexture";
+import { ArtboardPicker } from "./ArtboardPicker";
 import { ArtboardOverlayRenderer } from "./ArtboardOverlay";
 import { SceneBindings, BINDINGS_PROPERTY } from "./SceneBindings";
 
@@ -63,6 +70,9 @@ export abstract class ThreeLayout extends Layout {
     antialias: bool = true;
     /// Raycast pointer events into interactive ArtboardTextures.
     forwardToArtboards: bool = true;
+    /// Finds the ArtboardTexture under the pointer; set `picker.occluders`
+    /// to a group of the meshes that can hide them in a crowded scene.
+    picker: ArtboardPicker = new ArtboardPicker();
     /// Artboards drawn over the scene (CSS2DRenderer / CSS3DRenderer's
     /// counterpart): placed after each render, drawn over the canvas,
     /// advanced each frame, first to get the pointer.
@@ -75,8 +85,15 @@ export abstract class ThreeLayout extends Layout {
 
     private hovered: ArtboardTexture? = null;
     private captured: ArtboardTexture? = null;
-    private uniforms: MaterialUniforms = new MaterialUniforms();
     private hitUv: Vector2 = new Vector2();
+    // Frames advanced; world matrices changed since the last pointer update.
+    private frame: i32 = 0;
+    private matricesStale: bool = true;
+    // The last pick: its frame (-1: none), ray and answer.
+    private pickFrame: i32 = -1;
+    private pickOrigin: Vector3 = new Vector3();
+    private pickDirection: Vector3 = new Vector3();
+    private pickTarget: ArtboardTexture? = null;
     // Presses that began inside the layout and have not ended.
     private pressed: i32 = 0;
     /// Seconds since the previous frame (the last advance).
@@ -124,6 +141,8 @@ export abstract class ThreeLayout extends Layout {
 
     override advance(seconds: f64): bool {
         this.delta = seconds;
+        this.invalidatePointer();
+        this.frame++;
         this.animate(seconds);
         const b = this.bindings;
         if (b != null) b.update();
@@ -182,7 +201,7 @@ export abstract class ThreeLayout extends Layout {
             this.onPointerDown(event);
             return;
         }
-        const t = this.artboardUnderPointer();
+        const t = this.artboardUnderPointer(true);
         if (t != null && t.pointerDown(this.hitUv, event.id)) {
             this.captured = t;
             event.hit();
@@ -194,6 +213,7 @@ export abstract class ThreeLayout extends Layout {
             }
             const c = this.controls;
             if (c != null && !claimed) c.pointerDown(event);
+            if (claimed) this.invalidatePointer();
         }
         this.onPointerDown(event);
     }
@@ -214,7 +234,7 @@ export abstract class ThreeLayout extends Layout {
                 return;
             }
         }
-        const t = this.artboardUnderPointer();
+        const t = this.artboardUnderPointer(false);
         const hovered = this.hovered;
         if (hovered != null && hovered !== t) hovered.pointerExit(this.hitUv, event.id);
         this.hovered = t;
@@ -229,6 +249,8 @@ export abstract class ThreeLayout extends Layout {
             }
             const c = this.controls;
             if (c != null && !claimed) c.pointerMove(event);
+            // A tool dragging an object moves it.
+            if (claimed) this.invalidatePointer();
         } else {
             event.hit();
         }
@@ -247,7 +269,7 @@ export abstract class ThreeLayout extends Layout {
             this.onPointerUp(event);
             return;
         }
-        const t = this.artboardUnderPointer();
+        const t = this.artboardUnderPointer(true);
         const captured = this.captured;
         if (captured != null) {
             captured.pointerUp(this.hitUv, event.id);
@@ -289,59 +311,54 @@ export abstract class ThreeLayout extends Layout {
     }
 
     /// Sets `pointer` (NDC) and aims the raycaster through it. World
-    /// matrices are refreshed first: pointer events can arrive before the
-    /// next render has updated them.
+    /// matrices are refreshed at the first event after an advance (or
+    /// after `invalidatePointer()`): pointer events can arrive before the
+    /// next render has updated them. The camera's are refreshed every time
+    /// (controls move it between events).
     setPointer(event: PointerEvent): void {
         const w = this.width > 0 ? this.width : 1, h = this.height > 0 ? this.height : 1;
         this.pointer.set(<f64>event.position.x / w * 2 - 1, -(<f64>event.position.y / h * 2 - 1));
-        this.scene.updateMatrixWorld();
+        if (this.matricesStale) {
+            this.matricesStale = false;
+            this.scene.updateMatrixWorld();
+        }
         this.raycaster.setFromCamera(this.pointer, this.camera);
     }
 
+    /// Makes the next pointer event update world matrices and look for
+    /// interactive ArtboardTextures again. Call it after moving objects,
+    /// adding or hiding them, or changing their materials outside `advance`
+    /// (in a pointer hook, say) when the next event in the same frame must
+    /// see it. ThreeLayout calls it every advance and while a tool drags.
+    invalidatePointer(): void {
+        this.matricesStale = true;
+        this.pickFrame = -1;
+        this.picker.invalidate();
+    }
+
     /// The nearest interactive ArtboardTexture hit by the raycaster (its hit
-    /// uv in hitUv), or null.
-    private artboardUnderPointer(): ArtboardTexture? {
+    /// uv in hitUv), or null. A move along the ray of the last pick in the
+    /// same frame reuses it (`exact` for presses and releases: never).
+    private artboardUnderPointer(exact: bool): ArtboardTexture? {
         if (!this.forwardToArtboards) return null;
-        const hits = this.raycaster.intersectObject(this.scene, true);
-        for (let i = 0; i < hits.length; i++) {
-            const hit = hits[i];
-            if (!visible(hit.object)) continue;
-            const uv = hit.uv;
-            const material = materialOf(hit);
-            if (material == null || uv == null) return null;   // something opaque in front
-            material.fillUniforms(this.uniforms);
-            const map = this.uniforms.textures[SLOT_MAP];
-            if (map != null && map instanceof ArtboardTexture && (map as ArtboardTexture).interactive) {
-                const t = map as ArtboardTexture;
-                // The map's offset and repeat, as the shader applies them.
-                this.hitUv.set(uv.x * t.repeat.x + t.offset.x, uv.y * t.repeat.y + t.offset.y);
-                return t;
+        const ray = this.raycaster.ray;
+        if (!exact && this.pickFrame == this.frame && ray.origin.equals(this.pickOrigin)
+                && ray.direction.equals(this.pickDirection)) {
+            return this.pickTarget;
+        }
+        const picker = this.picker;
+        let t: ArtboardTexture? = null;
+        if (picker.pick(this.scene, this.raycaster)) {
+            const map = picker.texture;
+            if (map != null && map instanceof ArtboardTexture) {
+                t = map as ArtboardTexture;
+                this.hitUv.copy(picker.uv);
             }
-            return null;
         }
-        return null;
+        this.pickFrame = this.frame;
+        this.pickOrigin.copy(ray.origin);
+        this.pickDirection.copy(ray.direction);
+        this.pickTarget = t;
+        return t;
     }
-}
-
-function visible(o: Object3D): bool {
-    let p: Object3D? = o;
-    while (p != null) {
-        if (!p.visible) return false;
-        p = p.parent;
-    }
-    return true;
-}
-
-function materialOf(hit: Intersection): Material? {
-    const o = hit.object;
-    if (o instanceof Mesh) {
-        const mesh = o as Mesh;
-        const face = hit.face;
-        if (mesh.materials.length > 0 && face != null && face.materialIndex < mesh.materials.length) {
-            return mesh.materials[face.materialIndex];
-        }
-        return mesh.material;
-    }
-    if (o instanceof Sprite) return (o as Sprite).material;
-    return null;
 }

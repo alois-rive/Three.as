@@ -56,6 +56,14 @@ export class Demo extends THREE.ThreeLayout {
 }
 ```
 
+A ThreeLayout forwards pointer events to the interactive ArtboardTextures
+under the pointer. It stays cheap in big scenes: it raycasts only the
+meshes that show one, then checks for an occluder in front (`layout.picker`,
+an `ArtboardPicker`; set `picker.occluders` to narrow that), updates world
+matrices once a frame (call `invalidatePointer()` after moving objects in a
+pointer hook), and raycasts of big geometries go through a bounding volume
+hierarchy built in a job (`GeometryBVH`).
+
 ## Two projects
 
 The repository holds two Rive CLI projects (each a directory with its own

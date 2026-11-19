@@ -19,8 +19,9 @@
 // - Artboard3DSprite: an Artboard3DObject facing the camera (CSS3DSprite).
 //
 // Occlusion (Rive-only): with `occlude`, an object fades to
-// `occludedOpacity` when a mesh lies between the camera and its position
-// (a raycast against `renderer.occluders`, the scene by default). For
+// `occludedOpacity` when a mesh or sprite lies between the camera and its
+// position (a raycast against `renderer.occluders`, the scene by default;
+// points and lines do not occlude). For
 // per-pixel depth, draw the artboard as an ArtboardTexture on a Sprite
 // instead.
 
@@ -31,9 +32,10 @@ import { Vector } from "rive/vector";
 import { PointerEvent } from "rive/events";
 import { Object3D } from "../core/Object3D";
 import { Camera } from "../cameras/Camera";
-import { Raycaster, Intersection } from "../core/Raycaster";
+import { Raycaster } from "../core/Raycaster";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
+import { ArtboardPicker } from "./ArtboardPicker";
 
 /// Base of the overlay objects: an Object3D carrying an artboard instance.
 export class ArtboardObject extends Object3D {
@@ -157,7 +159,6 @@ export class ArtboardOverlayRenderer {
     private captured: ArtboardObject? = null;
     private hovered: ArtboardObject? = null;
     private raycaster: Raycaster = new Raycaster();
-    private hits: Array<Intersection> = [];
 
     setSize(width: f64, height: f64): void {
         this.width = width;
@@ -337,31 +338,9 @@ export class ArtboardOverlayRenderer {
         const r = this.raycaster;
         r.set(_cameraPos, _dir);
         r.far = Math.max(0, distance - this.occlusionBias);
-        if (!isVisible(occluders)) return false;
-        return this.anyHit(occluders);
-    }
-
-    /// Whether the ray hits a visible object of `o`'s subtree: the
-    /// raycaster's walk, stopping at the first hit, without sorting, and
-    /// skipping hidden subtrees (their hits would not count).
-    private anyHit(o: Object3D): bool {
-        const r = this.raycaster;
-        let propagate = true;
-        if (o.layers.test(r.layers)) {
-            const hits = this.hits;
-            hits.length = 0;
-            propagate = o.raycast(r, hits);
-            for (let i = 0; i < hits.length; i++) {
-                if (isVisible(hits[i].object)) return true;
-            }
-        }
-        if (!propagate) return false;
-        const children = o.children;
-        for (let i = 0; i < children.length; i++) {
-            const c = children[i];
-            if (c.visible && this.anyHit(c)) return true;
-        }
-        return false;
+        // A visible mesh or sprite in front, the walk ending at its first
+        // hit (each mesh's at its first triangle).
+        return ArtboardPicker.occluded(occluders, r);
     }
 }
 
@@ -384,15 +363,6 @@ function collect(o: Object3D, camera: Camera, out: Array<ArtboardObject>): void 
     if (o instanceof ArtboardObject && o.layers.test(camera.layers)) out.push(o as ArtboardObject);
     const children = o.children;
     for (let i = 0; i < children.length; i++) collect(children[i], camera, out);
-}
-
-function isVisible(o: Object3D): bool {
-    let p: Object3D? = o;
-    while (p != null) {
-        if (!p.visible) return false;
-        p = p.parent;
-    }
-    return true;
 }
 
 function byDistance(a: ArtboardObject, b: ArtboardObject): i32 {
