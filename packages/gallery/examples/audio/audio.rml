@@ -36,8 +36,8 @@
         </StateMachine>
     </Artboard>
 
-    <ScriptAsset file="examples/audio/audio.as" name="audio" id="0:4290"/>
-    <ScriptAsset file="examples/audio/audio_check.as" name="audio_check" id="0:4296"/>
+    <ScriptAsset file="examples/audio/audio.as" name="audio" id="0:4290" codeFileId="0:3511486"/>
+    <ScriptAsset file="examples/audio/audio_check.as" name="audio_check" id="0:4296" codeFileId="0:3524037"/>
     <AudioAsset file="examples/audio/hum.wav" name="hum" id="0:4291"/>
     <AudioAsset file="examples/audio/chime.wav" name="chime" id="0:4292"/>
     <AudioAsset file="examples/audio/radio.wav" name="radio" id="0:4293"/>

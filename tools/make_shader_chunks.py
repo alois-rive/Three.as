@@ -247,20 +247,6 @@ for name in sorted(os.listdir(objects)) if os.path.isdir(objects) else []:
         open(path, "w").write(new)
         print("wrote packages/threeas/three/shaders/objects/" + name)
 
-# Until the engine library is republished with them, the gallery carries
-# copies of the objects' shaders under the same asset names (a library
-# override does not bring new shaders): delete packages/gallery/three/
-# once the published library has three/shaders/objects.
-gallery_objects = os.path.join(gallery, "three", "shaders", "objects")
-if os.path.isdir(gallery_objects):
-    for name in sorted(os.listdir(objects)):
-        if name.endswith(".wgsl"):
-            data = open(os.path.join(objects, name)).read()
-            dst = os.path.join(gallery_objects, name)
-            if not os.path.exists(dst) or open(dst).read() != data:
-                open(dst, "w").write(data)
-                print("wrote packages/gallery/three/shaders/objects/" + name)
-
 # The hash baked variant names start from (three/renderers/gpu/ShaderVariants,
 # tools/threeas_bake.sh): a variant baked from an older three.wgsl has
 # another name, so it is never found.

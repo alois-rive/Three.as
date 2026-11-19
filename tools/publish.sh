@@ -155,6 +155,13 @@ trap - EXIT
 if [ "$gallery" = 1 ]; then
     echo "== gallery (UAT)"
     run env RIVE_NO_TUI=1 rive library update "$GALLERY" --uat --yes
+    # An update keeps the previous version's LibraryAsset when the new one
+    # dropped a script: the page would ship the engine twice. Remove it by hand.
+    if [ "$dry" = 0 ] && [ "$(grep -c '<LibraryAsset ' "$GALLERY/threeas.rml")" -gt 1 ]; then
+        echo "$GALLERY/threeas.rml holds more than one LibraryAsset after the update: delete the" >&2
+        echo "older version's block (and its .libraries/threeas@<assetId>/), then run the remaining gallery steps by hand (the end of this script)" >&2
+        exit 1
+    fi
     run rive "$GALLERY" --verify --quiet
     run env RIVE_NO_TUI=1 rive push "$GALLERY" --uat --yes --name="tools/publish.sh"
     # The page from a copy without the override: it runs the published engine.

@@ -52,17 +52,19 @@ engine edit shows in the gallery without publishing:
 - Local engine scripts are all compiled, new ones included. A **new
   engine shader** (a new `.wgsl` under `three/`) does not reach the
   gallery until the library is republished and the gallery updated (baked
-  variants are the gallery's own files, so they do). Until then
-  the gallery carries copies under the engine's asset names: the addon
-  objects' shaders (`three/shaders/objects/`, M16) are copied to
-  `packages/gallery/three/shaders/objects/` by
-  `tools/make_shader_chunks.py` (run it after editing them; delete the
-  gallery's `three/` once the published library has them).
+  variants are the gallery's own files, so they do). Until then, an
+  example that needs it can carry a copy under the engine's asset name
+  (`packages/gallery/three/shaders/...`; M16's addon shaders were
+  carried that way until library v6), deleted once the library has it.
 - Likewise an example importing an engine module the published library
-  lacks (the Addons example and `three/addons/objects/`) only builds with
-  the override: `tools/release_build.sh` without `--override` (and
-  tools/publish.sh's pre-publish release build) fails on it until the
-  engine is republished.
+  lacks only builds with the override: `tools/release_build.sh` without
+  `--override` (and tools/publish.sh's pre-publish release build) fails
+  on it until the engine is republished.
+- `rive library update` keeps the previous version's `LibraryAsset` in
+  `threeas.rml` when the new version dropped a script (M18 removed
+  `BakedShaders`): the gallery then needs the old snapshot, ships the
+  engine's shaders twice and runs the suites twice. Delete that block and
+  the old `.libraries/threeas@<asset>/`; tools/publish.sh stops on it.
 - The gallery's `rive . --test` runs the engine's suites too (the override
   brings them), without `tests/fixtures/`: a suite skips a fixture it
   cannot find, and `tests/fixtures_test.as` checks, in packages/threeas,
@@ -186,8 +188,8 @@ after a shader change, build release `.riv`s (`tools/release_build.sh
 build/release`) and run `python3 tools/check_glsl.py` on both (needs
 glslangValidator; tools/publish.sh does): WebGL2 rejects what the native
 backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
-`gl_1`). The gallery's release has 222 GLSL shaders (the engine's 108, the
-rest the examples').
+`gl_1`). The gallery's release has 114 GLSL shaders (the engine's 108 and the
+examples' 6).
 
 ## Publishing
 
