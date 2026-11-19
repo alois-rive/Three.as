@@ -826,6 +826,39 @@ HEADER = """<Rive version="1" kind="fragment">
 """
 
 
+# A thumbnail smaller than this, with fewer colours, or this flat, is a
+# failed render (a script that stopped, a scene that never drew): the
+# smallest real one, HelloCube's green cube on black, is 5.4 KB with 175
+# colours.
+THUMB_MIN_BYTES = 3000
+THUMB_MIN_COLORS = 32
+THUMB_MIN_STDDEV = 4.0
+
+
+def check_thumb(name, path):
+    """Exits when a thumbnail came out blank or suspiciously small."""
+    size = os.path.getsize(path)
+    problem = None
+    if size < THUMB_MIN_BYTES:
+        problem = f"{size} bytes (< {THUMB_MIN_BYTES})"
+    else:
+        try:
+            from PIL import Image, ImageStat
+        except ImportError:
+            Image = None
+        if Image is not None:
+            im = Image.open(path).convert("RGB")
+            colors = im.getcolors(1 << 20)
+            spread = max(ImageStat.Stat(im).stddev)
+            if colors is not None and len(colors) < THUMB_MIN_COLORS:
+                problem = f"{len(colors)} colours (< {THUMB_MIN_COLORS})"
+            elif spread < THUMB_MIN_STDDEV:
+                problem = f"flat (channel spread {spread:.1f} < {THUMB_MIN_STDDEV})"
+    if problem:
+        sys.exit(f"thumbnail {name} looks blank: {problem}; see {path} "
+                 f"(rive . --artboard={name} --screenshot=build/{name}.png --advance=2s)")
+
+
 def thumbs():
     root = os.path.dirname(HERE)
     shots = os.path.join(root, "build", "thumbs")
@@ -836,8 +869,9 @@ def thumbs():
         subprocess.run(["rive", root, f"--artboard={name}", f"--screenshot={shot}", "--advance=2s"],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["sips", "-c", "450", "800", shot, "--out", crop], check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["sips", "-z", "270", "480", crop, "--out", os.path.join(HERE, "thumbs", name + ".png")],
-                       check=True, stdout=subprocess.DEVNULL)
+        out = os.path.join(HERE, "thumbs", name + ".png")
+        subprocess.run(["sips", "-z", "270", "480", crop, "--out", out], check=True, stdout=subprocess.DEVNULL)
+        check_thumb(name, out)
         print("thumb", name)
     # The hero: Lights at 2560x1440, its right 320px cropped off so the knot
     # and the sphere sit right of the copy, as a JPEG.
@@ -849,6 +883,7 @@ def thumbs():
                    check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "82", crop,
                     "--out", os.path.join(HERE, "hero.jpg")], check=True, stdout=subprocess.DEVNULL)
+    check_thumb("hero", os.path.join(HERE, "hero.jpg"))
     print("hero")
 
 

@@ -31,8 +31,12 @@ with Rive's `GPUCanvas` and WGSL shaders. Read these before changing code:
 - WGSL lives in `three/shaders/`; its uniform layouts are mirrored by hand in
   `three/renderers/gpu/Layout.as` (keep both in sync). After editing
   `three.wgsl`, run `python3 tools/make_shader_chunks.py`: it regenerates
-  the ShaderChunk library (`three/shaders/lib/three_chunks.wgsl`) and
-  `examples/shaders/lit.wgsl` from it.
+  the ShaderChunk library (`three/shaders/lib/three_chunks.wgsl`),
+  `examples/shaders/lit.wgsl` and `three/renderers/gpu/ShaderSourceHash.as`
+  (baked variants of an older three.wgsl are then ignored). Read fragment
+  features through the `v_*` functions between `// @variant-begin` and
+  `// @variant-end` (tools/bake_shaders.sh replaces them with constants),
+  and keep `GPURenderer.programKey` in step with them.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
 - A new example is an artboard in `examples/examples.rml` (with
@@ -49,6 +53,25 @@ rive . --screenshot=build/s.png --advance=1s     # render the main artboard
 rive . --artboard=HelloCube --screenshot=build/h.png --advance=1s
 rive .                                           # live preview window
 ```
+
+Performance work (M14):
+
+```bash
+tools/bench.sh                     # CI: verify, test, bake freshness, release GLSL check,
+                                   # Benchmark interp + AOT against tools/bench_baseline.txt
+tools/bench.sh --update            # refresh the baseline after an intended change
+rive . --artboard=Benchmark --bench=300 --arg profile=1   # per-stage render times
+tools/screenshots.sh build/shots/before                   # every example, twice
+python3 tools/compare_shots.py build/shots/before build/shots/after
+tools/bake_shaders.sh              # optional "optimized" mode: bake shader variants
+tools/bake_shaders.sh --clean      # back to the uber-shader only (the default)
+```
+
+Optimizations must not change pixels: capture `tools/screenshots.sh` before
+and after and compare (the uber-shader path is pixel-identical across M14;
+baked variants differ at a few edge pixels, see docs/DEVIATIONS.md). A
+baked project ships its `three/shaders/baked/` and registry; check them in
+CI with `tools/bake_shaders.sh --check` (tools/bench.sh does).
 
 `--verify` does not compile the GL backend's GLSL either. Before publishing
 after a shader change, build a release `.riv` (`rive . --publish
