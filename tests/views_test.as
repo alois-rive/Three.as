@@ -10,6 +10,12 @@ import { Vector3 } from "../three/math/Vector3";
 import { Vector4 } from "../three/math/Vector4";
 import { RenderTarget } from "../three/renderers/RenderTarget";
 import { RendererInfo } from "../three/renderers/GPURenderer";
+import { RenderTargetOptions } from "../three/renderers/RenderTarget";
+import { DepthTexture } from "../three/textures/DepthTexture";
+import { FramebufferTexture } from "../three/textures/FramebufferTexture";
+import {
+    HalfFloatType, NoColorSpace, UnsignedIntType, UnsignedInt248Type, DepthFormat, DepthStencilFormat, NearestFilter,
+} from "../three/constants";
 
 function near(a: f64, b: f64): bool { return Math.abs(a - b) < 1e-4; }
 
@@ -85,6 +91,53 @@ export class ViewsTests extends Tests {
                 expect.that(rt.viewport.z).is(128);
                 expect.that(rt.viewport.w).is(16);
                 expect.that(rt.scissorTest).is(false);
+            });
+        });
+        group("Multiple render targets", () => {
+            test("count, textures and clone", (expect) => {
+                const o = new RenderTargetOptions();
+                o.type = HalfFloatType;
+                o.count = 3;
+                const rt = new RenderTarget(32, 16, o);
+                expect.that(<f64>rt.count).is(3);
+                expect.that(rt.textures[0] === rt.texture).is(true);
+                expect.that(rt.textures[1].colorSpace).is(NoColorSpace);
+                expect.that(rt.textures[2].premultiplyAlpha).is(false);
+                rt.setSize(64, 8);
+                expect.that(<f64>rt.textures[2].width).is(64);
+                const c = rt.clone();
+                expect.that(<f64>c.count).is(3);
+                expect.that(c.textures[1] !== rt.textures[1]).is(true);
+                o.count = 9;
+                expect.that(<f64>new RenderTarget(4, 4, o).count).is(4);
+            });
+        });
+        group("DepthTexture", () => {
+            test("defaults and render target clone", (expect) => {
+                const d = new DepthTexture(16, 8);
+                expect.that(d.isDepthTexture).is(true);
+                expect.that(<f64>d.width).is(16);
+                expect.that(<f64>d.type).is(<f64>UnsignedIntType);
+                expect.that(<f64>d.format).is(<f64>DepthFormat);
+                expect.that(<f64>d.minFilter).is(<f64>NearestFilter);
+                expect.that(d.generateMipmaps).is(false);
+                expect.that(<f64>new DepthTexture(1, 1, -1, DepthStencilFormat).type).is(<f64>UnsignedInt248Type);
+                const o = new RenderTargetOptions();
+                o.depthTexture = d;
+                const rt = new RenderTarget(16, 8, o);
+                expect.that(rt.depthTexture === d).is(true);
+                const c = rt.clone();
+                expect.that(c.depthTexture != null && c.depthTexture !== d).is(true);
+            });
+        });
+        group("FramebufferTexture", () => {
+            test("size and filters", (expect) => {
+                const t = new FramebufferTexture(64, 32);
+                expect.that(t.isFramebufferTexture).is(true);
+                expect.that(<f64>t.width).is(64);
+                expect.that(<f64>t.height).is(32);
+                expect.that(<f64>t.magFilter).is(<f64>NearestFilter);
+                expect.that(t.generateMipmaps).is(false);
             });
         });
         group("RendererInfo", () => {

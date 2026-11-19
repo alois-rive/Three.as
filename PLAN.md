@@ -309,7 +309,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M12a, views (done; example `Views`).** `setViewport`, `setScissor`, `setScissorTest` (split
   screens, insets), ArrayCamera, StereoCamera, multiple scenes in one
   canvas, `renderer.compile`, `info.memory`.
-- **M12b, render target features.** Multiple render targets (`count`,
+- **M12b, render target features (done; no readRenderTargetPixels: Rive has no GPU readback; logarithmic depth, not reversed).** Multiple render targets (`count`,
   textures array), depth textures, `readRenderTargetPixels`,
   `copyFramebufferToTexture`, `copyTextureToTexture`, reversed or
   logarithmic depth for large scenes.

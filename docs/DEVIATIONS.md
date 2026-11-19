@@ -65,7 +65,7 @@ export class Demo extends Layout {
 | `render()` anywhere | `render()` only inside the script's `draw()`; then `present(renderer)` composites the canvas into the artboard |
 | `setSize(w, h, updateStyle)` | `setSize(w, h)` in points; there is no style |
 | `setAnimationLoop(fn)` | the script's `advance(seconds)` (or ThreeLayout's `animate`) |
-| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear) only |
+| `WebGLRendererParameters` | `GPURendererParameters`: `antialias` (4x MSAA), `alpha` (transparent clear), `logarithmicDepthBuffer` only (no `reverseDepthBuffer`, see [Render target features](#render-target-features)) |
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
@@ -403,12 +403,57 @@ export class Demo extends Layout {
 - **Render targets**: `RenderTarget(width, height, options)` (alias
   `WebGLRenderTarget`), `renderer.setRenderTarget(rt)`. Size in pixels;
   `options` is a `RenderTargetOptions` (`depthBuffer`, `samples`,
-  `generateMipmaps`). Its texture holds the renderer's output: sRGB,
-  premultiplied, top row first (`colorSpace = SRGBColorSpace`,
-  `premultiplyAlpha = true`, `flipY = true`), so sampling it gives the same
-  colours as three.js. `rt.image` is a Rive `Image` for 2D drawing.
-  `readRenderTargetPixels`, depth textures and multiple render targets are
-  not ported.
+  `generateMipmaps`, `type`, `count`, `depthTexture`). Its texture holds
+  the renderer's output: sRGB, premultiplied, top row first (`colorSpace =
+  SRGBColorSpace`, `premultiplyAlpha = true`, `flipY = true`), so sampling
+  it gives the same colours as three.js. `rt.image` is a Rive `Image` for
+  2D drawing. Multiple render targets, depth textures and copies: see
+  [Render target features](#render-target-features).
+
+## Render target features
+
+- **Multiple render targets**: `{ count: n }` (1 to 4) gives `rt.textures`
+  (`rt.texture` is `textures[0]`), as three.js. ShaderMaterials write them
+  with `@location(n)` outputs (every location: a pipeline cannot leave one
+  unwritten); built-in materials write the first only. The extra textures
+  have the first one's format and hold what the shader wrote
+  (`NoColorSpace`, not premultiplied). `samples` is ignored (no MSAA) with
+  `count` > 1 or a depth texture.
+- **`DepthTexture(width, height, type, format)`**, set as
+  `options.depthTexture` or `rt.depthTexture`: it is the pass's depth
+  attachment itself (24-bit depth plus stencil, whatever `type` says),
+  sized with the target and kept after the render. ShaderMaterials declare
+  it `texture_depth_2d` and read it with `textureLoad` or `textureSample`
+  (window depth, 0 near, 1 far); built-in materials ignore it (a log line).
+  Its rows are top first (`flipY` true; three.js: false), as every render
+  target texture here: sample at `(u, 1 - v)` from a fullscreen quad.
+- **`readRenderTargetPixels` / `readRenderTargetPixelsAsync` are not
+  ported**: Rive's GPU API has no readback (no buffer mapping or texture to
+  buffer copy), so pixels cannot come back to a script. Keep the data on
+  the GPU (render targets, copies) or compute it on the CPU.
+- **`copyFramebufferToTexture(texture, position, level)`** copies from the
+  current render target, or the canvas, at `position` (pixels from the
+  bottom left) into a `FramebufferTexture` (its size); the texture takes
+  the source's colour space and premultiplied alpha.
+  **`copyTextureToTexture(src, dst, srcRegion, dstPosition, level)`**: a
+  `Box2` region and a `Vector2` position (texels, from the bottom in uv
+  terms; three.js's Box3 / 3D and array textures are not supported), rows
+  flipped where `flipY` differs. Render target textures are written in
+  place; any other destination (an image, a DataTexture, a canvas, a
+  FramebufferTexture) samples a GPU copy of itself from then on, until its
+  own content changes (a new `version`). Level 0 only; depth textures
+  cannot be copied. Both are passes: call them from `draw()`.
+- **`logarithmicDepthBuffer`** (a GPURendererParameters option) as
+  three.js for built-in materials: depth `log2(1 + w) / log2(1 + far)`
+  written from the fragment shader (orthographic cameras keep the window
+  depth). ShaderMaterials do not get it: write `@builtin(frag_depth)`
+  yourself (the frame block's `viewport.w` holds `1 / log2(far + 1)`), or
+  they will not sort against the rest. MeshDepthMaterial still draws the
+  linear window depth.
+- **`reverseDepthBuffer` is not ported**: colour passes use a
+  depth24plus-stencil8 attachment (fixed point on some backends, and the
+  stencil must stay), where a reversed depth range gains little;
+  `logarithmicDepthBuffer` covers scenes of huge depth ranges.
 
 ## Views: viewports, scissors, several renders a frame
 

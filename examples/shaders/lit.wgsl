@@ -55,7 +55,7 @@ struct FrameU {
     bg_rotation: mat4x4<f32>,
     bg_flags: vec4<u32>,     // x mapping, y srgb, z flipY, w premultiplied
     proj: mat4x4<f32>,
-    viewport: vec4<f32>,     // width, height (pixels), pixel ratio
+    viewport: vec4<f32>,     // width, height (pixels), pixel ratio, 1 / log2(far + 1) (log depth)
     env: vec4<f32>,          // x 1 when there is an environment, y intensity, z max mip
     env_rotation: mat4x4<f32>,
     env_flags: vec4<u32>,    // x srgb, y flipY, z premultiplied
