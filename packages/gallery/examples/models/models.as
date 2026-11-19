@@ -10,10 +10,16 @@
 // with holes (createShapes) extruded, its stroke as triangles
 // (pointsToStroke), as three.js's webgl_loader_svg example; and a binary FBX
 // (FBXLoader; made by tools/make_fbx_samples.py) with its animation.
+// In front, Draco: the Avocado's glTF-Draco variant (KHR_draco_mesh_compression,
+// Khronos glTF-Sample-Assets, CC0; textures downscaled, packed by
+// tools/make_draco_samples.py), three.js's bunny.drc as in its
+// webgl_loader_draco example, and a kd-tree point cloud from Draco's
+// testdata (pc_kd_color.drc, Apache 2.0), each decoded in a Rive job.
 
 import * as THREE from "lib:threeas/three/Three";
 import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { GLTFLoader } from "lib:threeas/three/addons/loaders/GLTFLoader";
+import { DRACOLoader } from "lib:threeas/three/addons/loaders/DRACOLoader";
 import { SVGLoader } from "lib:threeas/three/addons/loaders/SVGLoader";
 import { FBXLoader } from "lib:threeas/three/addons/loaders/FBXLoader";
 import { MeshoptDecoder } from "lib:threeas/three/addons/libs/meshopt_decoder";
@@ -28,6 +34,8 @@ export class Models extends THREE.ThreeLayout {
     logo: THREE.Object3D? = null;
     time: f64 = 0;
     fbxMixer: THREE.AnimationMixer? = null;
+    avocado: THREE.Object3D? = null;
+    cloud: THREE.Object3D? = null;
 
     override setup(context: Context): bool {
         const scene = this.scene;
@@ -54,10 +62,15 @@ export class Models extends THREE.ThreeLayout {
         // cube, a vertex-coloured pentagon with a blend shape, a skinned
         // strip and a NURBS curve, with their animation.
         this.loadFBX(new FBXLoader(context));
+        // Draco: a compressed glTF, a .drc mesh and a .drc point cloud.
+        const dracoLoader = new DRACOLoader(context);
+        this.loadAvocado(new GLTFLoader(context).setDRACOLoader(dracoLoader));
+        this.loadBunny(dracoLoader);
+        this.loadPointCloud(new DRACOLoader(context));
 
-        this.camera.position.set(0, 3.2, 6.2);
+        this.camera.position.set(0, 3.0, 6.6);
         const controls = new OrbitControls(this.camera, this.renderer);
-        controls.target.set(0, 0, 0);
+        controls.target.set(0, -0.45, 0.6);
         controls.enableDamping = true;
         controls.update();
         this.controls = controls;
@@ -94,6 +107,56 @@ export class Models extends THREE.ThreeLayout {
         const mixer = new THREE.AnimationMixer(object);
         for (let i = 0; i < object.animations.length; i++) mixer.clipAction(object.animations[i]).play();
         this.fbxMixer = mixer;
+    }
+
+    async loadAvocado(loader: GLTFLoader): Promise<void> {
+        const settled = await loader.loadAsync("avocado_draco").settled();
+        if (!settled.ok) {
+            this.context!.log("avocado_draco.glb: " + settled.error);
+            return;
+        }
+        const avocado = settled.value.scene;
+        avocado.scale.setScalar(16);
+        avocado.position.set(-0.2, -1.55, 2.3);
+        this.scene.add(avocado);
+        this.avocado = avocado;
+    }
+
+    /// three.js's webgl_loader_draco: the bunny, with computed normals.
+    async loadBunny(loader: DRACOLoader): Promise<void> {
+        const settled = await loader.loadAsync("bunny").settled();
+        if (!settled.ok) {
+            this.context!.log("bunny.drc: " + settled.error);
+            return;
+        }
+        const geometry = settled.value;
+        geometry.computeVertexNormals();
+        const bunny = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xa5a5a5, roughness: 0.6, metalness: 0.1 }));
+        bunny.scale.setScalar(6);
+        bunny.position.set(-1.7, -1.75, 2.0);
+        bunny.rotation.y = 0.5;
+        this.scene.add(bunny);
+    }
+
+    /// A kd-tree coded point cloud with 8-bit colours (normalized: read as
+    /// Uint8Array), centred and scaled to about a unit.
+    async loadPointCloud(loader: DRACOLoader): Promise<void> {
+        loader.defaultAttributeTypes.set("color", "Uint8Array");
+        const settled = await loader.loadAsync("pc_kd_color").settled();
+        if (!settled.ok) {
+            this.context!.log("pc_kd_color.drc: " + settled.error);
+            return;
+        }
+        const geometry = settled.value;
+        geometry.center();
+        geometry.computeBoundingSphere();
+        const radius = geometry.boundingSphere!.radius;
+        const points = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 0.022, vertexColors: true }));
+        points.scale.setScalar(0.7 / radius);
+        points.position.set(1.6, -1.15, 2.2);
+        points.rotation.x = -0.7;   // the scan is flat: face the camera
+        this.scene.add(points);
+        this.cloud = points;
     }
 
     async loadDuck(loader: GLTFLoader): Promise<void> {
@@ -177,5 +240,9 @@ export class Models extends THREE.ThreeLayout {
         if (logo != null) logo.rotation.y = Math.sin(this.time * 0.8) * 0.5 + 0.35;
         const fbxMixer = this.fbxMixer;
         if (fbxMixer != null) fbxMixer.update(seconds);
+        const avocado = this.avocado;
+        if (avocado != null) avocado.rotation.y = this.time * 0.6;
+        const cloud = this.cloud;
+        if (cloud != null) cloud.rotation.y = Math.sin(this.time * 0.7) * 0.5;
     }
 }

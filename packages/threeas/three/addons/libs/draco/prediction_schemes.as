@@ -648,6 +648,8 @@ export class MeshPredictionSchemeTexCoordsPortableDecoder extends PredictionSche
     override decodePredictionData(buffer: DecoderBuffer): bool {
         const numOrientations = buffer.i32();
         if (buffer.failed || numOrientations < 0) return false;
+        // One orientation at most per corner (Draco would try to allocate any count).
+        if (numOrientations > this.meshData.cornerTable.numCorners()) return false;
         const orientations = new Array<bool>(numOrientations);
         let last = true;
         const decoder = new RAnsBitDecoder();

@@ -70,7 +70,6 @@ export class PointCloudDecoder {
     versionMinor: i32 = 0;
     attributesDecoders: Array<AttributesDecoderInterface?> = [];
     attributeToDecoderMap: Array<i32> = [];
-    error: string = "";
 
     getGeometryType(): i32 { return POINT_CLOUD; }
 

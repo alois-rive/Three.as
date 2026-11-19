@@ -5,20 +5,22 @@ samples' own bytes, only moved from a .gltf + .bin pair into one .glb.
 
     python3 tools/make_draco_samples.py <glTF-Sample-Assets>/Models
 
-reads <Models>/Avocado/glTF-Draco and <Models>/Avocado/glTF (Avocado:
-Microsoft, CC0 1.0, https://github.com/KhronosGroup/glTF-Sample-Assets) and
-writes
+reads the glTF-Draco and glTF variants of the models in SAMPLES (Khronos
+glTF-Sample-Assets, https://github.com/KhronosGroup/glTF-Sample-Assets:
+Avocado and WaterBottle CC0 1.0, RiggedSimple (c) 2017 Cesium CC BY 4.0;
+only their .gltf and .bin files, and Avocado's textures) and writes
 
-  packages/threeas/tests/fixtures/avocado_draco.glb   the Draco variant
-  packages/threeas/tests/fixtures/avocado.glb         the uncompressed one
+  packages/threeas/tests/fixtures/<name>_draco.glb    the Draco variant
+  packages/threeas/tests/fixtures/<name>.glb          the uncompressed one
       (their images stay external uris, absent: the tests read geometry)
-  packages/gallery/examples/models/avocado_draco.glb  the Draco variant
+  packages/gallery/examples/models/avocado_draco.glb  Avocado's Draco variant
       with its three textures embedded, downscaled to 512 px (macOS sips)
 
-Both variants name their buffer "Avocado.bin", so they cannot sit side by
-side as .gltf files resolving buffers by blob name; a .glb has none to
-resolve. Box (CC BY 4.0, Cesium) is used as .gltf + .bin as downloaded (only
-the .gltf files renamed apart): see packages/threeas/tests/draco_test.as.
+Each model's two variants name their buffer alike ("Avocado.bin"), so they
+cannot sit side by side as .gltf files resolving buffers by blob name; a
+.glb has none to resolve. Box (CC BY 4.0, Cesium) is used as .gltf + .bin as
+downloaded (only the .gltf files renamed apart): see
+packages/threeas/tests/draco_test.as.
 """
 import json, os, struct, subprocess, sys, tempfile
 
