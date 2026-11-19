@@ -2,7 +2,8 @@
 // mesh, all moving every frame. rive . --artboard=Benchmark --bench=300
 // (tools/bench.sh compares it with stored numbers). `--arg profile=1` logs
 // the renderer's per-stage CPU times (renderer.info.timings) every 300
-// frames; `--arg meshes=N` / `--arg instances=N` resize it.
+// frames; `--arg meshes=N` / `--arg instances=N` resize it; `--arg still=1`
+// keeps the meshes still (their object blocks unchanged from frame to frame).
 
 import * as THREE from "../three/Three";
 import { Context } from "rive/host";
@@ -18,11 +19,13 @@ export class Benchmark extends THREE.ThreeLayout {
     time: f64 = 0;
     private dummy: THREE.Object3D = new THREE.Object3D();
     private profile: bool = false;
+    private still: bool = false;
     private animateTime: f64 = 0;
     private frames: i32 = 0;
 
     override setup(context: Context): bool {
         this.profile = context.arg("profile") != null;
+        this.still = context.arg("still") != null;
         const meshes = context.arg("meshes");
         if (meshes != null) this.meshes = I32.parseInt(meshes!);
         const instances = context.arg("instances");
@@ -73,7 +76,7 @@ export class Benchmark extends THREE.ThreeLayout {
 
     private move(seconds: f64): void {
         const t = (this.time += seconds);
-        for (let i = 0; i < this.cubes.length; i++) {
+        for (let i = 0; i < this.cubes.length && !this.still; i++) {
             const m = this.cubes[i];
             m.rotation.x = t + <f64>i * 0.01;
             m.rotation.y = t * 0.7 + <f64>i * 0.02;

@@ -71,6 +71,8 @@ export class Demo extends Layout {
 | output | premultiplied alpha, composited with `srcOver` |
 | custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
 | `info.render.calls/triangles/lines/points`, `info.memory`, `info.autoReset` / `reset()` | same, plus `info.render.culled` (objects frustum culled); `info.memory` counts `geometries` and `textures` (no `info.programs`) |
+| (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
+| uniforms uploaded per program | each draw keeps one 1536-byte block in a shared uniform buffer across frames (bound at a dynamic offset), rewritten and uploaded only when its world matrix, light list or material changed; a material's share of the block is built once a view however many draws use it |
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -579,6 +581,16 @@ export class Demo extends Layout {
   (relative to the base, whatever `morphTargetsRelative` says) for
   positions and normals, as rgba16float texels (half floats: three.js
   stores Float32), rebuilt when a morph attribute's `version` changes.
+  **Above 65536 texels the half-float conversion runs in a Rive job**
+  (`three/renderers/gpu/MorphTexels`), started when the mesh is first
+  collected and joined before the view's first pass, so it overlaps the
+  rest of the frame and several geometries convert at once; a join that
+  would pass the script call's budget leaves the texture zero (the mesh
+  unmorphed) until a later frame. Every morphed or big-skinned mesh's
+  MorphU block (the weighted targets) is packed into one shared uniform
+  buffer per view at 256-byte offsets (group 1 binding 7 is a dynamic
+  binding), taking the bytes it uses instead of 16 KB a mesh. A big
+  skeleton's bone texture converts and uploads only the bones that moved.
   Only targets with a non-zero weight cost anything, at most 2044 of them
   at once (the rest are skipped). Morph colours are not read. A texture
   bigger than the device allows (`maxTextureSize2D` squared texels) falls
@@ -1168,7 +1180,9 @@ artboards are drawn over it by the script's 2D renderer, in
 - **Occlusion (not in three.js)**: `occlude` on an object fades it to
   `occludedOpacity` while a visible mesh lies between the camera and its
   position (a raycast against `renderer.occluders`, the scene by default,
-  stopping `occlusionBias` short of the object). Rive scripts cannot read
+  stopping `occlusionBias` short of the object, ending at the first hit
+  and skipping hidden subtrees; set `occluders` to a smaller group of big
+  meshes for crowded scenes). Rive scripts cannot read
   the depth buffer back; for per-pixel depth, draw the artboard as an
   ArtboardTexture on a Sprite instead.
 - Pointer events go to the topmost interactive object whose artboard bounds

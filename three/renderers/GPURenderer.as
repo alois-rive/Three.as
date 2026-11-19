@@ -106,6 +106,8 @@ import { FramebufferTexture } from "../textures/FramebufferTexture";
 import { DepthTexture } from "../textures/DepthTexture";
 import { Box2 } from "../math/Box2";
 import { fromHalf } from "../textures/DataUpload";
+import { MorphTexelInput, morphTexels, fastHalf } from "./gpu/MorphTexels";
+import { Job, Jobs } from "rive/jobs";
 import { Skeleton } from "../objects/Skeleton";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
@@ -116,7 +118,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT, LIGHT_RECT, FRAME_PROBE,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, OBJ_USED, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
     MORPH_INFO, MORPH_BONES, MORPH_ACTIVE, MORPH_BYTES, MAX_ACTIVE_MORPHS, MORPH_NORMALS, MORPH_INSTANCED, BONE_TEXTURE,
     X_SLOT_MORPH, X_SLOT_BONES, X_SLOT_MORPH_INSTANCES, BONE_TEXELS,
 } from "./gpu/Layout";
@@ -215,6 +217,7 @@ class CustomPipeline {
 class CustomUniforms {
     buffer: GPUBuffer? = null;
     staging: ArrayBuffer = new ArrayBuffer(16);
+    f32: Float32Array = Float32Array.wrap(this.staging);
     group: GPUBindGroup? = null;
     views: Array<GPUTextureView> = [];
     frame: i32 = -1;
@@ -247,18 +250,31 @@ class MorphTargetsGPU {
     normals: bool = false;
     /// The geometry's position and morph attribute versions it was built from.
     key: i32 = -1;
+    /// Converting the texels of `key` (GPURenderer.joinMorphJobs uploads them).
+    job: Job<Uint16Array>? = null;
+    /// The view that queued it for a join; the texture was zeroed while
+    /// a join gave up.
+    awaited: i32 = -1;
+    zeroed: bool = false;
 }
 
-// A mesh's MorphU block (group 1 binding 7) and, for skeletons above
-// MAX_BONES, its bone texture.
+/// Morph textures above this many texels convert in a job (the 48-target
+/// blob of the Animation example, 259k texels, took 115 ms on the main lane
+/// interpreted, 31 ms compiled ahead of time).
+const MORPH_JOB_TEXELS: i32 = 65536;
+
+// Where a mesh's MorphU block (group 1 binding 7) sits in the renderer's
+// morph arena this view and, for skeletons above MAX_BONES, its bone
+// texture.
 class DeformGPU {
-    ubo: GPUBuffer? = null;
-    staging: ArrayBuffer = new ArrayBuffer(MORPH_BYTES);
+    offset: u32 = 0;
     frame: i32 = -1;
     boneTexture: GPUTexture? = null;
     boneView: GPUTextureView? = null;
     boneWidth: i32 = 0;
     boneData: Uint16Array = new Uint16Array(0);
+    /// The bone rows last uploaded (12 floats a bone).
+    boneCache: Float32Array = new Float32Array(0);
     boneFrame: i32 = -1;
 }
 
@@ -412,8 +428,22 @@ export class RendererInfo {
 // One draw's state, kept across frames.
 class DrawState {
     /// Byte offset of its object block in the renderer's object arena
-    /// (bound with a dynamic offset), valid for the render it was written in.
+    /// (bound with a dynamic offset): its own slot, kept across frames and
+    /// rewritten only when the block changes.
     objOffset: u32 = 0;
+    /// Its arena slot (-1: none yet).
+    slot: i32 = -1;
+    /// What the slot holds: the material block and its version, the world
+    /// matrix, the light list and the per-draw patches it was written from.
+    block: MaterialBlock? = null;
+    blockVersion: i32 = -1;
+    model: StaticArray<f32> = new StaticArray<f32>(16);
+    lights: StaticArray<u32> = new StaticArray<u32>(8);
+    patch: i32 = -1;
+    spriteX: f64 = 0;
+    spriteY: f64 = 0;
+    /// The material entry it last drew with (skips a map lookup).
+    entry: MaterialEntry? = null;
     /// Skinned draws: a group 1 of their own (arena + their bones).
     objGroup: GPUBindGroup? = null;
     arena: GPUBuffer? = null;
@@ -421,8 +451,6 @@ class DrawState {
     morph: GPUBuffer? = null;
     matGroup: GPUBindGroup? = null;
     samplerGroup: GPUBindGroup? = null;
-    views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
-    samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
     /// The extra map slots' views (group 1 bindings 2-7) and how many.
     xviews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(EXTRA_SLOTS);
     xcount: i32 = 0;
@@ -430,7 +458,68 @@ class DrawState {
     frame: i32 = -1;
 }
 
-// One draw of this frame.
+// What a material needs from a view, found once per view however many
+// draws use it: its textures updated, its shading kind, and its blocks.
+class MaterialEntry {
+    material: Material;
+    prepared: i32 = -1;
+    kind: i32 = 0;
+    displaced: bool = false;
+    transmissive: bool = false;
+    /// Its object block templates, by the vertex textures a draw borrows
+    /// extra slots for (morph texture 1, bone texture 2, instance morphs 4).
+    blocks: StaticArray<MaterialBlock?> = new StaticArray<MaterialBlock?>(8);
+    /// Its interned depth/stencil/offset state (GPURenderer.stateIndex) and
+    /// the fields it was interned from.
+    stateIndex: i32 = -1;
+    depthFunc: i32 = 0;
+    stencilWrite: bool = false;
+    stencilFunc: i32 = 0;
+    stencilFuncMask: i32 = 0;
+    stencilWriteMask: i32 = 0;
+    stencilFail: i32 = 0;
+    stencilZFail: i32 = 0;
+    stencilZPass: i32 = 0;
+    polygonOffset: bool = false;
+    polygonOffsetFactor: f64 = 0;
+    polygonOffsetUnits: f64 = 0;
+    /// A ShaderMaterial's pipeline and what it was made for.
+    custom: CustomPipeline? = null;
+    customKey: i32 = 0;
+    customFormat: u32 = 0;
+    customCount: i32 = 0;
+    customShader: string = "";
+    customVertex: string = "";
+    customFragment: string = "";
+    customLights: bool = false;
+
+    constructor(material: Material) {
+        this.material = material;
+    }
+}
+
+// A material's share of the object block (everything but the world and
+// normal matrices, the light list and a few per-draw fields), written once
+// per view, with the texture views and samplers it binds. `version`
+// changes only when its bytes do, so draws keep their arena blocks while
+// their material and transform stand still.
+class MaterialBlock {
+    frame: i32 = -1;
+    version: i32 = 0;
+    bytes: ArrayBuffer = new ArrayBuffer(OBJ_BYTES);
+    u8: Uint8Array = Uint8Array.wrap(this.bytes);
+    i64: Int64Array = Int64Array.wrap(this.bytes);
+    views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
+    samplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
+    xviews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(EXTRA_SLOTS);
+    xcount: i32 = 0;
+    matGroup: GPUBindGroup? = null;
+    samplerGroup: GPUBindGroup? = null;
+    groupViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
+    groupSamplers: StaticArray<GPUSampler?> = new StaticArray<GPUSampler?>(TEXTURE_SLOTS);
+}
+
+// One draw of this frame (pooled: GPURenderer.newItem resets every field).
 class DrawItem {
     object: Object3D;
     material: Material;
@@ -439,6 +528,7 @@ class DrawItem {
     index: GPUBuffer? = null;
     indexFormat: u32 = 0;
     state: DrawState;
+    entry: MaterialEntry? = null;
     pipelineKey: i32 = 0;
     depth: f64 = 0;
     first: i32 = 0;
@@ -450,9 +540,11 @@ class DrawItem {
     instanceFirst: u32 = 0;
     skinned: bool = false;
     bones: GPUBuffer? = null;
-    /// Morph targets / a bone texture: the mesh's MorphU block, and the
-    /// textures it borrows extra slots for.
-    morph: GPUBuffer? = null;
+    /// Morph targets / a bone texture: the mesh's MorphU block (at
+    /// `morphOffset` in the morph arena), and the textures it borrows extra
+    /// slots for.
+    morphed: bool = false;
+    morphOffset: u32 = 0;
     morphView: GPUTextureView? = null;
     boneView: GPUTextureView? = null;
     instanceMorphView: GPUTextureView? = null;
@@ -472,6 +564,39 @@ class DrawItem {
         this.state = state;
         this.instances = instances;
         this.instanceColors = instanceColors;
+    }
+
+    reset(object: Object3D, material: Material, geometry: GeometryGPU?, state: DrawState, instances: GPUBuffer,
+          instanceColors: GPUBuffer): void {
+        this.object = object;
+        this.material = material;
+        this.geometry = geometry;
+        this.state = state;
+        this.instances = instances;
+        this.instanceColors = instanceColors;
+        this.entry = null;
+        this.prim = PRIM_TRIANGLES;
+        this.index = null;
+        this.indexFormat = 0;
+        this.pipelineKey = 0;
+        this.depth = 0;
+        this.first = 0;
+        this.count = 0;
+        this.instanceCount = 1;
+        this.instanceFirst = 0;
+        this.skinned = false;
+        this.bones = null;
+        this.morphed = false;
+        this.morphOffset = 0;
+        this.morphView = null;
+        this.boneView = null;
+        this.instanceMorphView = null;
+        this.custom = null;
+        this.customUniforms = null;
+        this.positionOverride = null;
+        this.transmissive = false;
+        this.stencilRef = 0;
+        this.normalOverride = null;
     }
 }
 
@@ -522,6 +647,7 @@ export class GPURenderer {
     private dummyBones: GPUBuffer? = null;
     private dummyMorph: GPUBuffer? = null;
     private morphTargets: Map<i32, MorphTargetsGPU> = new Map<i32, MorphTargetsGPU>();
+    private pendingMorphs: Array<MorphTargetsGPU> = [];
     private deforms: Map<i32, DeformGPU> = new Map<i32, DeformGPU>();
     private warnedMorphs: bool = false;
     private boneBuffers: Map<i32, GPUBuffer> = new Map<i32, GPUBuffer>();
@@ -544,17 +670,63 @@ export class GPURenderer {
     private ltcUbo: GPUBuffer? = null;
     private frameGroup: GPUBindGroup? = null;
     private frameStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
+    // A material block being written (compared with its last bytes).
     private objStaging: ArrayBuffer = new ArrayBuffer(OBJ_BYTES);
+    private objF32: Float32Array = Float32Array.wrap(this.objStaging);
+    private objU32: Uint32Array = Uint32Array.wrap(this.objStaging);
+    private objU8: Uint8Array = Uint8Array.wrap(this.objStaging);
+    private objI64: Int64Array = Int64Array.wrap(this.objStaging);
     // Every draw's object block, in one uniform buffer bound at a dynamic
-    // offset per draw (one upload per list instead of one per draw).
+    // offset per draw. Each draw keeps its slot across frames; a slot is
+    // rewritten and uploaded only when its block changed (runs of changed
+    // slots upload together).
     private arena: GPUBuffer? = null;
     private arenaStaging: ArrayBuffer = new ArrayBuffer(0);
     private arenaBytes: Uint8Array = new Uint8Array(0);
-    private objBytes: Uint8Array = Uint8Array.wrap(this.objStaging);
+    private arenaF32: Float32Array = new Float32Array(0);
+    private arenaU32: Uint32Array = new Uint32Array(0);
     private arenaCapacity: i32 = 0;
-    private arenaUsed: i32 = 0;
+    private slotCount: i32 = 0;
+    private slotDirty: Uint8Array = new Uint8Array(0);
+    private dirtyLo: i32 = 0x7fffffff;
+    private dirtyHi: i32 = -1;
+    private uploadAll: bool = false;
     private arenaGroup: GPUBindGroup? = null;
+    private lightWords: StaticArray<u32> = new StaticArray<u32>(8);
+    private materialEntries: Map<i32, MaterialEntry> = new Map<i32, MaterialEntry>();
+    private itemPool: Array<DrawItem> = [];
+    private itemsUsed: i32 = 0;
+    // Pass descriptors reused from pass to pass (no garbage per frame).
+    private attachmentList: Array<GPUColorAttachment> = [];
+    private noAttachments: Array<GPUColorAttachment> = [];
+    private shadowPassDesc: GPUPassDesc = new GPUPassDesc();
+    private transmissionDesc: GPUPassDesc = new GPUPassDesc();
+    private transmissionColor: GPUColorAttachment = new GPUColorAttachment();
+    private transmissionAttachments: Array<GPUColorAttachment> = [];
+    private transmissionGroup: GPUBindGroup? = null;
+    private transmissionGroupViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(2);
+    private transmissionBgGroup: GPUBindGroup? = null;
+    private transmissionBgView: GPUTextureView? = null;
+    private transmissionBgMipmapped: bool = false;
+    private frameF32: Float32Array = Float32Array.wrap(this.frameStaging);
+    private frameU32: Uint32Array = Uint32Array.wrap(this.frameStaging);
+    private customViews: Array<GPUTextureView> = [];
+    // ShaderMaterials: their object block offset; built-in materials: it and
+    // the morph block offset (group 1 bindings 0 and 7 are dynamic).
     private dynamicOffset: Array<u32> = [0];
+    private dynamicOffsets: Array<u32> = [0, 0];
+    // Every morphed (or big-skinned) mesh's MorphU block of the view, packed at
+    // 256-byte offsets into one uniform buffer: a block takes the bytes it
+    // uses (a binding spans MORPH_BYTES from its offset, so the buffer has
+    // that much room past the last one).
+    private morphArena: GPUBuffer? = null;
+    private morphStaging: ArrayBuffer = new ArrayBuffer(0);
+    private morphF32: Float32Array = new Float32Array(0);
+    private morphU32: Uint32Array = new Uint32Array(0);
+    private morphBytes: Uint8Array = new Uint8Array(0);
+    private morphCapacity: i32 = 0;
+    private morphUsed: i32 = 0;
+    private morphFlushed: i32 = 0;
     private white: GPUTextureView? = null;
     private identityInstance: GPUBuffer? = null;
     private identityColor: GPUBuffer? = null;
@@ -1068,7 +1240,9 @@ export class GPURenderer {
         }
         const pd = this.passDesc;
         pd.label = label;
-        const attachments: Array<GPUColorAttachment> = [color];
+        const attachments = this.attachmentList;
+        attachments.length = 0;
+        attachments.push(color);
         for (let i = 0; i < this.extraViews.length; i++) {
             while (this.extraAttachments.length <= i) this.extraAttachments.push(new GPUColorAttachment());
             const e = this.extraAttachments[i];
@@ -1115,7 +1289,8 @@ export class GPURenderer {
         const timed = timings.enabled;
         let t0 = timed ? clock() : 0;
         const frame = ++this.frameId;
-        this.arenaUsed = 0;
+        this.morphUsed = 0;
+        this.morphFlushed = 0;
         if (!this.beginDestination()) return;
         const canvas = this.destCanvas!;
         const pw = this.passWidth, ph = this.passHeight;
@@ -1148,6 +1323,7 @@ export class GPURenderer {
         // Per-draw blocks; mip chains render here, before the main pass.
         this.writeDraws(this.opaque, frame, canvas);
         this.writeDraws(this.transparent, frame, canvas);
+        this.joinMorphJobs();
         if (timed) { const t = clock(); timings.write += t - t0; t0 = t; }
 
         // Shadow maps: one depth pass per light view, before the main pass.
@@ -1203,7 +1379,8 @@ export class GPURenderer {
         if (this.broken || !this.beginDestination()) return materials;
         const canvas = this.destCanvas!;
         const frame = ++this.frameId;
-        this.arenaUsed = 0;
+        this.morphUsed = 0;
+        this.morphFlushed = 0;
         if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
         if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
         else camera.updateWorldMatrix(true, false);
@@ -1222,6 +1399,7 @@ export class GPURenderer {
         this.writeFrame(scene, camera);
         this.writeDraws(this.opaque, frame, canvas);
         this.writeDraws(this.transparent, frame, canvas);
+        this.joinMorphJobs();
         this.ensureFrameGroup();
         if (background) this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0));
         const lists: StaticArray<Array<DrawItem>> = [this.opaque, this.transparent];
@@ -1239,6 +1417,7 @@ export class GPURenderer {
             for (let i = 0; i < this.casterMeshes.length; i++) this.collectCaster(this.casterMeshes[i], frame, casters);
             for (let i = 0; i < casters.length; i++) this.shadowPipeline(casters[i].pipelineKey);
         }
+        this.joinMorphJobs();
         return materials;
     }
 
@@ -1430,6 +1609,10 @@ export class GPURenderer {
         this.arena = null;
         this.arenaGroup = null;
         this.arenaCapacity = 0;
+        this.slotCount = 0;
+        this.dirtyLo = 0x7fffffff;
+        this.dirtyHi = -1;
+        this.materialEntries.clear();
         this.pipelines.clear();
         this.mainTargets.release();
         const rts = this.rtTargets.values();
@@ -1475,7 +1658,7 @@ export class GPURenderer {
             if (module == null) return this.fail("shader asset 'three/shaders/three.wgsl' not found");
             this.module = module;
             const g0 = GPUBindGroupLayout.fromShader(module, 0);
-            const g1 = GPUBindGroupLayout.fromShader(module, 1, [0]);
+            const g1 = GPUBindGroupLayout.fromShader(module, 1, [0, 7]);
             const g2 = GPUBindGroupLayout.fromShader(module, 2);
             const g3 = GPUBindGroupLayout.fromShader(module, 3);
             if (g0 == null || g1 == null || g2 == null || g3 == null) return this.fail("bind group layouts rejected");
@@ -1703,6 +1886,28 @@ export class GPURenderer {
 
     /// The pipeline of a ShaderMaterial draw (null when its shader is
     /// missing: the draw is skipped, with one log line).
+    /// customPipeline, remembered on the material's entry while the key,
+    /// target and shader stay the same (no key string a frame).
+    private customPipelineOf(entry: MaterialEntry, material: ShaderMaterial, key: i32): CustomPipeline? {
+        const cached = entry.custom;
+        if (cached != null && entry.customKey == key && entry.customFormat == this.pipelineFormat
+                && entry.customCount == this.pipelineCount && entry.customShader == material.shader
+                && entry.customVertex == material.vertexEntryPoint && entry.customFragment == material.fragmentEntryPoint
+                && entry.customLights == material.lights) {
+            return cached;
+        }
+        const cp = this.customPipeline(material, key);
+        entry.custom = cp;
+        entry.customKey = key;
+        entry.customFormat = this.pipelineFormat;
+        entry.customCount = this.pipelineCount;
+        entry.customShader = material.shader;
+        entry.customVertex = material.vertexEntryPoint;
+        entry.customFragment = material.fragmentEntryPoint;
+        entry.customLights = material.lights;
+        return cp;
+    }
+
     private customPipeline(material: ShaderMaterial, key: i32): CustomPipeline? {
         const name = material.shader + "|" + material.vertexEntryPoint + "|" + material.fragmentEntryPoint + "|"
             + key.toString() + "|" + this.pipelineFormat.toString() + "|" + this.pipelineCount.toString()
@@ -1846,10 +2051,14 @@ export class GPURenderer {
             size = (size + a - 1) / a * a + s;
         }
         size = max<i32>(16, (size + 15) & ~15);
-        if (cu.staging.byteLength != size) cu.staging = new ArrayBuffer(size);
-        const f = Float32Array.wrap(cu.staging);
+        if (cu.staging.byteLength != size) {
+            cu.staging = new ArrayBuffer(size);
+            cu.f32 = Float32Array.wrap(cu.staging);
+        }
+        const f = cu.f32;
         let offset = 0;
-        const views: Array<GPUTextureView> = [];
+        const views = this.customViews;
+        views.length = 0;
         let firstTexture: Texture? = null;
         for (let i = 0; i < names.length; i++) {
             const u = material.uniforms.get(names[i]);
@@ -1891,7 +2100,7 @@ export class GPURenderer {
                 samplers.push(new GPUBindGroupSampler(<u32>(views.length + 1), this.sampler(t, this.textures.levels(t) > 1)));
             }
             cu.group = new GPUBindGroup(layout, ubos, textures, samplers);
-            cu.views = views;
+            cu.views = views.slice();
         }
         return cu;
     }
@@ -1933,6 +2142,8 @@ export class GPURenderer {
                 const mt = this.morphTargets.get(id);
                 const t = mt.texture;
                 if (t != null) t.release();
+                const job = mt.job;
+                if (job != null) job.release();
                 this.morphTargets.delete(id);
             }
         }
@@ -1943,11 +2154,36 @@ export class GPURenderer {
 
     // ---------------------------------------------------------------- collect
 
+    /// A draw item from the pool (items live until the next collect).
+    private newItem(object: Object3D, material: Material, g: GeometryGPU?, state: DrawState, instances: GPUBuffer,
+                    colors: GPUBuffer): DrawItem {
+        const pool = this.itemPool;
+        const i = this.itemsUsed++;
+        if (i < pool.length) {
+            const item = unchecked(pool[i]);
+            item.reset(object, material, g, state, instances, colors);
+            return item;
+        }
+        const item = new DrawItem(object, material, g, state, instances, colors);
+        pool.push(item);
+        return item;
+    }
+
+    /// The draw state of `object`'s part `part` (63: its shadow stand-in).
+    private stateOf(key: i32): DrawState {
+        const states = this.states;
+        if (states.has(key)) return states.get(key);
+        const state = new DrawState();
+        states.set(key, state);
+        return state;
+    }
+
     private collect(scene: Object3D, camera: Camera, frame: i32): void {
         this.opaque.length = 0;
         this.transparent.length = 0;
         this.lights.length = 0;
         this.casterMeshes.length = 0;
+        this.itemsUsed = 0;
         const stack = this.stack;
         stack.length = 0;
         stack.push(scene);
@@ -2010,7 +2246,7 @@ export class GPURenderer {
             return;
         }
         const geometry = geometryOf(o)!;
-        const g = this.geometries.get(geometry);
+        const g = this.geometries.get(geometry, frame);
         if (g == null) return;
         const range = geometry.drawRange;
         const rangeStart = max<i32>(0, range.start);
@@ -2117,7 +2353,7 @@ export class GPURenderer {
             item.index = g.index;
             item.indexFormat = <u32>g.indexFormat;
         }
-        if (this.uniforms.kind == KIND_WIDE_LINE) {
+        if (item.entry!.kind == KIND_WIDE_LINE) {
             // Wide lines: the base quad once per segment.
             const segments = this.wideLineInstances(geometry, item);
             if (segments == 0) {
@@ -2182,7 +2418,7 @@ export class GPURenderer {
         let flags: u32 = 0;
         let count = 0;
         let mt: MorphTargetsGPU? = null;
-        const morphs = geometry.morphAttributes.has("position") && geometry.morphAttributes.get("position").length > 0;
+        const morphs = geometry.morphAttributes.size > 0 && geometry.morphAttributes.has("position") && geometry.morphAttributes.get("position").length > 0;
         let instanceWeights: Texture? = null;
         if (morphs && mesh instanceof InstancedMesh) instanceWeights = (mesh as InstancedMesh).morphTexture;
         if (morphs && (mesh.morphTargetInfluences.length > 0 || instanceWeights != null)) {
@@ -2230,7 +2466,8 @@ export class GPURenderer {
                 d.frame = frame;
                 this.writeMorphBlock(d, mesh, mt, count, flags, skeleton, frame);
             }
-            item.morph = d.ubo;
+            item.morphed = true;
+            item.morphOffset = d.offset;
             if (bigSkeleton) item.boneView = d.boneView;
         }
         if (skeleton == null) return;
@@ -2256,23 +2493,62 @@ export class GPURenderer {
     private deformOf(mesh: Mesh): DeformGPU {
         if (this.deforms.has(mesh.id)) return this.deforms.get(mesh.id);
         const d = new DeformGPU();
-        d.ubo = new GPUBuffer(BufferUsage.uniform, <u32>MORPH_BYTES, d.staging);
         this.deforms.set(mesh.id, d);
         return d;
     }
 
-    /// Writes a mesh's MorphU block (and bone texture) for this frame.
+    /// Room for `bytes` more bytes in the morph arena at a 256-byte offset
+    /// (grows it, keeping what this view wrote); returns that offset.
+    private reserveMorph(bytes: i32): i32 {
+        const offset = (this.morphUsed + 255) & ~255;
+        const need = offset + bytes;
+        if (need > this.morphCapacity || this.morphArena == null) {
+            let capacity = max<i32>(4096, this.morphCapacity);
+            while (capacity < need) capacity *= 2;
+            // Room for a whole MorphU binding past the last block.
+            const staging = new ArrayBuffer(capacity + MORPH_BYTES);
+            const bytes8 = Uint8Array.wrap(staging);
+            if (this.morphUsed > 0) bytes8.set(this.morphBytes.subarray(0, this.morphUsed));
+            this.morphStaging = staging;
+            this.morphBytes = bytes8;
+            this.morphF32 = Float32Array.wrap(staging);
+            this.morphU32 = Uint32Array.wrap(staging);
+            // The old buffer may still be bound by passes recorded this
+            // frame: it is left to the collector, not released.
+            this.morphArena = new GPUBuffer(BufferUsage.uniform, <u32>(capacity + MORPH_BYTES));
+            this.morphCapacity = capacity;
+            this.morphFlushed = 0;
+        }
+        this.morphUsed = need;
+        return offset;
+    }
+
+    /// Uploads the morph blocks written since the last flush (before a pass).
+    private flushMorphs(): void {
+        const arena = this.morphArena;
+        if (arena == null || this.morphUsed <= this.morphFlushed) return;
+        const from = this.morphFlushed;
+        arena.update(<u32>from, this.morphStaging, <u32>(this.morphUsed - from), <u32>from);
+        this.morphFlushed = this.morphUsed;
+    }
+
+    /// Writes a mesh's MorphU block (and bone texture) for this view into
+    /// the morph arena: the header and its weighted targets only.
     private writeMorphBlock(d: DeformGPU, mesh: Mesh, mt: MorphTargetsGPU?, count: i32, flags: u32,
                             skeleton: Skeleton?, frame: i32): void {
-        const u = Uint32Array.wrap(d.staging);
-        const f = Float32Array.wrap(d.staging);
+        const weighted = mt != null && count > 0 && (flags & MORPH_INSTANCED) == 0;
+        const most = weighted ? MORPH_ACTIVE + (min<i32>(count, MAX_ACTIVE_MORPHS) + 1) * 8 : MORPH_ACTIVE;
+        const base = this.reserveMorph(most);
+        d.offset = <u32>base;
+        const u = this.morphU32;
+        const f = this.morphF32;
         let active = 0;
         let bytes = MORPH_ACTIVE;
-        if (mt != null && count > 0 && (flags & MORPH_INSTANCED) == 0) {
+        if (weighted) {
             // The weighted targets, as (target, weight) pairs.
             const infl = mesh.morphTargetInfluences;
-            const n = min<i32>(infl.length, mt.targets);
-            let o = MORPH_ACTIVE >> 2;
+            const n = min<i32>(infl.length, mt!.targets);
+            let o = (base + MORPH_ACTIVE) >> 2;
             for (let i = 0; i < n && active < MAX_ACTIVE_MORPHS; i++) {
                 const w = infl[i];
                 if (w == 0) continue;
@@ -2281,21 +2557,21 @@ export class GPURenderer {
                 active++;
             }
             if ((active & 1) == 1) { f[o++] = 0; f[o++] = 0; }
-            bytes = o << 2;
+            bytes = (o << 2) - base;
             count = active;
         }
-        const ui = MORPH_INFO >> 2;
+        this.morphUsed = base + bytes;
+        const ui = (base + MORPH_INFO) >> 2;
         u[ui] = <u32>count;
         u[ui + 1] = flags;
         u[ui + 2] = mt != null ? <u32>mt.width : 0;
         u[ui + 3] = mt != null ? <u32>mt.texelsPerTarget : 0;
-        const ub = MORPH_BONES >> 2;
+        const ub = (base + MORPH_BONES) >> 2;
         u[ub] = 0; u[ub + 1] = 0; u[ub + 2] = 0; u[ub + 3] = 0;
         if (skeleton != null && (flags & BONE_TEXTURE) != 0) {
             this.writeBoneTexture(d, skeleton, frame);
             u[ub] = <u32>d.boneWidth;
         }
-        d.ubo!.update(0, d.staging, <u32>bytes);
     }
 
     /// Uploads a big skeleton's bone matrices: six rgba16float texels a
@@ -2320,12 +2596,31 @@ export class GPURenderer {
             d.boneView = tex.view();
             d.boneWidth = width;
             d.boneData = new Uint16Array(width * height * 4);
+            d.boneCache = new Float32Array(0);
         }
+        if (d.boneCache.length != n * 12) {
+            d.boneCache = new Float32Array(n * 12);
+            d.boneCache.fill(NaN);   // every bone differs from it
+        }
+        // Only the bones that moved since the last upload are converted, and
+        // nothing is uploaded when none did.
         const m = skeleton.boneMatrices;
         const out = d.boneData;
+        const cache = d.boneCache;
+        let changed = false;
         for (let b = 0; b < n; b++) {
             const src = b * 16;
             const dst = b * BONE_TEXELS * 4;
+            const kept = b * 12;
+            let same = true;
+            for (let r = 0; r < 3 && same; r++) {
+                for (let c = 0; c < 4 && same; c++) same = unchecked(cache[kept + r * 4 + c]) == m[src + c * 4 + r];
+            }
+            if (same) continue;
+            changed = true;
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 4; c++) unchecked(cache[kept + r * 4 + c] = m[src + c * 4 + r]);
+            }
             for (let r = 0; r < 3; r++) {
                 for (let c = 0; c < 4; c++) {
                     const v = m[src + c * 4 + r];   // column-major: column c, row r
@@ -2336,13 +2631,17 @@ export class GPURenderer {
                 }
             }
         }
+        if (!changed) return;
         uploadRegion.width = <u32>width;
         uploadRegion.height = <u32>height;
         tex.upload(uploadRegion, out.buffer);
     }
 
     /// A geometry's morph texture, built (or rebuilt after its attributes
-    /// changed); null when it would exceed the device's texture size.
+    /// changed); null when it would exceed the device's texture size (the
+    /// caller blends on the CPU). Big target sets convert to half floats in
+    /// a Rive job started here, while the frame's other draws are collected
+    /// and written; joinMorphJobs uploads them before the first pass.
     private morphTargetsOf(geometry: BufferGeometry): MorphTargetsGPU? {
         const position = geometry.getAttribute("position");
         if (position == null) return null;
@@ -2356,12 +2655,20 @@ export class GPURenderer {
         let mt: MorphTargetsGPU;
         if (this.morphTargets.has(geometry.id)) {
             mt = this.morphTargets.get(geometry.id);
-            if (mt.key == key) return mt.texture != null ? mt : null;
+            if (mt.key == key) {
+                if (mt.job != null) this.awaitMorphJob(mt);
+                return mt.texture != null ? mt : null;
+            }
         } else {
             mt = new MorphTargetsGPU();
             this.morphTargets.set(geometry.id, mt);
         }
         mt.key = key;
+        const pending = mt.job;
+        if (pending != null) {
+            pending.release();   // its attributes changed meanwhile
+            mt.job = null;
+        }
         const vertices = position.count;
         const stride = normals ? 2 : 1;
         const perTarget = vertices * stride;
@@ -2380,34 +2687,44 @@ export class GPURenderer {
             mt.view = null;
             return null;
         }
-        const data = new Uint16Array(width * height * 4);
-        const relative = geometry.morphTargetsRelative;
-        const base = position.array;
-        const baseNormal = normal != null ? normal.array : null;
+        // The targets' arrays, flat, for morphTexels.
+        const input = new MorphTexelInput();
+        input.base = position.array;
+        if (normals) input.baseNormal = normal!.array;
+        let floats = 0;
+        for (let t = 0; t < targets.length; t++) {
+            floats += targets[t].array.length;
+            if (normals) floats += normalTargets![t].array.length;
+        }
+        const data = new Float32Array(floats);
+        const layout = new Int32Array(targets.length * 6);
+        let at = 0;
         for (let t = 0; t < targets.length; t++) {
             const a = targets[t];
-            const n = normals ? normalTargets![t] : null;
-            const av = a.array, as = a.itemSize, an = min<i32>(a.count, vertices);
-            for (let v = 0; v < an; v++) {
-                const o = (t * perTarget + v * stride) * 4;
-                for (let k = 0; k < 3; k++) {
-                    let delta: f32 = av[v * as + k];
-                    if (!relative) delta -= base[v * 3 + k];
-                    if (delta != 0) data[o + k] = fastHalf(delta);
-                }
-            }
-            if (n != null) {
-                const nv = n.array, ns = n.itemSize, nn = min<i32>(n.count, vertices);
-                for (let v = 0; v < nn; v++) {
-                    const o = (t * perTarget + v * stride) * 4 + 4;
-                    for (let k = 0; k < 3; k++) {
-                        let delta: f32 = nv[v * ns + k];
-                        if (!relative && baseNormal != null) delta -= baseNormal[v * 3 + k];
-                        if (delta != 0) data[o + k] = fastHalf(delta);
-                    }
-                }
-            }
+            data.set(a.array, at);
+            layout[t * 6] = at; layout[t * 6 + 1] = a.itemSize; layout[t * 6 + 2] = a.count;
+            at += a.array.length;
         }
+        for (let t = 0; t < targets.length && normals; t++) {
+            const n = normalTargets![t];
+            data.set(n.array, at);
+            layout[t * 6 + 3] = at; layout[t * 6 + 4] = n.itemSize; layout[t * 6 + 5] = n.count;
+            at += n.array.length;
+        }
+        input.data = data;
+        input.layout = layout;
+        input.targets = targets.length;
+        input.vertices = vertices;
+        input.stride = stride;
+        input.width = width;
+        input.height = height;
+        input.relative = geometry.morphTargetsRelative;
+        mt.width = width;
+        mt.targets = targets.length;
+        mt.texelsPerTarget = perTarget;
+        mt.normals = normals;
+        // The texture (and so its view, which bind groups take now) first;
+        // its texels follow.
         let tex = mt.texture;
         if (tex == null || tex.width != <u32>width || tex.height != <u32>height) {
             if (tex != null) tex.release();
@@ -2419,14 +2736,57 @@ export class GPURenderer {
             mt.texture = tex;
             mt.view = tex.view();
         }
-        uploadRegion.width = <u32>width;
-        uploadRegion.height = <u32>height;
-        tex.upload(uploadRegion, data.buffer);
-        mt.width = width;
-        mt.targets = targets.length;
-        mt.texelsPerTarget = perTarget;
-        mt.normals = normals;
+        if (total > MORPH_JOB_TEXELS) {
+            mt.job = Jobs.run(morphTexels, input);
+            mt.zeroed = false;
+            this.awaitMorphJob(mt);
+        } else {
+            this.uploadMorphTexels(mt, morphTexels(input));
+        }
         return mt;
+    }
+
+    /// Queues a running morph job for joinMorphJobs (once a view).
+    private awaitMorphJob(mt: MorphTargetsGPU): void {
+        if (mt.awaited == this.frameId) return;
+        mt.awaited = this.frameId;
+        this.pendingMorphs.push(mt);
+    }
+
+    /// Joins the morph texel jobs this view started or needs, and uploads
+    /// their texels, then uploads the view's morph blocks; called before the
+    /// view's first pass (and the shadow passes). A job still
+    /// running when the call's budget would run out leaves its texture
+    /// zero (the mesh unmorphed) until a later frame's join.
+    private joinMorphJobs(): void {
+        const pending = this.pendingMorphs;
+        for (let i = 0; i < pending.length; i++) {
+            const mt = pending[i];
+            const job = mt.job;
+            if (job == null) continue;
+            const settled = job.join();
+            if (settled == null) {
+                if (!mt.zeroed) this.uploadMorphTexels(mt, new Uint16Array(<i32>(mt.texture!.width * mt.texture!.height * 4)));
+                mt.zeroed = true;
+                continue;
+            }
+            mt.job = null;
+            if (settled.ok) this.uploadMorphTexels(mt, settled.value);
+            else {
+                this.context.log("three: morph texture job failed: " + settled.error);
+                this.uploadMorphTexels(mt, new Uint16Array(<i32>(mt.texture!.width * mt.texture!.height * 4)));
+            }
+            job.release();
+        }
+        pending.length = 0;
+        this.flushMorphs();
+    }
+
+    private uploadMorphTexels(mt: MorphTargetsGPU, texels: Uint16Array): void {
+        const tex = mt.texture!;
+        uploadRegion.width = tex.width;
+        uploadRegion.height = tex.height;
+        tex.upload(uploadRegion, texels.buffer);
     }
 
     /// Blends the morph targets into a per-mesh position (and normal)
@@ -2447,7 +2807,9 @@ export class GPURenderer {
         let same = m.position != null && m.influences.length == influences.length && m.geometryVersion == position.version;
         for (let i = 0; i < influences.length && same; i++) same = m.influences[i] == influences[i];
         if (same) return m;
-        m.influences = influences.slice();
+        const kept = m.influences;
+        kept.length = influences.length;
+        for (let i = 0; i < influences.length; i++) kept[i] = influences[i];
         m.geometryVersion = position.version;
         const relative = geometry.morphTargetsRelative;
         m.positions = blend(position.array, geometry.morphAttributes.get("position"), influences, relative, m.positions);
@@ -2466,17 +2828,26 @@ export class GPURenderer {
         return m;
     }
 
-    private addDraw(object: Object3D, material: Material, g: GeometryGPU?, part: i32, start: i32, end: i32,
-                    frame: i32, prim: i32): DrawItem? {
-        if (!material.visible || end <= start) return null;
-        const stateKey = object.id * 64 + part;
-        let state: DrawState;
-        if (this.states.has(stateKey)) state = this.states.get(stateKey);
+    /// `material`'s entry (cached on the draw state).
+    private entryOf(state: DrawState, material: Material): MaterialEntry {
+        let entry = state.entry;
+        if (entry != null && entry.material === material) return entry;
+        const id = material.id;
+        if (this.materialEntries.has(id)) entry = this.materialEntries.get(id);
         else {
-            state = new DrawState();
-            this.states.set(stateKey, state);
+            entry = new MaterialEntry(material);
+            this.materialEntries.set(id, entry);
         }
-        // Textures draw and upload now, before any pass.
+        state.entry = entry;
+        return entry!;
+    }
+
+    /// `material`'s entry, its textures updated for this view (once a view,
+    /// however many draws use it).
+    private prepareMaterial(state: DrawState, material: Material, frame: i32): MaterialEntry {
+        const entry = this.entryOf(state, material);
+        if (entry.prepared == frame) return entry;
+        entry.prepared = frame;
         const u = this.uniforms;
         material.fillUniforms(u);
         for (let i = 0; i < TEXTURE_SLOTS; i++) {
@@ -2487,10 +2858,44 @@ export class GPURenderer {
             const t = u.roles[i];
             if (t != null) this.textures.update(t, frame);
         }
-        const displaced = u.roles[ROLE_DISPLACEMENT] != null && prim == PRIM_TRIANGLES;
-        const transmissive = u.kind == KIND_PHYSICAL && u.transmission > 0;
+        entry.kind = u.kind;
+        entry.displaced = u.roles[ROLE_DISPLACEMENT] != null;
+        entry.transmissive = u.kind == KIND_PHYSICAL && u.transmission > 0;
+        // Its depth/stencil/offset state, interned again only when it changed.
+        const m = material;
+        if (entry.stateIndex < 0 || entry.depthFunc != m.depthFunc || entry.stencilWrite != m.stencilWrite
+                || entry.stencilFunc != m.stencilFunc || entry.stencilFuncMask != m.stencilFuncMask
+                || entry.stencilWriteMask != m.stencilWriteMask || entry.stencilFail != m.stencilFail
+                || entry.stencilZFail != m.stencilZFail || entry.stencilZPass != m.stencilZPass
+                || entry.polygonOffset != m.polygonOffset || entry.polygonOffsetFactor != m.polygonOffsetFactor
+                || entry.polygonOffsetUnits != m.polygonOffsetUnits) {
+            entry.stateIndex = this.stateIndex(m);
+            entry.depthFunc = m.depthFunc;
+            entry.stencilWrite = m.stencilWrite;
+            entry.stencilFunc = m.stencilFunc;
+            entry.stencilFuncMask = m.stencilFuncMask;
+            entry.stencilWriteMask = m.stencilWriteMask;
+            entry.stencilFail = m.stencilFail;
+            entry.stencilZFail = m.stencilZFail;
+            entry.stencilZPass = m.stencilZPass;
+            entry.polygonOffset = m.polygonOffset;
+            entry.polygonOffsetFactor = m.polygonOffsetFactor;
+            entry.polygonOffsetUnits = m.polygonOffsetUnits;
+        }
+        return entry;
+    }
 
-        const item = new DrawItem(object, material, g, state, this.identityInstance!, this.identityColor!);
+    private addDraw(object: Object3D, material: Material, g: GeometryGPU?, part: i32, start: i32, end: i32,
+                    frame: i32, prim: i32): DrawItem? {
+        if (!material.visible || end <= start) return null;
+        const state = this.stateOf(object.id * 64 + part);
+        // Textures draw and upload now, before any pass (once a view per material).
+        const entry = this.prepareMaterial(state, material, frame);
+        const displaced = entry.displaced && prim == PRIM_TRIANGLES;
+        const transmissive = entry.transmissive;
+
+        const item = this.newItem(object, material, g, state, this.identityInstance!, this.identityColor!);
+        item.entry = entry;
         item.prim = prim;
         item.first = start;
         item.count = end - start;
@@ -2503,11 +2908,11 @@ export class GPURenderer {
             | (material.depthTest ? KEY_DEPTH_TEST : 0) | (material.depthWrite ? KEY_DEPTH_WRITE : 0)
             | (mirrored ? KEY_MIRRORED : 0) | (material.colorWrite ? KEY_COLOR_WRITE : 0) | (prim << KEY_PRIM_SHIFT)
             | (this.passSamples > 1 ? KEY_MSAA : 0) | (displaced ? KEY_DISPLACED : 0) | (this.logDepth ? KEY_LOG_DEPTH : 0)
-            | (this.stateIndex(material) << KEY_STATE_SHIFT);
+            | (entry.stateIndex << KEY_STATE_SHIFT);
         item.stencilRef = material.stencilWrite ? <u32>material.stencilRef : 0;
         if (material instanceof ShaderMaterial) {
             if (prim != PRIM_TRIANGLES) return null;   // custom points/lines are not supported
-            const cp = this.customPipeline(material as ShaderMaterial, item.pipelineKey);
+            const cp = this.customPipelineOf(entry, material as ShaderMaterial, item.pipelineKey);
             if (cp == null) return null;
             item.custom = cp;
         }
@@ -2674,7 +3079,7 @@ export class GPURenderer {
             ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
             this.transmissionUbo = ubo;
         }
-        const f = Float32Array.wrap(this.frameStaging);
+        const f = this.frameF32;
         const flag = (FRAME_SHADOW_PARAMS >> 2) + 2;
         const was = f[flag];
         f[flag] = 1;
@@ -2682,7 +3087,14 @@ export class GPURenderer {
         f[flag] = was;
         const env = this.frameEnvView != null ? this.frameEnvView! : this.white!;
         const shadow = this.frameShadowView != null ? this.frameShadowView! : this.dummyShadowView!;
-        const group = this.makeFrameGroup(this.frameLayout!, ubo, env, shadow, this.white!);
+        const tv = this.transmissionGroupViews;
+        let group = this.transmissionGroup;
+        if (group == null || tv[0] !== env || tv[1] !== shadow) {
+            group = this.makeFrameGroup(this.frameLayout!, ubo, env, shadow, this.white!);
+            this.transmissionGroup = group;
+            tv[0] = env;
+            tv[1] = shadow;
+        }
         this.ensureTargets(this.transmissionTargets, <u32>TextureFormat.rgba16float, pw, ph, 1);
         const depth = this.transmissionTargets.depthView;
         if (depth == null) return;
@@ -2690,7 +3102,7 @@ export class GPURenderer {
         const savedCount = this.pipelineCount;
         this.pipelineCount = 1;
         this.pipelineFormat = <u32>TextureFormat.rgba16float;
-        const color = new GPUColorAttachment();
+        const color = this.transmissionColor;
         color.view = view;
         color.loadOp = LoadOp.clear;
         color.storeOp = StoreOp.store;
@@ -2704,9 +3116,12 @@ export class GPURenderer {
                 color.clearA = 1;
             }
         }
-        const pd = new GPUPassDesc();
+        const pd = this.transmissionDesc;
         pd.label = "three transmission";
-        pd.color = [color];
+        const attachments = this.transmissionAttachments;
+        attachments.length = 0;
+        attachments.push(color);
+        pd.color = attachments;
         pd.depthView = depth;
         pd.depthLoadOp = LoadOp.clear;
         pd.depthStoreOp = StoreOp.discard;
@@ -2714,11 +3129,18 @@ export class GPURenderer {
         const pass = canvas.beginRenderPass(pd);
         if (background) {
             // The background module reads the frame block for linear output.
-            const bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, ubo)],
-                [new GPUBindGroupTexture(1, this.bgGroupView!)],
-                [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
+            let bgGroup = this.transmissionBgGroup;
+            if (bgGroup == null || this.transmissionBgView !== this.bgGroupView
+                    || this.transmissionBgMipmapped != this.bgMipmapped) {
+                bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, ubo)],
+                    [new GPUBindGroupTexture(1, this.bgGroupView!)],
+                    [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
+                this.transmissionBgGroup = bgGroup;
+                this.transmissionBgView = this.bgGroupView;
+                this.transmissionBgMipmapped = this.bgMipmapped;
+            }
             pass.setPipeline(this.pipeline(KEY_BACKGROUND));
-            pass.setBindGroup(0, bgGroup);
+            pass.setBindGroup(0, bgGroup!);
             pass.draw(3);
         }
         this.drawList(pass, this.opaque, group);
@@ -2891,6 +3313,7 @@ export class GPURenderer {
         items.length = 0;
         for (let i = 0; i < this.casterMeshes.length; i++) this.collectCaster(this.casterMeshes[i], frame, items);
         this.writeDraws(items, frame, canvas);
+        this.joinMorphJobs();
         // A frame block per layer, holding its view-projection.
         while (this.tileUbos.length < this.tileCount) {
             const ubo = new GPUBuffer(BufferUsage.uniform, <u32>FRAME_BYTES);
@@ -2900,9 +3323,9 @@ export class GPURenderer {
         for (let t = 0; t < this.tileCount; t++) {
             this.tiles[t].matrix.mat4.writeToBuffer(this.tileStaging, FRAME_VIEW_PROJ);
             this.tileUbos[t].update(0, this.tileStaging, 64);
-            const pd = new GPUPassDesc();
+            const pd = this.shadowPassDesc;
             pd.label = "three shadow";
-            pd.color = [];
+            pd.color = this.noAttachments;
             pd.depthView = this.shadowLayerViews[t];
             pd.depthLoadOp = LoadOp.clear;
             pd.depthStoreOp = StoreOp.store;
@@ -2920,8 +3343,7 @@ export class GPURenderer {
                     pass.setBindGroup(0, this.tileGroups[t]);
                     lastKey = key;
                 }
-                this.dynamicOffset[0] = state.objOffset;
-                pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
+                pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffsets);
                 if ((key & (KEY_DISPLACED | KEY_CUTOUT_SHADOW)) != 0) {
                     if (state.matGroup == null || state.samplerGroup == null) continue;
                     pass.setBindGroup(2, state.matGroup!);
@@ -2953,7 +3375,7 @@ export class GPURenderer {
     /// Shadow draws of a caster (triangles only), with its deformation.
     private collectCaster(mesh: Mesh, frame: i32, out: Array<DrawItem>): void {
         const geometry = mesh.geometry;
-        const g = this.geometries.get(geometry);
+        const g = this.geometries.get(geometry, frame);
         if (g == null) return;
         // customDepthMaterial (or customDistanceMaterial) stands in.
         let custom = mesh.customDepthMaterial;
@@ -2971,26 +3393,9 @@ export class GPURenderer {
             instanceCount = <u32>im.count;
         }
         // Its own object block when another material stands in.
-        const stateKey = mesh.id * 64 + (custom != null ? 63 : 0);
-        if (custom != null) {
-            const u = this.uniforms;
-            custom.fillUniforms(u);
-            for (let i = 0; i < TEXTURE_SLOTS; i++) {
-                const t = u.textures[i];
-                if (t != null) this.textures.update(t, frame);
-            }
-            for (let i = 0; i < ROLE_COUNT; i++) {
-                const t = u.roles[i];
-                if (t != null) this.textures.update(t, frame);
-            }
-        }
-        let state: DrawState;
-        if (this.states.has(stateKey)) state = this.states.get(stateKey);
-        else {
-            state = new DrawState();
-            this.states.set(stateKey, state);
-        }
-        const item = new DrawItem(mesh, material, g, state, instances, colors);
+        const state = this.stateOf(mesh.id * 64 + (custom != null ? 63 : 0));
+        if (custom != null) this.prepareMaterial(state, custom, frame);
+        const item = this.newItem(mesh, material, g, state, instances, colors);
         item.instanceCount = instanceCount;
         item.first = 0;
         item.count = g.count;
@@ -3015,7 +3420,7 @@ export class GPURenderer {
             for (let k = 0; k < bg.count.length; k++) {
                 if (bg.count[k] == 0) continue;
                 const info = bm.geometryInfo[k];
-                const part = new DrawItem(mesh, material, g, state, bg.matrices!, bg.colors!);
+                const part = this.newItem(mesh, material, g, state, bg.matrices!, bg.colors!);
                 part.pipelineKey = item.pipelineKey;
                 part.index = item.index;
                 part.indexFormat = item.indexFormat;
@@ -3079,8 +3484,8 @@ export class GPURenderer {
 
     private writeFrame(scene: Object3D, camera: Camera): void {
         const buf = this.frameStaging;
-        const f = Float32Array.wrap(buf);
-        const u = Uint32Array.wrap(buf);
+        const f = this.frameF32;
+        const u = this.frameU32;
         this.viewProj.mat4.writeToBuffer(buf, FRAME_VIEW_PROJ);
         camera.matrixWorldInverse.mat4.writeToBuffer(buf, FRAME_VIEW);
         this.invViewProj.mat4.writeToBuffer(buf, FRAME_INV_VIEW_PROJ);
@@ -3316,37 +3721,88 @@ export class GPURenderer {
         f[s + 5] = light instanceof PointLight ? 1 : 0;
     }
 
-    /// Room for `count` more object blocks in the arena (grows it, keeping
-    /// what this render wrote; returns true when it moved).
-    private reserveArena(count: i32): bool {
-        const need = this.arenaUsed + count;
-        if (need <= this.arenaCapacity && this.arena != null) return false;
+    /// Room for `count` more slots in the arena: grows it (keeping every
+    /// slot's block, uploaded whole at the next flush).
+    private reserveArena(count: i32): void {
+        const need = this.slotCount + count;
+        if (need <= this.arenaCapacity && this.arena != null) return;
         let capacity = max<i32>(64, this.arenaCapacity);
         while (capacity < need) capacity *= 2;
         const staging = new ArrayBuffer(capacity * OBJ_BYTES);
         const bytes = Uint8Array.wrap(staging);
-        if (this.arenaUsed > 0) bytes.set(this.arenaBytes.subarray(0, this.arenaUsed * OBJ_BYTES));
+        if (this.slotCount > 0) bytes.set(this.arenaBytes.subarray(0, this.slotCount * OBJ_BYTES));
+        const dirty = new Uint8Array(capacity);
+        if (this.slotDirty.length > 0) dirty.set(this.slotDirty);
+        this.slotDirty = dirty;
         this.arenaStaging = staging;
         this.arenaBytes = bytes;
+        this.arenaF32 = Float32Array.wrap(staging);
+        this.arenaU32 = Uint32Array.wrap(staging);
+        // The old buffer may still be bound by passes recorded this frame:
+        // it is left to the collector, not released.
         this.arena = new GPUBuffer(BufferUsage.uniform, <u32>(capacity * OBJ_BYTES));
         this.arenaCapacity = capacity;
         this.arenaGroup = null;
-        return true;
+        this.uploadAll = true;
+    }
+
+    /// Marks a slot for upload at the next flush.
+    private markSlot(slot: i32): void {
+        unchecked(this.slotDirty[slot] = 1);
+        if (slot < this.dirtyLo) this.dirtyLo = slot;
+        if (slot > this.dirtyHi) this.dirtyHi = slot;
+    }
+
+    /// Uploads the slots written since the last flush: runs of them (short
+    /// gaps included) as one update each, or everything after the arena grew.
+    private flushArena(): void {
+        const arena = this.arena;
+        if (arena == null) return;
+        const staging = this.arenaStaging;
+        const dirty = this.slotDirty;
+        if (this.uploadAll) {
+            if (this.slotCount > 0) arena.update(0, staging, <u32>(this.slotCount * OBJ_BYTES), 0);
+            if (this.dirtyHi >= this.dirtyLo) dirty.fill(0, this.dirtyLo, this.dirtyHi + 1);
+        } else if (this.dirtyHi >= this.dirtyLo) {
+            const hi = this.dirtyHi;
+            let s = this.dirtyLo;
+            while (s <= hi) {
+                if (unchecked(dirty[s]) == 0) { s++; continue; }
+                // A run: dirty slots with gaps of at most two clean ones.
+                let end = s;
+                let k = s + 1;
+                while (k <= hi && k - end <= 3) {
+                    if (unchecked(dirty[k]) != 0) end = k;
+                    k++;
+                }
+                for (let j = s; j <= end; j++) unchecked(dirty[j] = 0);
+                const offset = <u32>(s * OBJ_BYTES);
+                arena.update(offset, staging, <u32>((end - s + 1) * OBJ_BYTES), offset);
+                s = end + 1;
+            }
+        }
+        this.uploadAll = false;
+        this.dirtyLo = 0x7fffffff;
+        this.dirtyHi = -1;
     }
 
     /// The group 1 of a draw: the shared arena group, or for a skinned
     /// draw one with its bones (both read the block at state.objOffset).
+    /// Sets `dynamicOffsets` (its object block, its morph block).
     private objGroupOf(item: DrawItem): GPUBindGroup {
         const arena = this.arena!;
         const state = item.state;
+        const offsets = this.dynamicOffsets;
+        unchecked(offsets[0] = state.objOffset);
+        unchecked(offsets[1] = item.morphed ? item.morphOffset : 0);
         const skinned = item.skinned && item.bones != null;
-        const morph = item.morph != null ? item.morph! : this.dummyMorph!;
-        if (!skinned && state.xcount == 0 && item.morph == null) {
+        const morph = item.morphed ? this.morphArena! : this.dummyMorph!;
+        if (!skinned && state.xcount == 0 && !item.morphed) {
             let g = this.arenaGroup;
             if (g == null) {
                 const white = this.white!;
                 g = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                    new GPUBindGroupUBO(1, this.dummyBones!), new GPUBindGroupUBO(7, this.dummyMorph!)],
+                    new GPUBindGroupUBO(1, this.dummyBones!), new GPUBindGroupUBO(7, this.dummyMorph!, 0, <u32>MORPH_BYTES)],
                     extraTextures(null, white));
                 this.arenaGroup = g;
             }
@@ -3358,7 +3814,8 @@ export class GPURenderer {
         for (let i = 0; i < EXTRA_SLOTS && !changed; i++) changed = state.xgroupViews[i] !== state.xviews[i];
         if (changed) {
             state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                new GPUBindGroupUBO(1, bones), new GPUBindGroupUBO(7, morph)], extraTextures(state.xviews, this.white!));
+                new GPUBindGroupUBO(1, bones), new GPUBindGroupUBO(7, morph, 0, <u32>MORPH_BYTES)],
+                extraTextures(state.xviews, this.white!));
             state.arena = arena;
             state.bones = bones;
             state.morph = morph;
@@ -3396,29 +3853,24 @@ export class GPURenderer {
     /// get the six extra slots (group 1 bindings 2-7), each with its uv
     /// transform and a sampler borrowed from group 3 (an identical one, or
     /// the binding of an empty base slot).
-    private writeExtraMaps(item: DrawItem, mu: MaterialUniforms, f: Float32Array, u: Uint32Array, present: u32,
-                           canvas: GPUCanvas): void {
-        const state = item.state;
+    /// Writes into a material block: `variant` says which slots the draw's
+    /// vertex textures borrow (1 morph texture, 2 bone texture, 4 instance
+    /// morphs), whose views each draw sets itself.
+    private writeExtraMaps(b: MaterialBlock, variant: i32, mu: MaterialUniforms, f: Float32Array, u: Uint32Array,
+                           present: u32, canvas: GPUCanvas): void {
         const samplers = _samplers;
         let xpresent: u32 = 0, xsrgb: u32 = 0, xpremul: u32 = 0, xflip: u32 = 0;
         let roles0: u32 = 0xffffffff, roles1: u32 = 0xffffffff;
         let used: u32 = 0;            // extra slots taken
         let count = 0;
         for (let i = 0; i < EXTRA_SLOTS; i++) {
-            state.xviews[i] = null;
+            b.xviews[i] = null;
             _xtex[i] = null;
         }
         // Vertex data borrows its slots first (read with textureLoad).
-        const mv = item.morphView;
-        if (mv != null) { state.xviews[X_SLOT_MORPH] = mv; used |= <u32>1 << <u32>X_SLOT_MORPH; count++; }
-        const bv = item.boneView;
-        if (bv != null) { state.xviews[X_SLOT_BONES] = bv; used |= <u32>1 << <u32>X_SLOT_BONES; count++; }
-        const iv = item.instanceMorphView;
-        if (iv != null) {
-            state.xviews[X_SLOT_MORPH_INSTANCES] = iv;
-            used |= <u32>1 << <u32>X_SLOT_MORPH_INSTANCES;
-            count++;
-        }
+        if ((variant & 1) != 0) { used |= <u32>1 << <u32>X_SLOT_MORPH; count++; }
+        if ((variant & 2) != 0) { used |= <u32>1 << <u32>X_SLOT_BONES; count++; }
+        if ((variant & 4) != 0) { used |= <u32>1 << <u32>X_SLOT_MORPH_INSTANCES; count++; }
         for (let r = 0; r < ROLE_COUNT; r++) {
             const t = mu.roles[r];
             if (t == null) continue;
@@ -3450,7 +3902,7 @@ export class GPURenderer {
                 used |= <u32>1 << <u32>slot;
                 count++;
                 _xtex[slot] = t;
-                state.xviews[slot] = v;
+                b.xviews[slot] = v;
                 const bit: u32 = 1 << <u32>slot;
                 xpresent |= bit;
                 if (t.colorSpace == SRGBColorSpace) xsrgb |= bit;
@@ -3466,12 +3918,12 @@ export class GPURenderer {
             if (r < 8) roles0 = (roles0 & ~(<u32>0xf << shift)) | (<u32>slot << shift);
             else roles1 = (roles1 & ~(<u32>0xf << shift)) | (<u32>slot << shift);
         }
-        state.xcount = count;
+        b.xcount = count;
         let o = OBJ_X_FLAGS >> 2;
         u[o] = xpresent; u[o + 1] = xsrgb; u[o + 2] = xpremul; u[o + 3] = xflip;
         o = OBJ_X_ROLES >> 2;
-        const g = item.geometry;
-        u[o] = roles0; u[o + 1] = roles1; u[o + 2] = g != null && g.hasTangents ? 1 : 0; u[o + 3] = 0;
+        // z (the geometry has tangents) is the draw's.
+        u[o] = roles0; u[o + 1] = roles1; u[o + 2] = 0; u[o + 3] = 0;
         put4(f, OBJ_X_PARAMS, mu.bumpScale, mu.displacementScale, mu.displacementBias, mu.lightMapIntensity);
         put4(f, OBJ_X_PARAMS2, <f64>mu.normalMapType, <f64>mu.combine, mu.reflectivity, mu.refractionRatio);
         const env = mu.textures[SLOT_ENV];
@@ -3506,9 +3958,24 @@ export class GPURenderer {
     /// The lights reaching `object`: those whose range meets its world
     /// bounding sphere (all when unknown), the strongest first, at most
     /// MAX_OBJECT_LIGHTS.
-    private writeLightList(u: Uint32Array, object: Object3D): void {
+    /// Into `lightWords`: OBJ_LIGHTS's two vec4 of u8s.
+    private writeLightList(object: Object3D): void {
+        const u = this.lightWords;
         const n = this.frameLightCount;
         const fl = this.frameLights;
+        let everywhere = n <= MAX_OBJECT_LIGHTS;
+        for (let i = 0; i < n && everywhere; i++) everywhere = fl[i * 5 + 3] <= 0;
+        if (everywhere) {
+            // Every light reaches every object, in frame order (the loop
+            // below gives the same without a bounding sphere).
+            for (let w = 0; w < 8; w++) unchecked(u[w] = 0);
+            u[0] = <u32>n;
+            for (let k = 0; k < n; k++) {
+                const b = k + 1;
+                u[b / 4] |= <u32>k << <u32>((b % 4) * 8);
+            }
+            return;
+        }
         const known = worldSphere(object, _lightSphere);
         const c = _lightSphere.center;
         const r = _lightSphere.radius;
@@ -3545,172 +4012,246 @@ export class GPURenderer {
             }
             found = MAX_OBJECT_LIGHTS;
         }
-        const o = OBJ_LIGHTS >> 2;
-        for (let w = 0; w < 8; w++) u[o + w] = 0;
-        u[o] = <u32>found;
+        for (let w = 0; w < 8; w++) unchecked(u[w] = 0);
+        u[0] = <u32>found;
         for (let k = 0; k < found; k++) {
             const b = k + 1;
-            u[o + b / 4] |= <u32>this.lightOrder[k] << <u32>((b % 4) * 8);
+            u[b / 4] |= <u32>this.lightOrder[k] << <u32>((b % 4) * 8);
         }
     }
 
-    private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
+    /// The material block of `item` for this view: written once a view per
+    /// material (and borrowed vertex texture slots), its version bumped when
+    /// its bytes change; its bind groups rebuilt when its views do.
+    private materialBlock(item: DrawItem, frame: i32, canvas: GPUCanvas): MaterialBlock {
+        const entry = item.entry != null ? item.entry! : this.entryOf(item.state, item.material);
+        const variant = (item.morphView != null ? 1 : 0) | (item.boneView != null ? 2 : 0)
+            | (item.instanceMorphView != null ? 4 : 0);
+        let b = unchecked(entry.blocks[variant]);
+        if (b == null) {
+            b = new MaterialBlock();
+            unchecked(entry.blocks[variant] = b);
+        }
+        if (b.frame == frame) return b;
+        b.frame = frame;
         const buf = this.objStaging;
-        const f = Float32Array.wrap(buf);
-        const u = Uint32Array.wrap(buf);
+        const f = this.objF32;
+        const u = this.objU32;
         const mu = this.uniforms;
-        const moved = this.reserveArena(list.length);
-        const firstSlot = this.arenaUsed;
+        const material = item.material;
+        material.fillUniforms(mu);
+        // The draw's own fields (world and normal matrices, sprite centre,
+        // bind matrices, light list) are written per draw; zero here.
+        this.objU8.fill(0);
+        put4(f, OBJ_COLOR, mu.r, mu.g, mu.b, mu.opacity);
+        put4(f, OBJ_EMISSIVE, mu.emissiveR, mu.emissiveG, mu.emissiveB, mu.alphaTest);
+        put4(f, OBJ_PBR, mu.roughness, mu.metalness, mu.flatShading ? 1 : 0, mu.aoMapIntensity);
+        put4(f, OBJ_SPECULAR, mu.specularR, mu.specularG, mu.specularB, mu.shininess);
+        put4(f, OBJ_EXTRA, mu.normalScaleX, mu.normalScaleY, mu.envMapIntensity, mu.ior);
+        put4(f, OBJ_PHYSICAL0, mu.clearcoat, mu.clearcoatRoughness, mu.sheenRoughness, mu.specularIntensity);
+        put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
+        put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
+        put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.vpH * 0.5);
+        put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, mu.dashOffset);
+        put4(f, OBJ_PHYSICAL3, mu.transmission, mu.thickness,
+            isFinite(mu.attenuationDistance) ? mu.attenuationDistance : 0, mu.dispersion);
+        put4(f, OBJ_PHYSICAL4, mu.attenuationR, mu.attenuationG, mu.attenuationB, mu.iridescence);
+        put4(f, OBJ_PHYSICAL5, mu.iridescenceIOR, mu.iridescenceThicknessMin, mu.iridescenceThicknessMax,
+            mu.anisotropy);
+        put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
+        this.writeClipping(f, material);
+        put4(f, OBJ_MISC0, mu.referenceX, mu.referenceY, mu.referenceZ, mu.nearDistance);
+        put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, mu.dashed ? 1 : 0, 0);
+
+        // Textures: per slot a view, a sampler, flags and the uv transform
+        // (texture.matrix and channel).
+        let present: u32 = 0, srgb: u32 = 0, flip: u32 = 0, premul: u32 = 0;
+        const views = _views;
+        const samplers = _samplers;
+        const white = this.white;
+        const defaultSampler = this.defaultSampler();
+        for (let s = 0; s < TEXTURE_SLOTS; s++) {
+            views[s] = white;
+            samplers[s] = defaultSampler;
+            let o = (OBJ_UV_MATRIX >> 2) + s * 8;
+            f[o] = 1; f[o + 5] = 1;
+            const t = mu.textures[s];
+            if (t == null) continue;
+            if (t instanceof DepthTexture) {
+                // A depth view cannot bind where a float texture is declared.
+                if (!this.warnedDepthMap) {
+                    this.context.log("three: a DepthTexture is for ShaderMaterials; built-in materials ignore it");
+                    this.warnedDepthMap = true;
+                }
+                continue;
+            }
+            const envSlot = s == SLOT_ENV;
+            if (envSlot) {
+                // Environments read their mip chain by roughness.
+                t.generateMipmaps = true;
+                if (t.minFilter != LinearMipmapLinearFilter) t.minFilter = LinearMipmapLinearFilter;
+                this.textures.update(t, frame);
+            }
+            // envMap reads its PMREM (the plain chain if that fails).
+            let v: GPUTextureView? = envSlot ? this.textures.pmrem(t, canvas) : null;
+            const prefiltered = v != null;
+            if (v == null) v = this.textures.view(t, canvas);
+            if (v == null) continue;
+            views[s] = v;
+            const levels = prefiltered ? this.textures.pmremLevels(t) : this.textures.levels(t);
+            samplers[s] = envSlot ? this.backgroundSampler(true) : this.sampler(t, levels > 1);
+            if (envSlot) {
+                put4(f, OBJ_ENV, 1, prefiltered ? <f64>levels - 1 : Math.max(0, <f64>levels - 2),
+                    prefiltered ? 1 : 0, 0);
+            }
+            const bit: u32 = 1 << <u32>s;
+            present |= bit;
+            // Cube textures and PMREMs are linear, straight, top row first.
+            const cube = t instanceof CubeTexture || prefiltered;
+            if (!cube && t.colorSpace == SRGBColorSpace) srgb |= bit;
+            if (cube || t.flipY) flip |= bit;
+            if (!cube && t.premultiplyAlpha) premul |= bit;
+            if (t.matrixAutoUpdate) t.updateMatrix();
+            const e = t.matrix.elements;   // column-major 3x3
+            f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;
+            f[o + 4] = <f32>e[1]; f[o + 5] = <f32>e[4]; f[o + 6] = <f32>e[7];
+        }
+        this.writeExtraMaps(b, variant, mu, f, u, present, canvas);
+        let o = OBJ_TEX_FLAGS >> 2;
+        u[o] = <u32>mu.kind; u[o + 1] = present; u[o + 2] = srgb; u[o + 3] = flip;
+        let flags: u32 = 0;
+        if (mu.vertexColors) flags |= FLAG_VERTEX_COLORS;
+        if (mu.fog) flags |= FLAG_FOG;
+        if (material.transparent) flags |= FLAG_TRANSPARENT;
+        if (material.toneMapped && this.toneMapping != NoToneMapping) flags |= FLAG_TONE_MAPPED;
+        o = OBJ_FLAGS >> 2;
+        u[o] = premul; u[o + 1] = flags;
+        // A new version when the bytes changed.
+        const now = this.objI64, was = b.i64;
+        let same = true;
+        for (let k = 0; k < (OBJ_USED >> 3) && same; k++) same = unchecked(now[k]) == unchecked(was[k]);
+        if (!same) {
+            b.u8.set(this.objU8);
+            b.version++;
+        }
+        for (let s = 0; s < TEXTURE_SLOTS; s++) {
+            b.views[s] = views[s];
+            b.samplers[s] = samplers[s];
+        }
+        if (item.custom != null) return b;
+        let changed = b.matGroup == null;
+        for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupViews[s] !== views[s];
+        if (changed) {
+            const entries: Array<GPUBindGroupTexture> = [];
+            for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
+                b.groupViews[s] = views[s];
+            }
+            b.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
+        }
+        changed = b.samplerGroup == null;
+        for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupSamplers[s] !== samplers[s];
+        if (changed) {
+            const entries: Array<GPUBindGroupSampler> = [];
+            for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
+                b.groupSamplers[s] = samplers[s];
+            }
+            b.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
+        }
+        return b;
+    }
+
+    /// Each draw's object block in its arena slot: its material's block plus
+    /// its own fields, rewritten (and uploaded at the end, in runs) only when
+    /// one of them changed since the slot was last written.
+    private writeDraws(list: Array<DrawItem>, frame: i32, canvas: GPUCanvas): void {
+        this.reserveArena(list.length);
+        const af = this.arenaF32;
+        const au = this.arenaU32;
+        const receives = this.tileCount > 0;
+        const words = this.lightWords;
         for (let i = 0; i < list.length; i++) {
-            const item = list[i];
+            const item = unchecked(list[i]);
             const state = item.state;
             if (state.frame == frame) continue;
             state.frame = frame;
             const object = item.object;
-            item.material.fillUniforms(mu);
+            const b = this.materialBlock(item, frame, canvas);
+            // Its share of the extra slots: the material's maps, then the
+            // vertex textures it borrows slots for.
+            for (let k = 0; k < EXTRA_SLOTS; k++) state.xviews[k] = b.xviews[k];
+            if (item.morphView != null) state.xviews[X_SLOT_MORPH] = item.morphView;
+            if (item.boneView != null) state.xviews[X_SLOT_BONES] = item.boneView;
+            if (item.instanceMorphView != null) state.xviews[X_SLOT_MORPH_INSTANCES] = item.instanceMorphView;
+            state.xcount = b.xcount;
+            state.matGroup = b.matGroup;
+            state.samplerGroup = b.samplerGroup;
 
-            object.matrixWorld.mat4.writeToBuffer(buf, OBJ_MODEL);
+            // What only this draw has.
+            const g = item.geometry;
+            const patch = (object.receiveShadow && receives ? 1 : 0) | (g != null && g.hasTangents ? 2 : 0);
+            this.writeLightList(object);
+            const me = object.matrixWorld.elements;
+            let dirty = state.slot < 0 || state.block !== b || state.blockVersion != b.version || state.patch != patch
+                || item.skinned;
+            for (let k = 0; k < 16 && !dirty; k++) dirty = unchecked(state.model[k]) != unchecked(me[k]);
+            for (let k = 0; k < 8 && !dirty; k++) dirty = unchecked(state.lights[k]) != unchecked(words[k]);
+            const sprite = object instanceof Sprite;
+            if (sprite && !dirty) {
+                const c = (object as Sprite).center;
+                dirty = c.x != state.spriteX || c.y != state.spriteY;
+            }
+            if (!dirty) continue;
+
+            if (state.slot < 0) {
+                state.slot = this.slotCount++;
+                state.objOffset = <u32>(state.slot * OBJ_BYTES);
+            }
+            const base = <i32>state.objOffset;
+            const staging = this.arenaStaging;
+            this.arenaBytes.set(b.u8, base);
+            state.block = b;
+            state.blockVersion = b.version;
+            state.patch = patch;
+            for (let k = 0; k < 16; k++) unchecked(state.model[k] = me[k]);
+            for (let k = 0; k < 8; k++) unchecked(state.lights[k] = words[k]);
+            object.matrixWorld.mat4.writeToBuffer(staging, <u32>(base + OBJ_MODEL));
             _normal.getNormalMatrix(object.matrixWorld);
             const ne = _normal.elements;
-            let o = OBJ_NORMAL >> 2;
+            let o = (base + OBJ_NORMAL) >> 2;
             for (let c = 0; c < 3; c++) {
-                f[o + c * 4] = <f32>ne[c * 3];
-                f[o + c * 4 + 1] = <f32>ne[c * 3 + 1];
-                f[o + c * 4 + 2] = <f32>ne[c * 3 + 2];
-                f[o + c * 4 + 3] = 0;
+                af[o + c * 4] = <f32>ne[c * 3];
+                af[o + c * 4 + 1] = <f32>ne[c * 3 + 1];
+                af[o + c * 4 + 2] = <f32>ne[c * 3 + 2];
+                af[o + c * 4 + 3] = 0;
             }
-            f[o + 12] = 0; f[o + 13] = 0; f[o + 14] = 0; f[o + 15] = 1;
-            put4(f, OBJ_COLOR, mu.r, mu.g, mu.b, mu.opacity);
-            put4(f, OBJ_EMISSIVE, mu.emissiveR, mu.emissiveG, mu.emissiveB, mu.alphaTest);
-            put4(f, OBJ_PBR, mu.roughness, mu.metalness, mu.flatShading ? 1 : 0, mu.aoMapIntensity);
-            put4(f, OBJ_SPECULAR, mu.specularR, mu.specularG, mu.specularB, mu.shininess);
-            put4(f, OBJ_EXTRA, mu.normalScaleX, mu.normalScaleY, mu.envMapIntensity, mu.ior);
-            put4(f, OBJ_PHYSICAL0, mu.clearcoat, mu.clearcoatRoughness, mu.sheenRoughness, mu.specularIntensity);
-            put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
-            put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
-            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.vpH * 0.5);
-            put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, mu.dashOffset);
-            put4(f, OBJ_PHYSICAL3, mu.transmission, mu.thickness,
-                isFinite(mu.attenuationDistance) ? mu.attenuationDistance : 0, mu.dispersion);
-            put4(f, OBJ_PHYSICAL4, mu.attenuationR, mu.attenuationG, mu.attenuationB, mu.iridescence);
-            put4(f, OBJ_PHYSICAL5, mu.iridescenceIOR, mu.iridescenceThicknessMin, mu.iridescenceThicknessMax,
-                mu.anisotropy);
-            put4(f, OBJ_PHYSICAL6, Math.cos(mu.anisotropyRotation), Math.sin(mu.anisotropyRotation), 0, 0);
-            this.writeClipping(f, item.material);
-            this.writeLightList(u, object);
-            put4(f, OBJ_MISC0, mu.referenceX, mu.referenceY, mu.referenceZ, mu.nearDistance);
-            put4(f, OBJ_MISC1, mu.farDistance, mu.alphaHash ? 1 : 0, mu.dashed ? 1 : 0, 0);
-            if (object instanceof Sprite) {
+            af[o + 12] = 0; af[o + 13] = 0; af[o + 14] = 0; af[o + 15] = 1;
+            o = (base + OBJ_LIGHTS) >> 2;
+            for (let k = 0; k < 8; k++) au[o + k] = unchecked(words[k]);
+            if ((patch & 1) != 0) au[((base + OBJ_FLAGS) >> 2) + 1] |= FLAG_RECEIVE_SHADOW;
+            if ((patch & 2) != 0) au[((base + OBJ_X_ROLES) >> 2) + 2] = 1;
+            if (sprite) {
                 const c = (object as Sprite).center;
-                put4(f, OBJ_SPRITE, c.x, c.y, 0, 0);
+                state.spriteX = c.x;
+                state.spriteY = c.y;
+                o = (base + OBJ_SPRITE) >> 2;
+                af[o] = <f32>c.x; af[o + 1] = <f32>c.y; af[o + 2] = 0; af[o + 3] = 0;
             }
-
-            // Textures: per slot a view, a sampler, flags and the uv
-            // transform (texture.matrix and channel).
-            let present: u32 = 0, srgb: u32 = 0, flip: u32 = 0, premul: u32 = 0;
-            const views = _views;
-            const samplers = _samplers;
-            put4(f, OBJ_ENV, 0, 0, 0, 0);
-            for (let s = 0; s < TEXTURE_SLOTS; s++) {
-                views[s] = this.white;
-                samplers[s] = this.defaultSampler();
-                o = (OBJ_UV_MATRIX >> 2) + s * 8;
-                f[o] = 1; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 0;
-                f[o + 4] = 0; f[o + 5] = 1; f[o + 6] = 0; f[o + 7] = 0;
-                const t = mu.textures[s];
-                if (t == null) continue;
-                if (t instanceof DepthTexture) {
-                    // A depth view cannot bind where a float texture is declared.
-                    if (!this.warnedDepthMap) {
-                        this.context.log("three: a DepthTexture is for ShaderMaterials; built-in materials ignore it");
-                        this.warnedDepthMap = true;
-                    }
-                    continue;
-                }
-                const envSlot = s == SLOT_ENV;
-                if (envSlot) {
-                    // Environments read their mip chain by roughness.
-                    t.generateMipmaps = true;
-                    if (t.minFilter != LinearMipmapLinearFilter) t.minFilter = LinearMipmapLinearFilter;
-                    this.textures.update(t, frame);
-                }
-                // envMap reads its PMREM (the plain chain if that fails).
-                let v: GPUTextureView? = envSlot ? this.textures.pmrem(t, canvas) : null;
-                const prefiltered = v != null;
-                if (v == null) v = this.textures.view(t, canvas);
-                if (v == null) continue;
-                views[s] = v;
-                const levels = prefiltered ? this.textures.pmremLevels(t) : this.textures.levels(t);
-                samplers[s] = envSlot ? this.backgroundSampler(true) : this.sampler(t, levels > 1);
-                if (envSlot) {
-                    put4(f, OBJ_ENV, 1, prefiltered ? <f64>levels - 1 : Math.max(0, <f64>levels - 2),
-                        prefiltered ? 1 : 0, 0);
-                }
-                const bit: u32 = 1 << <u32>s;
-                present |= bit;
-                // Cube textures and PMREMs are linear, straight, top row first.
-                const cube = t instanceof CubeTexture || prefiltered;
-                if (!cube && t.colorSpace == SRGBColorSpace) srgb |= bit;
-                if (cube || t.flipY) flip |= bit;
-                if (!cube && t.premultiplyAlpha) premul |= bit;
-                if (t.matrixAutoUpdate) t.updateMatrix();
-                const e = t.matrix.elements;   // column-major 3x3
-                f[o] = <f32>e[0]; f[o + 1] = <f32>e[3]; f[o + 2] = <f32>e[6]; f[o + 3] = t.channel > 0 ? 1 : 0;
-                f[o + 4] = <f32>e[1]; f[o + 5] = <f32>e[4]; f[o + 6] = <f32>e[7];
-            }
-            this.writeExtraMaps(item, mu, f, u, present, canvas);
-            o = OBJ_TEX_FLAGS >> 2;
-            u[o] = <u32>mu.kind; u[o + 1] = present; u[o + 2] = srgb; u[o + 3] = flip;
-            let flags: u32 = 0;
-            if (mu.vertexColors) flags |= FLAG_VERTEX_COLORS;
-            if (mu.fog) flags |= FLAG_FOG;
-            if (item.material.transparent) flags |= FLAG_TRANSPARENT;
-            if (item.material.toneMapped && this.toneMapping != NoToneMapping) flags |= FLAG_TONE_MAPPED;
-            if (object.receiveShadow && this.tileCount > 0) flags |= FLAG_RECEIVE_SHADOW;
-            o = OBJ_FLAGS >> 2;
-            u[o] = premul; u[o + 1] = flags; u[o + 2] = 0; u[o + 3] = 0;
             if (item.skinned) {
                 const sm = object as SkinnedMesh;
-                sm.bindMatrix.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX);
-                sm.bindMatrixInverse.mat4.writeToBuffer(buf, OBJ_BIND_MATRIX_INVERSE);
+                sm.bindMatrix.mat4.writeToBuffer(staging, <u32>(base + OBJ_BIND_MATRIX));
+                sm.bindMatrixInverse.mat4.writeToBuffer(staging, <u32>(base + OBJ_BIND_MATRIX_INVERSE));
             }
-            const slot = this.arenaUsed++;
-            state.objOffset = <u32>(slot * OBJ_BYTES);
-            this.arenaBytes.set(this.objBytes, <i32>state.objOffset);
-
+            this.markSlot(state.slot);
+        }
+        // ShaderMaterials' own uniforms (once a frame per material).
+        for (let i = 0; i < list.length; i++) {
+            const item = unchecked(list[i]);
             const cp = item.custom;
-            if (cp != null) {
-                item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
-                continue;
-            }
-            let changed = state.matGroup == null;
-            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.views[s] !== views[s];
-            if (changed) {
-                const entries: Array<GPUBindGroupTexture> = [];
-                for (let s = 0; s < TEXTURE_SLOTS; s++) {
-                    entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
-                    state.views[s] = views[s];
-                }
-                state.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
-            }
-            changed = state.samplerGroup == null;
-            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = state.samplers[s] !== samplers[s];
-            if (changed) {
-                const entries: Array<GPUBindGroupSampler> = [];
-                for (let s = 0; s < TEXTURE_SLOTS; s++) {
-                    entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
-                    state.samplers[s] = samplers[s];
-                }
-                state.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
-            }
+            if (cp != null) item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
         }
-        // One upload: the new blocks, or everything this render wrote when
-        // the arena moved.
-        const from = moved ? 0 : firstSlot;
-        const count = this.arenaUsed - from;
-        if (count > 0) {
-            this.arena!.update(<u32>(from * OBJ_BYTES), this.arenaStaging, <u32>(count * OBJ_BYTES), <u32>(from * OBJ_BYTES));
-        }
+        this.flushArena();
     }
 
     // ------------------------------------------------------------------ draw
@@ -3774,8 +4315,7 @@ export class GPURenderer {
                 pass.setStencilReference(item.stencilRef);
                 lastStencilRef = item.stencilRef;
             }
-            this.dynamicOffset[0] = state.objOffset;
-            pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffset);
+            pass.setBindGroup(1, this.objGroupOf(item), this.dynamicOffsets);
             const mat = state.matGroup!;
             if (mat !== lastMat) {
                 pass.setBindGroup(2, mat);
@@ -4044,33 +4584,4 @@ function worldSphere(o: Object3D, out: Sphere): bool {
     if (bounds.isEmpty()) return false;
     out.copy(bounds).applyMatrix4(o.matrixWorld);
     return true;
-}
-
-// f32 to f16 by table (van der Zijp's "Fast Half Float Conversions"):
-// truncates the mantissa (no rounding), flushes tiny values to zero, keeps
-// infinities. For vertex data built per frame or per geometry.
-const _halfBase = new StaticArray<u16>(512);
-const _halfShift = new StaticArray<u8>(512);
-let _halfReady = false;
-
-function initHalfTables(): void {
-    for (let i = 0; i < 256; i++) {
-        const e = i - 127;
-        let base: u32 = 0, shift: u32 = 24;
-        if (e < -24) { base = 0; shift = 24; }
-        else if (e < -14) { base = <u32>(0x0400 >> (-e - 14)); shift = <u32>(-e - 1); }
-        else if (e <= 15) { base = <u32>((e + 15) << 10); shift = 13; }
-        else if (e < 128) { base = 0x7C00; shift = 24; }
-        else { base = 0x7C00; shift = 13; }
-        _halfBase[i] = <u16>base; _halfBase[i | 0x100] = <u16>(base | 0x8000);
-        _halfShift[i] = <u8>shift; _halfShift[i | 0x100] = <u8>shift;
-    }
-    _halfReady = true;
-}
-
-function fastHalf(value: f32): u16 {
-    if (!_halfReady) initHalfTables();
-    const f = reinterpret<u32>(value);
-    const e = (f >> 23) & 0x1ff;
-    return <u16>(<u32>_halfBase[e] + ((f & 0x007fffff) >> <u32>_halfShift[e]));
 }

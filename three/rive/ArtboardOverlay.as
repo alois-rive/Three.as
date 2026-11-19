@@ -145,7 +145,8 @@ export class ArtboardOverlayRenderer {
     height: f64 = 0;
     /// Draw nearer objects on top (three.js sets zIndex by distance).
     sortObjects: bool = true;
-    /// What occludes objects with `occlude` (null: the rendered scene).
+    /// What occludes objects with `occlude` (null: the rendered scene; a
+    /// smaller group of big meshes is cheaper per label).
     occluders: Object3D? = null;
     /// How far in front of an object a hit must be to occlude it (world
     /// units), so the surface an object sits on does not hide it.
@@ -336,11 +337,29 @@ export class ArtboardOverlayRenderer {
         const r = this.raycaster;
         r.set(_cameraPos, _dir);
         r.far = Math.max(0, distance - this.occlusionBias);
-        const hits = this.hits;
-        hits.length = 0;
-        r.intersectObject(occluders, true, hits);
-        for (let i = 0; i < hits.length; i++) {
-            if (isVisible(hits[i].object)) return true;
+        if (!isVisible(occluders)) return false;
+        return this.anyHit(occluders);
+    }
+
+    /// Whether the ray hits a visible object of `o`'s subtree: the
+    /// raycaster's walk, stopping at the first hit, without sorting, and
+    /// skipping hidden subtrees (their hits would not count).
+    private anyHit(o: Object3D): bool {
+        const r = this.raycaster;
+        let propagate = true;
+        if (o.layers.test(r.layers)) {
+            const hits = this.hits;
+            hits.length = 0;
+            propagate = o.raycast(r, hits);
+            for (let i = 0; i < hits.length; i++) {
+                if (isVisible(hits[i].object)) return true;
+            }
+        }
+        if (!propagate) return false;
+        const children = o.children;
+        for (let i = 0; i < children.length; i++) {
+            const c = children[i];
+            if (c.visible && this.anyHit(c)) return true;
         }
         return false;
     }

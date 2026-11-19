@@ -158,7 +158,11 @@ export class Matrix4 {
         const n21: f64 = te[1], n22: f64 = te[5], n23: f64 = te[9], n24: f64 = te[13];
         const n31: f64 = te[2], n32: f64 = te[6], n33: f64 = te[10], n34: f64 = te[14];
         const n41: f64 = te[3], n42: f64 = te[7], n43: f64 = te[11], n44: f64 = te[15];
-        return n41 * (+n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34)
+        // Affine (the usual case): the other three terms are zero.
+        if (n41 == 0 && n42 == 0 && n43 == 0) {
+            return n44 * (-n13 * n22 * n31 - n11 * n23 * n32 + n11 * n22 * n33 + n13 * n21 * n32 - n12 * n21 * n33 + n12 * n23 * n31);
+        }
+        return n41 *(+n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34)
             + n42 * (+n11 * n23 * n34 - n11 * n24 * n33 + n14 * n21 * n33 - n13 * n21 * n34 + n13 * n24 * n31 - n14 * n23 * n31)
             + n43 * (+n11 * n24 * n32 - n11 * n22 * n34 - n14 * n21 * n32 + n12 * n21 * n34 + n14 * n22 * n31 - n12 * n24 * n31)
             + n44 * (-n13 * n22 * n31 - n11 * n23 * n32 + n11 * n22 * n33 + n13 * n21 * n32 - n12 * n21 * n33 + n12 * n23 * n31);

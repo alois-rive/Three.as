@@ -14,6 +14,8 @@ export const LINE_SEGMENTS: i32 = 2;
 export const LINE_WIREFRAME: i32 = 3;
 
 export class GeometryGPU {
+    /// The render (view) it was last brought up to date in.
+    frame: i32 = -1;
     position: GPUBuffer? = null;
     normal: GPUBuffer? = null;
     uv: GPUBuffer? = null;
@@ -91,12 +93,18 @@ export class GPUGeometries {
     private map: Map<i32, GeometryGPU> = new Map<i32, GeometryGPU>();
 
     /// The geometry's buffers, uploading what changed. Null when it has no
-    /// position attribute.
-    get(geometry: BufferGeometry): GeometryGPU? {
+    /// position attribute. With a `frame` (the renderer's view counter), a
+    /// geometry already checked in that view is returned as it is.
+    get(geometry: BufferGeometry, frame: i32 = -1): GeometryGPU? {
+        let g: GeometryGPU;
+        const has = this.map.has(geometry.id);
+        if (has && frame >= 0) {
+            g = this.map.get(geometry.id);
+            if (g.frame == frame) return g;
+        }
         const position = geometry.getAttribute("position");
         if (position == null || position.count == 0) return null;
-        let g: GeometryGPU;
-        if (this.map.has(geometry.id)) g = this.map.get(geometry.id);
+        if (has) g = this.map.get(geometry.id);
         else {
             g = new GeometryGPU();
             this.map.set(geometry.id, g);
@@ -227,6 +235,7 @@ export class GPUGeometries {
             g.indexFormat = IndexFormat.none;
             g.count = vertexCount;
         }
+        g.frame = frame;
         return g;
     }
 
