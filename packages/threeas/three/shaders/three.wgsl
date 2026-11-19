@@ -241,7 +241,7 @@ struct LtcTable {
 
 // ---------------------------------------------------------------- variant
 // What the fragment stage reads to pick its features: from the uniforms
-// here (the uber-shader). tools/bake_shaders.sh replaces the lines between
+// here (the uber-shader). tools/threeas_bake.sh replaces the lines between
 // the markers with constant answers for one program key (three.js's
 // getProgramCacheKey and #defines), so the compiler drops the branches and
 // samples a draw does not need, keeps `discard` out of pipelines that never

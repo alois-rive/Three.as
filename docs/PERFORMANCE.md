@@ -60,7 +60,7 @@ What did it:
 - **Parallel frustum culling** (`rive/parallel`) from 2048 candidates:
   slower than the main lane for 1000 objects compiled (0.14 vs 0.12 ms),
   faster for 8000 (0.83 vs 0.95 ms) and interpreted (1.02 vs 1.24 ms).
-- **Baked shader variants** (`tools/bake_shaders.sh`, optional): on this
+- **Baked shader variants** (`tools/threeas_bake.sh`, optional): on this
   GPU the uber-shader's fragment work dominated the compiled frame.
 
 Baked variants, AOT render ms, uber-shader -> every key baked: Benchmark
@@ -74,6 +74,16 @@ frame, a proxy for load time: Benchmark 9.9 -> 2.4 ms, Lights 5.5 -> 1.6,
 Environment 3.0 -> 0.2, so smaller specialized pipelines compiled faster
 here). Mobile and WebGL2 were not measured: do that before recommending
 the mode (see below).
+
+M18 moved the bake into the project (`tools/threeas_bake.sh <project>`;
+variants are found by name, no registry). Its costs, measured on the
+gallery with every one of its 106 keys baked: the release .riv from 15.6
+to 68.9 MB (0.50 MB a variant), Benchmark AOT render 2.46 -> 1.15 ms
+(p50). Without a bake, each program key costs one `context.shader` lookup
+the first time a renderer sees it (about 0.8 µs interpreted) and the
+per-draw key check M14d only ran with a bake: Benchmark AOT render 2.54-2.55
+ms with lookups, 2.56-2.60 ms with them off (`--arg threeUberShader=1`),
+within noise.
 
 M13 follow-ups: the 48-target morph texture of the Animation example took
 115 ms on the main lane interpreted (31 ms AOT) and now converts in a job;
@@ -140,7 +150,7 @@ Not run here (no downloaded code in this environment). To do it:
      the downloaded size (three.js bundle + assets vs the .riv);
    - memory: JS heap vs the wasm memory pages `--bench` reports.
 4. **Both ThreeAS modes**: the uber-shader (default) and a baked build
-   (`tools/bake_shaders.sh`), on WebGPU and WebGL2, desktop and a phone, to
+   (`tools/threeas_bake.sh`), on WebGPU and WebGL2, desktop and a phone, to
    decide whether to recommend the baked mode (it costs file size).
 
 ## Not done in M14

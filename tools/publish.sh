@@ -11,9 +11,12 @@
 #   tools/publish.sh --yes                    no confirmation prompt (CI)
 #
 # Steps, in order (any failure stops the run):
-#  1. Checks: verify and test both packages; release builds of both
-#     (tools/release_build.sh) and tools/check_glsl.py on each .riv, since
-#     WebGL2 rejects GLSL the native backends accept.
+#  1. Checks: verify and test both packages; a shader bake in the gallery
+#     (packages/gallery/threeas_baked/, optional) is fresh for the engine
+#     about to be published (tools/threeas_bake.sh --check; nothing to check
+#     without one); release builds of both (tools/release_build.sh) and
+#     tools/check_glsl.py on each .riv, since WebGL2 rejects GLSL the native
+#     backends accept.
 #  2. Engine, per environment: swap that environment's push binding
 #     (packages/threeas/bindings/<env>.yaml) into packages/threeas/rive.yaml;
 #     on a first production publish (no fileId yet), `rive push
@@ -54,7 +57,7 @@ for arg in "$@"; do
         --description=*) description="${arg#--description=}" ;;
         --dry-run) dry=1 ;;
         --yes|-y) yes=1 ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
         *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -106,6 +109,7 @@ run rive "$ENGINE" --verify --quiet
 run rive "$ENGINE" --test --quiet
 run rive "$GALLERY" --verify --quiet
 run rive "$GALLERY" --test --quiet
+run tools/threeas_bake.sh "$GALLERY" --engine="$ENGINE" --check
 # The gallery against the local engine (its override): the engine is what
 # this run is about to publish, and gallery code using new engine API would
 # not build against the previous snapshot in .libraries/.

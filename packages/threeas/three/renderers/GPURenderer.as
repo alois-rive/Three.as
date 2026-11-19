@@ -110,8 +110,7 @@ import { MorphTexelInput, morphTexels, fastHalf } from "./gpu/MorphTexels";
 import { Job, Jobs } from "rive/jobs";
 import { Parallel, SharedArray } from "rive/parallel";
 import { cullObjects, cullParts, prepareBounds } from "./gpu/Culling";
-import { BAKED_SOURCE_HASH, BAKED_KEYS, BAKED_ASSETS } from "./gpu/BakedShaders";
-import { THREE_WGSL_HASH } from "./gpu/ShaderSourceHash";
+import { bakedShaderName } from "./gpu/ShaderVariants";
 import { Skeleton } from "../objects/Skeleton";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
@@ -738,21 +737,22 @@ export class GPURenderer {
     private cullTest: Uint8Array = new Uint8Array(0);
     private cullOut: SharedArray<u8> = new SharedArray<u8>(0);
     private cullPlanes: Float64Array = new Float64Array(24);
-    /// Draw with baked shader variants where tools/bake_shaders.sh baked
-    /// the draw's program key ("optimized" mode, Rive-only); else, and
-    /// always without a bake, with the uber-shader.
+    /// Draw with the baked shader variant of a draw's program key where the
+    /// project has one (tools/threeas_bake.sh, "optimized" mode, Rive-only);
+    /// else, and always without a bake, with the uber-shader.
     useBakedShaders: bool = true;
-    // The baked variants (gpu/BakedShaders): key -> index, their modules
-    // (loaded on first use) and pipelines. Null: none, or stale.
-    private variantIndex: Map<string, i32>? = null;
-    private variantModules: Array<GPUShaderModule?> = [];
-    private variantMissing: Array<bool> = [];
+    // Baked variants, found by asset name (gpu/ShaderVariants): each program
+    // key seen -> its index in variantModules (-1: none, the uber-shader),
+    // looked up once; the variants' pipelines.
+    private variantByKey: Map<string, i32> = new Map<string, i32>();
+    private variantModules: Array<GPUShaderModule> = [];
     private variantPipelines: Array<Map<i64, GPUPipeline>> = [];
-    private variantsChecked: bool = false;
-    // `--arg threeShaderKeys=1`: log every program key once (the bake
-    // script's recording); keys logged so far.
+    // Dev builds: keys with no variant, logged once the project turns out
+    // to have a bake (a variant was found).
+    private variantMisses: Array<string> = [];
+    // `--arg threeShaderKeys=1`: log every program key once, and its
+    // variant (the bake tool's recording).
     private recordKeys: bool = false;
-    private loggedKeys: Map<string, bool> = new Map<string, bool>();
     // The frame's share of the program key and its lights' types.
     private frameVariantBits: i32 = 0;
     private frameLightTypes: Int32Array = new Int32Array(MAX_LIGHTS);
@@ -4290,29 +4290,6 @@ export class GPURenderer {
 
     // ------------------------------------------------------- baked variants
 
-    /// Whether baked variants are on: tools/bake_shaders.sh baked some, from
-    /// this three.wgsl (checked once; stale ones are logged and ignored).
-    private bakedVariants(): bool {
-        if (!this.variantsChecked) {
-            this.variantsChecked = true;
-            if (BAKED_KEYS.length > 0) {
-                if (BAKED_SOURCE_HASH != THREE_WGSL_HASH) {
-                    this.context.log("three: the baked shader variants are stale (three.wgsl changed since "
-                        + "tools/bake_shaders.sh); drawing with the uber-shader");
-                } else {
-                    const index = new Map<string, i32>();
-                    for (let i = 0; i < BAKED_KEYS.length; i++) {
-                        index.set(BAKED_KEYS[i], i);
-                        this.variantModules.push(null);
-                        this.variantMissing.push(false);
-                    }
-                    this.variantIndex = index;
-                }
-            }
-        }
-        return this.variantIndex != null;
-    }
-
     /// A draw's baked variant (-1: the uber-shader), chosen again only when
     /// its material block, shadow flag, lights or the frame's share changed.
     private variantOf(state: DrawState, b: MaterialBlock, patch: i32, entry: i32): i32 {
@@ -4321,7 +4298,7 @@ export class GPURenderer {
         let same = state.vblock === b && state.vversion == b.version && state.vpatch == patch && state.vframe == frameBits
             && state.ventry == entry;
         for (let k = 0; k < 8 && same; k++) same = unchecked(state.vlights[k]) == unchecked(words[k]);
-        if (same) return state.variant;
+        if (same) return this.useBakedShaders ? state.variant : -1;
         state.vblock = b;
         state.vversion = b.version;
         state.vpatch = patch;
@@ -4329,23 +4306,44 @@ export class GPURenderer {
         state.ventry = entry;
         for (let k = 0; k < 8; k++) unchecked(state.vlights[k] = words[k]);
         const key = this.programKey(b, patch, entry);
+        const known = this.variantByKey;
+        state.variant = known.has(key) ? known.get(key) : this.findVariant(key);
+        return this.useBakedShaders ? state.variant : -1;
+    }
+
+    /// Looks up `key`'s baked variant once: the shader asset
+    /// threeas_baked/v_<h> (gpu/ShaderVariants), in the project or any
+    /// library it imports. Not there (no bake, a key the bake did not see,
+    /// or a bake of another three.wgsl): -1, the uber-shader.
+    private findVariant(key: string): i32 {
+        const name = bakedShaderName(key);
         let variant = -1;
-        const index = this.useBakedShaders ? this.variantIndex : null;
-        if (index != null && index.has(key)) variant = index.get(key);
-        if (!this.loggedKeys.has(key)) {
-            this.loggedKeys.set(key, true);
-            if (this.recordKeys) this.context.log("three shader key: " + key);
-            else if (index != null && variant < 0 && !isDefined(THREE_RELEASE)) {
-                this.context.log("three: no baked shader for " + key + " (uber-shader; rerun tools/bake_shaders.sh)");
+        const module = this.context.shader(name);
+        if (module != null) {
+            variant = this.variantModules.length;
+            this.variantModules.push(module);
+            this.variantPipelines.push(new Map<i64, GPUPipeline>());
+        }
+        this.variantByKey.set(key, variant);
+        if (this.recordKeys) {
+            this.context.log("three shader key: " + key + " " + name + (variant >= 0 ? " baked" : " uber"));
+        } else if (!isDefined(THREE_RELEASE)) {
+            // A project with a bake that misses keys: say which, to rebake.
+            const misses = this.variantMisses;
+            if (variant < 0) misses.push(key);
+            if (this.variantModules.length > 0) {
+                for (let i = 0; i < misses.length; i++) {
+                    this.context.log("three: no baked shader for " + misses[i] + " (uber-shader; rerun tools/threeas_bake.sh)");
+                }
+                misses.length = 0;
             }
         }
-        state.variant = variant;
         return variant;
     }
 
     /// three.js's getProgramCacheKey for the fragment stage: what the
     /// shader's v_* functions answer (three.wgsl's variant block), as
-    /// tools/bake_shaders.sh reads it back.
+    /// tools/threeas_bake.sh reads it back.
     programKey(b: MaterialBlock, patch: i32, entry: i32): string {
         const words = this.lightWords;
         const count = <i32>(words[0] & 0xff);
@@ -4366,39 +4364,15 @@ export class GPURenderer {
             + ((entry & KEY_LOG_DEPTH) != 0 ? "fs_main_logdepth" : "fs_main");
     }
 
-    /// Variant `v`'s shader module (null when its asset is missing: logged
-    /// once, the uber-shader draws instead).
-    private variantModule(v: i32): GPUShaderModule? {
-        const m = this.variantModules[v];
-        if (m != null || this.variantMissing[v]) return m;
-        const name = BAKED_ASSETS[v];
-        let module: GPUShaderModule? = null;
-        const names: StaticArray<string> = ["three/shaders/baked/", "shaders/baked/", "baked/", ""];
-        for (let i = 0; i < names.length && module == null; i++) module = this.context.shader(names[i] + name);
-        if (module == null) {
-            this.variantMissing[v] = true;
-            this.context.log("three: baked shader asset '" + name + "' not found; using the uber-shader");
-            return null;
-        }
-        this.variantModules[v] = module;
-        return module;
-    }
-
     /// The pipeline of a draw: its baked variant's, or the uber-shader's.
     private drawPipeline(key: i32, variant: i32): GPUPipeline {
-        if (variant >= 0) {
-            const module = this.variantModule(variant);
-            if (module != null) {
-                while (this.variantPipelines.length <= variant) this.variantPipelines.push(new Map<i64, GPUPipeline>());
-                const cache = this.variantPipelines[variant];
-                const cacheKey = (<i64>this.pipelineCount << 56) | (<i64>this.pipelineFormat << 32) | <i64><u32>key;
-                if (cache.has(cacheKey)) return cache.get(cacheKey);
-                const p = this.buildPipeline(key, module!);
-                cache.set(cacheKey, p);
-                return p;
-            }
-        }
-        return this.pipeline(key);
+        if (variant < 0) return this.pipeline(key);
+        const cache = unchecked(this.variantPipelines[variant]);
+        const cacheKey = (<i64>this.pipelineCount << 56) | (<i64>this.pipelineFormat << 32) | <i64><u32>key;
+        if (cache.has(cacheKey)) return cache.get(cacheKey);
+        const p = this.buildPipeline(key, unchecked(this.variantModules[variant]));
+        cache.set(cacheKey, p);
+        return p;
     }
 
     /// The material block of `item` for this view: written once a view per
@@ -4568,12 +4542,14 @@ export class GPURenderer {
         const au = this.arenaU32;
         const receives = this.tileCount > 0;
         const words = this.lightWords;
-        const variants = this.recordKeys || (this.useBakedShaders && this.bakedVariants());
+        // Program keys are looked up (and logged) unless baked variants are
+        // off and not recording.
+        const variants = this.recordKeys || this.useBakedShaders;
         for (let i = 0; i < list.length; i++) {
             const item = unchecked(list[i]);
             const state = item.state;
             if (state.frame == frame) {
-                if (variants && item.custom == null) item.variant = state.variant;
+                if (variants && item.custom == null) item.variant = this.useBakedShaders ? state.variant : -1;
                 continue;
             }
             state.frame = frame;

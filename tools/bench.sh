@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The regression bench for CI: compiles and tests both projects
 # (packages/threeas, the engine, and packages/gallery), checks the WebGL2
-# GLSL of their release builds and the baked shader variants' freshness,
+# GLSL of their release builds, the shader bake tool's hash against its test
+# vectors and the gallery's baked shader variants' freshness (when it has
+# any: tools/threeas_bake.sh),
 # then times the gallery's Benchmark artboard (interpreted and ahead of
 # time; the gallery builds packages/threeas through its library override)
 # and compares the means with tools/bench_baseline.txt.
@@ -13,6 +15,8 @@
 #   tools/bench.sh --frames=600       frames a bench times (default 300)
 #   tools/bench.sh --manifests        also check every example's --gpu-manifest
 #                                     (tools/validate_manifest.py --all, 3 minutes)
+#   tools/bench.sh --bake-e2e         also bake a test project end to end
+#                                     (tools/bake_e2e.sh, 3 minutes)
 # Logs go to build/bench/ at the repository root.
 #
 # Timings depend on the machine: keep one baseline per CI machine (the
@@ -27,6 +31,7 @@ update=0
 glsl=1
 frames=300
 manifests=0
+bake_e2e=0
 for arg in "$@"; do
     case "$arg" in
         --update) update=1 ;;
@@ -34,7 +39,8 @@ for arg in "$@"; do
         --skip-glsl) glsl=0 ;;
         --frames=*) frames="${arg#--frames=}" ;;
         --manifests) manifests=1 ;;
-        -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+        --bake-e2e) bake_e2e=1 ;;
+        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
         *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -64,7 +70,12 @@ grep -q "falling back to the downloaded library" "$WORK/verify-gallery.log" \
     && fail "the gallery's library override was refused: it builds the published engine (see $WORK/verify-gallery.log)"
 step test-engine rive "$ENGINE" --test
 step test-gallery rive "$GALLERY" --test
-step bake-check tools/bake_shaders.sh --check
+step bake-selftest tools/threeas_bake.sh --self-test
+step bake-check tools/threeas_bake.sh "$GALLERY" --engine="$ENGINE" --check
+if [ "$bake_e2e" = 1 ]; then
+    step bake-e2e tools/bake_e2e.sh
+    grep -E "^(ok|FAIL) " "$WORK/bake-e2e.log" | sed 's/^/     /'
+fi
 
 if [ "$glsl" = 1 ]; then
     # Release .rivs of the engine (every engine shader) and of the gallery
