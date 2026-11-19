@@ -106,7 +106,10 @@ run rive "$ENGINE" --verify --quiet
 run rive "$ENGINE" --test --quiet
 run rive "$GALLERY" --verify --quiet
 run rive "$GALLERY" --test --quiet
-run tools/release_build.sh "$WORK/release"
+# The gallery against the local engine (its override): the engine is what
+# this run is about to publish, and gallery code using new engine API would
+# not build against the previous snapshot in .libraries/.
+run tools/release_build.sh "$WORK/release" --override
 run python3 tools/check_glsl.py "$WORK/release/threeas/threeas.riv"
 run python3 tools/check_glsl.py "$WORK/release/gallery/three_as.riv"
 
@@ -162,6 +165,8 @@ if [ "$gallery" = 1 ]; then
     # pages: binding in its rive.yaml is the older production page, which is
     # only republished by hand.)
     run rive "$WORK/gallery" --publish=web --uat --workspace="$UAT_PAGES_WORKSPACE" --name="$PAGES_NAME"
+    # The page's own build (on the published engine): WebGL2 check.
+    run python3 tools/check_glsl.py "$WORK/gallery/build/three_as.riv"
 fi
 
 echo "done. Commit packages/gallery/{threeas.rml,rive.yaml,.libraries} (and packages/threeas/bindings/ after a first production publish)."
