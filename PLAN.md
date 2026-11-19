@@ -307,7 +307,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 
-### M12: rendering features and post-processing breadth
+### M12: rendering features and post-processing breadth (done)
 
 - **M12a, views (done; example `Views`).** `setViewport`, `setScissor`, `setScissorTest` (split
   screens, insets), ArrayCamera, StereoCamera, multiple scenes in one
