@@ -50,6 +50,13 @@ rive . --artboard=HelloCube --screenshot=build/h.png --advance=1s
 rive .                                           # live preview window
 ```
 
+`--verify` does not compile the GL backend's GLSL either. Before publishing
+after a shader change, build a release `.riv` (`rive . --publish
+--output-dir=build/release`) and run `python3 tools/check_glsl.py
+build/release/three_as.riv` (needs glslangValidator): WebGL2 rejects what
+the native backends accept, e.g. a WGSL local named `gl` (escaped to the
+reserved `gl_1`).
+
 `--verify` does not look at pixels: after a rendering change, take a
 screenshot and look at it. Interaction can be scripted headless:
 `--pointer=click@x,y`, `--pointer=drag@x1,y1>x2,y2:steps`,
