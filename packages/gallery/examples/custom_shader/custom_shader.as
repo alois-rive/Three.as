@@ -4,8 +4,8 @@
 // built from three/shaders/lib/three_chunks.wgsl) lit by the scene's lights
 // and shadows, with fog.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 import { Artboard } from "rive/artboard";
 

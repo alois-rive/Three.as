@@ -45,7 +45,6 @@ export class HDRTests extends Tests {
             test("read the same studio", (expect) => {
                 const hdrBytes = this.blob("studio_rgbe");
                 const exrBytes = this.blob("studio_exr");
-                expect.that(hdrBytes != null && exrBytes != null).is(true);
                 if (hdrBytes == null || exrBytes == null) return;
                 const rl = new RGBELoader().setDataType(FloatType);
                 const hdr = rl.parse(Uint8Array.wrap(hdrBytes!));

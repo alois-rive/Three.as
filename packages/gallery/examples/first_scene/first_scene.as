@@ -6,7 +6,7 @@
 //   - A metal sphere and a blue point light orbit the cube.
 //   - `speed` (a script input) scales time, so Rive can animate or bind it.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 import { Artboard } from "rive/artboard";

@@ -3,8 +3,8 @@
 // scene's environment and its (blurred) background; spheres sweep
 // metalness (rows) against roughness (columns), lit by nothing else.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 
 /// A width x 2 equirectangular studio, sRGB bytes, bottom row first.

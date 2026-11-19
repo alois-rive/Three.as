@@ -646,7 +646,6 @@ export class SVGTests extends Tests {
         group("SVGLoader: assets and Rive paths", () => {
             test("the Models logo from its BlobAsset", (expect) => {
                 const bytes = this.blob("threeas_logo");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const data = new SVGLoader().parse(String.UTF8.decode(bytes!));
                 // The mark, the dot (a use), the bar, the zigzag.

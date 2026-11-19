@@ -10,8 +10,8 @@
 //     256 bones a uniform block holds).
 //   - A row of buoys bobbing from one action on an AnimationObjectGroup.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 
 const TENTACLE_BONES: i32 = 6;

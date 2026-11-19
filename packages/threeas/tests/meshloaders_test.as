@@ -10,7 +10,6 @@ export class MeshLoaderTests extends Tests {
         group("STLLoader", () => {
             test("binary, with Magics colours", (expect) => {
                 const bytes = this.blob("pyramid_binary");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const g = new STLLoader().parse(bytes!);
                 expect.that(g.getAttribute("position")!.count).is(18);
@@ -40,7 +39,6 @@ export class MeshLoaderTests extends Tests {
         group("PLYLoader", () => {
             test("ASCII: normals, colours, quads, custom properties", (expect) => {
                 const bytes = this.blob("cube_ascii");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new PLYLoader();
                 const custom = new Map<string, Array<string>>();

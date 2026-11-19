@@ -1,7 +1,7 @@
 // Primitives: an animated InstancedMesh, a Points galaxy, lines (strip,
 // loop, segments, dashed), a wireframe mesh, additive sprites and LODs.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 

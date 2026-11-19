@@ -5,11 +5,11 @@
 // moon casts long shadows down the street through cascaded shadow maps
 // (the CSM addon, four cascades).
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { RGBELoader } from "../../three/addons/loaders/RGBELoader";
-import { LightProbeGenerator } from "../../three/addons/lights/LightProbeGenerator";
-import { CSM } from "../../three/addons/csm/CSM";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { RGBELoader } from "lib:threeas/three/addons/loaders/RGBELoader";
+import { LightProbeGenerator } from "lib:threeas/three/addons/lights/LightProbeGenerator";
+import { CSM } from "lib:threeas/three/addons/csm/CSM";
 import { Context } from "rive/host";
 
 export class Lights extends THREE.ThreeLayout {

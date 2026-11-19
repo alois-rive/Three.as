@@ -3,7 +3,7 @@
 // calls, with types, a GPURenderer instead of a WebGLRenderer, and Rive's
 // Layout hooks in place of the window and requestAnimationFrame.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 

@@ -5,10 +5,10 @@
 // an embedded PNG texture and a glTF point light; lit by a RoomEnvironment
 // through PMREMGenerator.fromScene, as three.js's glTF examples.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { GLTFLoader } from "../../three/addons/loaders/GLTFLoader";
-import { RoomEnvironment } from "../../three/addons/environments/RoomEnvironment";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { GLTFLoader } from "lib:threeas/three/addons/loaders/GLTFLoader";
+import { RoomEnvironment } from "lib:threeas/three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
 
 export class Model extends THREE.ThreeLayout {

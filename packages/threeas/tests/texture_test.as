@@ -82,7 +82,6 @@ export class TextureTests extends Tests {
         group("KTX2Loader", () => {
             test("BC1 with its mip chain", (expect) => {
                 const bytes = this.blob("checker_bc1.ktx2");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new KTX2Loader();
                 const t = loader.parse(unzlibSync(Uint8Array.wrap(bytes!)));

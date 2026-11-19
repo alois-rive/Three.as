@@ -6,9 +6,9 @@
 // from a sheenColorMap. Front row: transmission (glass with dispersion,
 // frosted, tinted by attenuation), iridescence and anisotropy.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { RGBELoader } from "../../three/addons/loaders/RGBELoader";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { RGBELoader } from "lib:threeas/three/addons/loaders/RGBELoader";
 import { Context } from "rive/host";
 
 /// A size x size RGBA8 texture from f(u, v) -> 0xRRGGBB.

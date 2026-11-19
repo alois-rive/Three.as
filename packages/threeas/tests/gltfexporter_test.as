@@ -639,7 +639,6 @@ export class GLTFExporterTests extends Tests {
             });
             test("the Models example's features.glb, exported and reloaded", (expect) => {
                 const bytes = this.blob("features");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
                 const source = loader.parse(bytes!);

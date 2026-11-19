@@ -2,7 +2,7 @@
 // Catmull-Rom knot; a flat shape with a hole; and a star drawn in Rive (the
 // Emblem artboard's StarPath), read as a path and extruded.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 import { Artboard } from "rive/artboard";

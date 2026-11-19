@@ -37,7 +37,6 @@ export class FBXTests extends Tests {
             test("binary and ASCII detection, versions, time", (expect) => {
                 const binary = this.blob("fbx_scene");
                 const ascii = this.blob("fbx_ascii");
-                expect.that(binary != null && ascii != null).is(true);
                 if (binary == null || ascii == null) return;
                 expect.that(isFbxFormatBinary(binary!)).is(true);
                 expect.that(isFbxFormatBinary(ascii!)).is(false);

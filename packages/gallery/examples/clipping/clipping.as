@@ -5,8 +5,8 @@
 // A second object shows clipIntersection: only the corner where both its
 // planes clip is removed.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 
 export class Clipping extends THREE.ThreeLayout {

@@ -3,10 +3,10 @@
 // (EXRLoader), as the background and the light of a roughness sweep; a
 // mirror sphere reflects the moving scene through a CubeCamera.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { RGBELoader } from "../../three/addons/loaders/RGBELoader";
-import { EXRLoader } from "../../three/addons/loaders/EXRLoader";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { RGBELoader } from "lib:threeas/three/addons/loaders/RGBELoader";
+import { EXRLoader } from "lib:threeas/three/addons/loaders/EXRLoader";
 import { Context } from "rive/host";
 
 export class Environments extends THREE.ThreeLayout {

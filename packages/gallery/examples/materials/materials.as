@@ -2,7 +2,7 @@
 // in linear fog, under an equirectangular sky, tone mapped with ACES. All
 // textures are generated (no image assets).
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 

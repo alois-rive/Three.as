@@ -5,21 +5,21 @@
 // rainbow helix and a dashed outline). TransformControls on the rounded
 // box: drag its arrows, planes or rings; orbit elsewhere.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { VertexNormalsHelper } from "../../three/addons/helpers/VertexNormalsHelper";
-import { RoundedBoxGeometry } from "../../three/addons/geometries/RoundedBoxGeometry";
-import { ParametricGeometry } from "../../three/addons/geometries/ParametricGeometry";
-import { klein } from "../../three/addons/geometries/ParametricFunctions";
-import { ConvexGeometry } from "../../three/addons/geometries/ConvexGeometry";
-import { DecalGeometry } from "../../three/addons/geometries/DecalGeometry";
-import { RiveFont } from "../../three/addons/loaders/FontLoader";
-import { TextGeometry, TextGeometryParameters } from "../../three/addons/geometries/TextGeometry";
-import { LineGeometry } from "../../three/addons/lines/LineGeometry";
-import { LineSegmentsGeometry } from "../../three/addons/lines/LineSegmentsGeometry";
-import { LineMaterial } from "../../three/addons/lines/LineMaterial";
-import { Line2, LineSegments2 } from "../../three/addons/lines/LineSegments2";
-import { TransformControls } from "../../three/addons/controls/TransformControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { VertexNormalsHelper } from "lib:threeas/three/addons/helpers/VertexNormalsHelper";
+import { RoundedBoxGeometry } from "lib:threeas/three/addons/geometries/RoundedBoxGeometry";
+import { ParametricGeometry } from "lib:threeas/three/addons/geometries/ParametricGeometry";
+import { klein } from "lib:threeas/three/addons/geometries/ParametricFunctions";
+import { ConvexGeometry } from "lib:threeas/three/addons/geometries/ConvexGeometry";
+import { DecalGeometry } from "lib:threeas/three/addons/geometries/DecalGeometry";
+import { RiveFont } from "lib:threeas/three/addons/loaders/FontLoader";
+import { TextGeometry, TextGeometryParameters } from "lib:threeas/three/addons/geometries/TextGeometry";
+import { LineGeometry } from "lib:threeas/three/addons/lines/LineGeometry";
+import { LineSegmentsGeometry } from "lib:threeas/three/addons/lines/LineSegmentsGeometry";
+import { LineMaterial } from "lib:threeas/three/addons/lines/LineMaterial";
+import { Line2, LineSegments2 } from "lib:threeas/three/addons/lines/LineSegments2";
+import { TransformControls } from "lib:threeas/three/addons/controls/TransformControls";
 import { Context } from "rive/host";
 
 export class Editor extends THREE.ThreeLayout {

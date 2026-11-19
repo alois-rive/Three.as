@@ -4,8 +4,8 @@
 // the right "TV" shows a second scene through a RenderTarget; the propeller
 // turns with the Screen artboard's animated Spinner node.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 import { PointerEvent } from "rive/events";

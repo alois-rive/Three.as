@@ -3,8 +3,8 @@
 // each other. A lattice (alphaMap + alphaTest) casts a cut-out shadow; a
 // sphere with alphaHash is stochastically see-through, shadow included.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 
 export class Shadows extends THREE.ThreeLayout {

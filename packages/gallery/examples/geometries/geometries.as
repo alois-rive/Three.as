@@ -1,7 +1,7 @@
 // Geometries: every built-in geometry, after three.js's webgl_geometries
 // example, wearing a UV grid so texture coordinates and seams show.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 

@@ -5,7 +5,7 @@
 // scissor rectangle. Over it all, a picture-in-picture view from above,
 // cleared inside its scissor.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Context } from "rive/host";
 
 export class Views extends THREE.ThreeLayout {

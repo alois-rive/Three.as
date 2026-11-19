@@ -6,7 +6,7 @@
 // keeps the meshes still (their object blocks unchanged from frame to frame);
 // `--arg serialcull=1` culls on the main lane only.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Context } from "rive/host";
 import { clock } from "rive/os";
 

@@ -2,13 +2,13 @@
 // UnrealBloomPass, OutputPass (ACES tone mapping and sRGB) and FXAA, over
 // emissive rings and spheres.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { EffectComposer } from "../../three/addons/postprocessing/EffectComposer";
-import { RenderPass } from "../../three/addons/postprocessing/RenderPass";
-import { UnrealBloomPass } from "../../three/addons/postprocessing/UnrealBloomPass";
-import { OutputPass } from "../../three/addons/postprocessing/OutputPass";
-import { FXAAPass } from "../../three/addons/postprocessing/FXAAPass";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { EffectComposer } from "lib:threeas/three/addons/postprocessing/EffectComposer";
+import { RenderPass } from "lib:threeas/three/addons/postprocessing/RenderPass";
+import { UnrealBloomPass } from "lib:threeas/three/addons/postprocessing/UnrealBloomPass";
+import { OutputPass } from "lib:threeas/three/addons/postprocessing/OutputPass";
+import { FXAAPass } from "lib:threeas/three/addons/postprocessing/FXAAPass";
 import { Context } from "rive/host";
 
 export class PostProcessing extends THREE.ThreeLayout {

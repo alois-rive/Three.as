@@ -2,8 +2,8 @@
 // bones, skinned on the GPU) and its morph targets example (a box that
 // morphs to a sphere and twists), animated with an AnimationMixer.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 
 const SEGMENT_HEIGHT: f64 = 0.8;

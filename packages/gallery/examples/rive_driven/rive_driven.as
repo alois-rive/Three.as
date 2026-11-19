@@ -11,8 +11,8 @@
 //     three.js skeleton live (RiveRig), and a second arm plays the same
 //     timeline baked into an AnimationClip.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 import { Context } from "rive/host";
 import { Artboard } from "rive/artboard";
 import { ViewModel, PropertyBoolean, PropertyString } from "rive/data";

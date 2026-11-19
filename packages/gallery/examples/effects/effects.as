@@ -4,31 +4,31 @@
 // it, builds that pass's EffectComposer the first time (as three.js's
 // examples set them up) and writes a caption to `info`.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { EffectComposer } from "../../three/addons/postprocessing/EffectComposer";
-import { RenderPass } from "../../three/addons/postprocessing/RenderPass";
-import { ShaderPass } from "../../three/addons/postprocessing/ShaderPass";
-import { OutputPass } from "../../three/addons/postprocessing/OutputPass";
-import { UnrealBloomPass } from "../../three/addons/postprocessing/UnrealBloomPass";
-import { OutlinePass } from "../../three/addons/postprocessing/OutlinePass";
-import { BokehPass, BokehPassParameters } from "../../three/addons/postprocessing/BokehPass";
-import { AfterimagePass } from "../../three/addons/postprocessing/AfterimagePass";
-import { FilmPass } from "../../three/addons/postprocessing/FilmPass";
-import { GlitchPass } from "../../three/addons/postprocessing/GlitchPass";
-import { DotScreenPass } from "../../three/addons/postprocessing/DotScreenPass";
-import { HalftonePass, HalftonePassParameters } from "../../three/addons/postprocessing/HalftonePass";
-import { LUTPass, LUTPassParameters } from "../../three/addons/postprocessing/LUTPass";
-import { RenderPixelatedPass } from "../../three/addons/postprocessing/RenderPixelatedPass";
-import { MaskPass, ClearMaskPass } from "../../three/addons/postprocessing/MaskPass";
-import { LUTCubeLoader } from "../../three/addons/loaders/LUTCubeLoader";
-import { CopyShader } from "../../three/addons/shaders/PostShaders";
-import { SMAAPass } from "../../three/addons/postprocessing/SMAAPass";
-import { SSAARenderPass } from "../../three/addons/postprocessing/SSAARenderPass";
-import { TAARenderPass } from "../../three/addons/postprocessing/TAARenderPass";
-import { SSAOPass } from "../../three/addons/postprocessing/SSAOPass";
-import { SAOPass } from "../../three/addons/postprocessing/SAOPass";
-import { GTAOPass, GTAOParameters } from "../../three/addons/postprocessing/GTAOPass";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { EffectComposer } from "lib:threeas/three/addons/postprocessing/EffectComposer";
+import { RenderPass } from "lib:threeas/three/addons/postprocessing/RenderPass";
+import { ShaderPass } from "lib:threeas/three/addons/postprocessing/ShaderPass";
+import { OutputPass } from "lib:threeas/three/addons/postprocessing/OutputPass";
+import { UnrealBloomPass } from "lib:threeas/three/addons/postprocessing/UnrealBloomPass";
+import { OutlinePass } from "lib:threeas/three/addons/postprocessing/OutlinePass";
+import { BokehPass, BokehPassParameters } from "lib:threeas/three/addons/postprocessing/BokehPass";
+import { AfterimagePass } from "lib:threeas/three/addons/postprocessing/AfterimagePass";
+import { FilmPass } from "lib:threeas/three/addons/postprocessing/FilmPass";
+import { GlitchPass } from "lib:threeas/three/addons/postprocessing/GlitchPass";
+import { DotScreenPass } from "lib:threeas/three/addons/postprocessing/DotScreenPass";
+import { HalftonePass, HalftonePassParameters } from "lib:threeas/three/addons/postprocessing/HalftonePass";
+import { LUTPass, LUTPassParameters } from "lib:threeas/three/addons/postprocessing/LUTPass";
+import { RenderPixelatedPass } from "lib:threeas/three/addons/postprocessing/RenderPixelatedPass";
+import { MaskPass, ClearMaskPass } from "lib:threeas/three/addons/postprocessing/MaskPass";
+import { LUTCubeLoader } from "lib:threeas/three/addons/loaders/LUTCubeLoader";
+import { CopyShader } from "lib:threeas/three/addons/shaders/PostShaders";
+import { SMAAPass } from "lib:threeas/three/addons/postprocessing/SMAAPass";
+import { SSAARenderPass } from "lib:threeas/three/addons/postprocessing/SSAARenderPass";
+import { TAARenderPass } from "lib:threeas/three/addons/postprocessing/TAARenderPass";
+import { SSAOPass } from "lib:threeas/three/addons/postprocessing/SSAOPass";
+import { SAOPass } from "lib:threeas/three/addons/postprocessing/SAOPass";
+import { GTAOPass, GTAOParameters } from "lib:threeas/three/addons/postprocessing/GTAOPass";
 import { Context } from "rive/host";
 import { PropertyNumber, PropertyString } from "rive/data";
 

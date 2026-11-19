@@ -2,10 +2,10 @@
 // sphere, a torus knot and a cone, with 600 instances of them tumbling,
 // each its own colour. Every geometry draws with one instanced call.
 
-import * as THREE from "../../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Context } from "rive/host";
-import { ThreeLayout } from "../../three/rive/ThreeLayout";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
+import { ThreeLayout } from "lib:threeas/three/rive/ThreeLayout";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
 
 const COUNT: i32 = 600;
 

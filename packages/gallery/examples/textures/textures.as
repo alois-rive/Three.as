@@ -4,10 +4,10 @@
 // from KTX2Loader (a device without ASTC shows that cube magenta, with a log
 // line: KTX2 files here hold one GPU format, no Basis transcoding).
 
-import { unzlibSync } from "../../three/addons/libs/fflate";
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { KTX2Loader } from "../../three/addons/loaders/KTX2Loader";
+import { unzlibSync } from "lib:threeas/three/addons/libs/fflate";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { KTX2Loader } from "lib:threeas/three/addons/loaders/KTX2Loader";
 import { Context } from "rive/host";
 
 function checker(size: i32, cells: i32, a: u32, b: u32): THREE.DataTexture {

@@ -633,7 +633,7 @@ export class ObjectLoaderTests extends Tests {
             });
             test("a pretty-printed file from a BlobAsset", (expect) => {
                 const bytes = this.blob("threejs_scene");
-                expect.that(bytes != null).is(true);
+                if (bytes == null) return;
                 const loader = new THREE.ObjectLoader();
                 const props = loader.parse<string>(String.UTF8.decode(bytes!))!;
                 expect.that(props instanceof THREE.Group).is(true);

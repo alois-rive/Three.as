@@ -11,13 +11,13 @@
 // (pointsToStroke), as three.js's webgl_loader_svg example; and a binary FBX
 // (FBXLoader; made by tools/make_fbx_samples.py) with its animation.
 
-import * as THREE from "../../three/Three";
-import { OrbitControls } from "../../three/addons/controls/OrbitControls";
-import { GLTFLoader } from "../../three/addons/loaders/GLTFLoader";
-import { SVGLoader } from "../../three/addons/loaders/SVGLoader";
-import { FBXLoader } from "../../three/addons/loaders/FBXLoader";
-import { MeshoptDecoder } from "../../three/addons/libs/meshopt_decoder";
-import { RoomEnvironment } from "../../three/addons/environments/RoomEnvironment";
+import * as THREE from "lib:threeas/three/Three";
+import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
+import { GLTFLoader } from "lib:threeas/three/addons/loaders/GLTFLoader";
+import { SVGLoader } from "lib:threeas/three/addons/loaders/SVGLoader";
+import { FBXLoader } from "lib:threeas/three/addons/loaders/FBXLoader";
+import { MeshoptDecoder } from "lib:threeas/three/addons/libs/meshopt_decoder";
+import { RoomEnvironment } from "lib:threeas/three/addons/environments/RoomEnvironment";
 import { Context } from "rive/host";
 import { Promise } from "rive/promise";
 

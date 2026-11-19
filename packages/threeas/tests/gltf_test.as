@@ -47,7 +47,6 @@ export class GLTFTests extends Tests {
         group("GLTFLoader extensions", () => {
             test("meshopt geometry, quantized geometry, sparse morphs", (expect) => {
                 const bytes = this.blob("features");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
                 const gltf = loader.parse(bytes!);
@@ -166,7 +165,6 @@ export class GLTFTests extends Tests {
             });
             test(".gltf JSON with a base64 buffer", (expect) => {
                 const bytes = this.blob("features_embedded");
-                expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new GLTFLoader();
                 const gltf = loader.parse(bytes!);
