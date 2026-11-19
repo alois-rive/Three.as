@@ -11,6 +11,7 @@ import { Vector4 } from "../three/math/Vector4";
 import { RenderTarget } from "../three/renderers/RenderTarget";
 import { RendererInfo } from "../three/renderers/GPURenderer";
 import { RenderTargetOptions } from "../three/renderers/RenderTarget";
+import { Uniform } from "../three/materials/ShaderMaterial";
 import { DepthTexture } from "../three/textures/DepthTexture";
 import { FramebufferTexture } from "../three/textures/FramebufferTexture";
 import {
@@ -138,6 +139,22 @@ export class ViewsTests extends Tests {
                 expect.that(<f64>t.height).is(32);
                 expect.that(<f64>t.magFilter).is(<f64>NearestFilter);
                 expect.that(t.generateMipmaps).is(false);
+            });
+        });
+        group("Uniform arrays", () => {
+            test("a Float32Array is an array of vec4s", (expect) => {
+                const a = new Float32Array(8);
+                a[5] = 2;
+                const u = new Uniform<Float32Array>(a);
+                expect.that(<f64>u.size()).is(32);
+                expect.that(<f64>u.align()).is(16);
+                const f = new Float32Array(12);
+                u.write(f, 16);
+                expect.that(<f64>f[9]).is(2);
+                const c = u.clone() as Uniform<Float32Array>;
+                c.value[5] = 7;
+                expect.that(<f64>a[5]).is(2);
+                expect.that(<f64>new Uniform<Float32Array>(new Float32Array(6)).size()).is(32);
             });
         });
         group("RendererInfo", () => {
