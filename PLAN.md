@@ -348,7 +348,58 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - Not planned: audio (no Rive scripting audio API yet), XR, node materials
   and TSL (WGSL is the shading language here).
 
-### M14: performance and shipping
+### M14: performance and shipping (done)
+
+Numbers, method and the three.js comparison recipe: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+- **M14a, measure (done).** `renderer.info.timings` (CPU per render
+  stage), Benchmark `--arg profile|meshes|instances|still|serialcull`,
+  `tools/screenshots.sh` + `tools/compare_shots.py` (every example, twice,
+  before/after). Baseline: interpreted render 7.21 ms, AOT 2.46 ms.
+- **M14b, CPU work per frame (done).** Object blocks keep their arena slot
+  and are rewritten and uploaded (in runs) only when they change; material
+  blocks once a view per material; per-view caches (geometries, material
+  state, ShaderMaterial pipelines), pooled draw items, no per-frame garbage
+  in the renderer's frame path. Interpreted render 7.21 -> 3.7 ms (still
+  boxes 7.43 -> 3.24). From M13: morph texel conversion in a Rive job
+  joined before the first pass (115 ms on the main lane interpreted for the
+  Animation blob), MorphU blocks in one shared buffer at dynamic offsets,
+  big bone textures upload only moved bones, overlay occlusion stops at
+  the first hit. Pixel-identical (58 screenshots).
+- **M14c, parallelism (done, partial by measurement).** Frustum culling in
+  a `rive/parallel` call from 2048 candidates (pays from about that size
+  compiled; interpreted from 1000). Skinning is on the GPU and
+  Skeleton.update uses native Mat4 (parts cannot call the host); the CPU
+  morph blend is a rare fallback: neither moved.
+- **M14d, prebaked shader variants (done, optional).** As planned below:
+  three.wgsl reads its fragment features through `v_*` functions;
+  `GPURenderer.programKey`; `tools/bake_shaders.sh` (bash: record with
+  `--arg threeShaderKeys=1`, generate `three/shaders/baked/*.wgsl` with
+  only the key's two entry points, write `gpu/BakedShaders.as` with
+  three.wgsl's hash; `--check`, `--clean`, `--max`, `--keys`); runtime
+  fallback to the uber-shader, unbaked keys logged once unless
+  `THREE_RELEASE`; same bind group layouts; `renderer.compile` pre-warms
+  baked pipelines. AOT render with all 94 example keys baked: Benchmark
+  2.43 -> 0.98 ms, Lights 2.71 -> 0.99, Environment 0.82 -> 0.08; the
+  .riv grows about 0.5 MB a variant (9.2 -> 58.7 MB). Baked renders differ
+  from the uber-shader at a few edge pixels (no `discard` plus folded
+  constants; each feature alone is bit-exact). The repository ships no
+  bake; WebGL2 and mobile timing still to do before recommending it.
+- **M14e, CI (done).** `tools/bench.sh`: verify, test, bake freshness,
+  release-build GLSL check, Benchmark interpreted and AOT against
+  `tools/bench_baseline.txt` (30% + 0.1 ms), optional `--manifests`.
+  `make_gallery.py --thumbs` fails on blank or tiny thumbnails.
+- **M14f, WebGPU validation (done, own validator).** Rive's
+  `tools/webgpu_validate` is not shipped; `tools/validate_manifest.py`
+  checks every example's `--gpu-manifest` descriptors against WebGPU rules
+  and the web limits (all pass). Not covered: draw-time dynamic offsets,
+  same-pass read/write hazards, device-specific format support.
+- **M14g, three.js comparison (documented, not run).** The matching
+  scenes and what to measure: docs/PERFORMANCE.md.
+- Not done: `--publish=web` and publishing the library (left to the main
+  session), three.js measurements, baked-mode timing on WebGL2 and mobile.
+
+The plan this milestone started from:
 
 - Skip unchanged object blocks and uploads; per-frame allocation audit
   (no garbage in steady state).

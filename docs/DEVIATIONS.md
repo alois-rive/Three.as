@@ -6,7 +6,8 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 13 done (see [../PLAN.md](../PLAN.md)). Features not yet ported
+Status: Milestone 14 done (see [../PLAN.md](../PLAN.md); performance notes in
+[PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
 
@@ -1297,4 +1298,6 @@ three.js objects:
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-M14 (performance and shipping).
+no milestone is open. Left from M14: publishing (`--publish=web`, the
+library to the Rive community) and a measured comparison with three.js in a
+browser (the method is in [PERFORMANCE.md](PERFORMANCE.md)).
