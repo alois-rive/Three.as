@@ -1,0 +1,23 @@
+# ThreeAS, the engine: three.js for Rive, published as a Rive library.
+# See ../../README.md and ../../AGENTS.md.
+name: threeas
+scripting: wasm
+
+exclude:
+  - build
+  - tools
+  - "*.md"
+  - "**/*.md"
+
+# Test suites (tests/*_test.as, scripts are named by file stem) run with
+# `rive . --test` and are not published with the library.
+excludeFromRev:
+  scripts:
+    - "*_test"
+
+logs:
+  file: build/rive.log
+  problems: build/problems.log
+push:
+  projectId: 44599
+  fileId: 38630

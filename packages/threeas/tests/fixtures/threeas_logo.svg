@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ThreeAS mark for the Models example: a rounded triangle with a round
+     window (a hole by winding), a dot in it, a bar, and a zigzag stroke. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200" viewBox="0 0 200 200">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .mark { fill: #ffb547; }
+      .accent { fill: #4fc3f7; }
+      .line { fill: none; stroke: #f4f1ea; stroke-width: 7; stroke-linejoin: round; stroke-linecap: round; }
+    ]]></style>
+    <circle id="dot" r="12"/>
+  </defs>
+  <path class="mark" d="M100 14 Q109 14 114 22 L184 146 Q189 156 178 160 L22 160 Q11 156 16 146 L86 22 Q91 14 100 14 Z
+                        M100 76 a32 32 0 0 0 0 64 a32 32 0 0 0 0 -64 Z"/>
+  <use class="accent" xlink:href="#dot" x="100" y="108"/>
+  <rect class="accent" x="34" y="172" width="132" height="16" rx="8"/>
+  <g transform="translate(0 -6)">
+    <polyline class="line" points="38,128 66,104 100,128 134,104 162,128"/>
+  </g>
+</svg>
