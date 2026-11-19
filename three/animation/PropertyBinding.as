@@ -12,6 +12,7 @@
 
 import { Object3D } from "../core/Object3D";
 import { Mesh } from "../objects/Mesh";
+import { SkinnedMesh } from "../objects/SkinnedMesh";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { MeshLambertMaterial } from "../materials/MeshLambertMaterial";
@@ -23,6 +24,16 @@ import { LineBasicMaterial } from "../materials/LineBasicMaterial";
 import { PointsMaterial } from "../materials/PointsMaterial";
 import { SpriteMaterial } from "../materials/SpriteMaterial";
 import { Color } from "../math/Color";
+
+function searchNodeSubtree(children: Array<Object3D>, nodeName: string): Object3D? {
+    for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (child.name == nodeName || child.uuid == nodeName) return child;
+        const result = searchNodeSubtree(child.children, nodeName);
+        if (result != null) return result;
+    }
+    return null;
+}
 
 const P_NONE: i32 = 0;
 const P_POSITION: i32 = 1;
@@ -38,6 +49,8 @@ const P_EMISSIVE: i32 = 9;
 export class ParsedTrackName {
     nodeName: string = "";
     objectName: string = "";
+    /// The index of "node.object[index].property" ("bones[Arm].position").
+    objectIndex: string = "";
     propertyName: string = "";
     propertyIndex: string = "";
 }
@@ -63,7 +76,15 @@ export class PropertyBinding {
         const parts = trackName.split(".");
         r.nodeName = parts.length > 0 ? parts[0] : "";
         let prop = parts.length > 1 ? parts[parts.length - 1] : "";
-        if (parts.length > 2) r.objectName = parts[1];
+        if (parts.length > 2) {
+            let object = parts[1];
+            const at = object.indexOf("[");
+            if (at >= 0 && object.endsWith("]")) {
+                r.objectIndex = object.substring(at + 1, object.length - 1);
+                object = object.substring(0, at);
+            }
+            r.objectName = object;
+        }
         const open = prop.indexOf("[");
         if (open >= 0 && prop.endsWith("]")) {
             r.propertyIndex = prop.substring(open + 1, prop.length - 1);
@@ -71,6 +92,22 @@ export class PropertyBinding {
         }
         r.propertyName = prop;
         return r;
+    }
+
+    /// The node a track's `nodeName` names under `root`, as three.js: the
+    /// root itself for "" (or its name or uuid), else a bone of the root's
+    /// skeleton (a SkinnedMesh root), else the first descendant, depth
+    /// first, with that name or uuid; null when there is none.
+    static findNode(root: Object3D, nodeName: string): Object3D? {
+        if (nodeName == "" || nodeName == "." || nodeName == root.name || nodeName == root.uuid) return root;
+        if (root instanceof SkinnedMesh) {
+            const skeleton = (root as SkinnedMesh).skeleton;
+            if (skeleton != null) {
+                const bone = skeleton.getBoneByName(nodeName);
+                if (bone != null) return bone;
+            }
+        }
+        return searchNodeSubtree(root.children, nodeName);
     }
 
     /// three.js's name sanitizing: no spaces, dots, colons, slashes or brackets.

@@ -277,7 +277,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - Examples `Editor` (TransformControls, helpers, wide lines, addon
   geometry) and `Batched` (600 instances of four geometries).
 
-### M11: loaders and formats
+### M11: loaders and formats (done)
 
 - **M11a, glTF breadth (done; Draco, Basis and variants left out).** KHR_texture_transform, KHR_materials_*
   (transmission, volume, ior, specular, iridescence, anisotropy,
@@ -300,7 +300,10 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   materials; **done**: toJSON returns a Dynamic, `THREE.JSON.stringify`
   writes it; ObjectLoader, MaterialLoader, BufferGeometryLoader; BatchedMesh
   and addon geometries' parameters left out), FBXLoader (binary and ASCII; done),
-  GLTFExporter (to a Blob).
+  GLTFExporter (**done**: r170's writer and default plugins, .glb bytes or
+  .gltf text; images as PNGs encoded from pixels in memory, so Rive images,
+  canvases and compressed textures are left out; no JPEG, no compression
+  of PNGs, no KHR_mesh_quantization output).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 
