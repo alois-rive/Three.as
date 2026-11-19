@@ -1,0 +1,8 @@
+# packages/threeas's push binding on UAT: the library file "threeas" (library
+# 761) in the UAT project "Rive Public Libraries" (workspace 41013). This is
+# the binding rive.yaml keeps between publishes, because the gallery's
+# `override: ../threeas` is honoured only while this project pushes to the
+# library file the gallery imports. tools/publish.sh swaps it in and out.
+push:
+  projectId: 44599
+  fileId: 38630

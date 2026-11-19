@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes FBX samples for FBXLoader's tests and the Models example:
 
-  examples/assets/fbx_scene.fbx   binary FBX 7400 (32-bit node records,
+  fbx_scene.fbx   binary FBX 7400 (32-bit node records,
       zlib-compressed arrays): a node hierarchy with translations,
       rotations, pre-rotation, scaling and a rotation pivot; a cube of quads
       with normals, uvs and two materials (Phong with an embedded PNG
@@ -10,9 +10,9 @@
       strip with two clusters, two bones and a bind pose; a NURBS curve; a
       directional light and a camera; an animation stack with position,
       rotation (with a span over 180 degrees) and blend shape curves.
-  examples/assets/fbx_v7500.fbx   binary FBX 7500 (64-bit node records,
+  fbx_v7500.fbx   binary FBX 7500 (64-bit node records,
       uncompressed arrays): one triangle and one quad.
-  examples/assets/fbx_ascii.fbx   ASCII FBX 7400: a parent Null and a mesh
+  fbx_ascii.fbx   ASCII FBX 7400: a parent Null and a mesh
       (a quad and a triangle with normals, uvs, a Lambert material and a
       base64 embedded PNG).
 
@@ -22,10 +22,12 @@ property count, property list length, name, properties, nested records
 ended by a NULL record), typed properties (C D F I L R S Y and arrays b c d
 f i l with an encoding flag, 1 = zlib) and a footer.
 """
-import math, os, struct, zlib, base64
+import math, os, shutil, struct, zlib, base64
+
+import sample_paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.path.join(HERE, "..", "examples", "assets")
+ASSETS = sample_paths.FIXTURES   # fbx_scene.fbx is copied to the Models example
 
 KTIME = 46186158000   # FBX ticks a second
 
@@ -544,6 +546,10 @@ def main():
     print("fbx_v7500.fbx", n, "bytes")
     write_ascii(os.path.join(ASSETS, "fbx_ascii.fbx"), ascii_nodes())
     print("fbx_ascii.fbx", os.path.getsize(os.path.join(ASSETS, "fbx_ascii.fbx")), "bytes")
+    for folder in sample_paths.PLACES["fbx_scene.fbx"]:
+        if folder != ASSETS:
+            shutil.copyfile(os.path.join(ASSETS, "fbx_scene.fbx"), os.path.join(folder, "fbx_scene.fbx"))
+    print("wrote", sample_paths.rel("fbx_scene.fbx"))
 
 if __name__ == "__main__":
     main()

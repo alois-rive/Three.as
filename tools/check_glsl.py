@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Compiles every GLSL ES 3.0 shader baked into a published .riv with
-glslangValidator, as WebGL2 will (`rive . --verify` does not compile the GL
-backend's output). Catches what only fails in browsers, such as a WGSL
+glslangValidator, as WebGL2 will (`rive <dir> --verify` does not compile the
+GL backend's output). Catches what only fails in browsers, such as a WGSL
 identifier the GL backend turns into a reserved `gl_` name.
 
-    rive . --publish --output-dir=build/release
+Check a release build of the gallery, which holds every engine shader and
+the examples' own (tools/bench.sh and tools/publish.sh build one from a
+copy without the push binding, as a local --publish counts against the
+bound file's workspace):
+
+    rive packages/gallery --publish --output-dir=build/release
     python3 tools/check_glsl.py build/release/three_as.riv
 """
 import os, re, shutil, subprocess, sys, tempfile

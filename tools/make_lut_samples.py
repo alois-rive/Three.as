@@ -1,6 +1,6 @@
 """Writes the sample 3D LUTs the Effects example grades with (LUTPass):
-examples/assets/warm_grade.cube (Adobe .cube, 17^3) and
-examples/assets/warm_grade_3dl.3dl (Autodesk .3dl, the same grade, 12-bit).
+warm_grade.cube (Adobe .cube, 17^3) and
+warm_grade_3dl.3dl (Autodesk .3dl, the same grade, 12-bit).
 
 The grade: teal shadows, warm highlights, a little more contrast and
 saturation (a "cinematic" look), applied to display (sRGB) colour.
@@ -8,6 +8,8 @@ saturation (a "cinematic" look), applied to display (sRGB) colour.
     python3 tools/make_lut_samples.py
 """
 import os
+
+import sample_paths
 
 SIZE = 17
 root = os.path.join(os.path.dirname(__file__), "..")
@@ -33,7 +35,6 @@ def grade(r, g, b):
 
 
 def main():
-    assets = os.path.join(root, "examples", "assets")
     n = SIZE - 1
     # .cube: red changes fastest, then green, then blue.
     lines = ['TITLE "ThreeAS warm grade"', "# made by tools/make_lut_samples.py",
@@ -43,7 +44,7 @@ def main():
             for ri in range(SIZE):
                 r, g, b = grade(ri / n, gi / n, bi / n)
                 lines.append("%.6f %.6f %.6f" % (r, g, b))
-    with open(os.path.join(assets, "warm_grade.cube"), "w") as f:
+    with open(sample_paths.path("warm_grade.cube"), "w") as f:
         f.write("\n".join(lines) + "\n")
     # .3dl: a grid line of input positions, then blue changes fastest; 12-bit.
     step = 1024 // n
@@ -53,9 +54,9 @@ def main():
             for bi in range(SIZE):
                 r, g, b = grade(ri / n, gi / n, bi / n)
                 lines.append("%d %d %d" % (round(r * 4095), round(g * 4095), round(b * 4095)))
-    with open(os.path.join(assets, "warm_grade_3dl.3dl"), "w") as f:
+    with open(sample_paths.path("warm_grade_3dl.3dl"), "w") as f:
         f.write("\n".join(lines) + "\n")
-    print("wrote examples/assets/warm_grade.cube and warm_grade_3dl.3dl")
+    print("wrote", sample_paths.rel("warm_grade.cube"), "and", sample_paths.rel("warm_grade_3dl.3dl"))
 
 
 main()

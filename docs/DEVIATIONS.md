@@ -13,8 +13,9 @@ not different.
 
 ## Porting checklist
 
-1. Import the namespace: `import * as THREE from "../three/Three";` (a
-   relative path, not `"three"`).
+1. Import the namespace: `import * as THREE from "lib:threeas/three/Three";`
+   (the `threeas` Rive library, not `"three"`; a relative path such as
+   `"../three/Three"` with a copy of `three/`, or inside the engine).
 2. Replace `new THREE.WebGLRenderer(params)` with
    `new THREE.GPURenderer(context, params)` in the script's `init`.
 3. Replace the window: no `domElement` to append. `resize(width, height,
@@ -31,7 +32,7 @@ not different.
    [Lighting](#lighting)).
 
 ```as
-import * as THREE from "../three/Three";
+import * as THREE from "lib:threeas/three/Three";
 import { Layout, Context } from "rive/host";
 import { Renderer } from "rive/renderer";
 
@@ -1143,8 +1144,8 @@ use. The default repository state bakes nothing.
   MaskPass / ClearMaskPass` step.
 - **Selective bloom** works as three.js's example (a second composer with
   `renderToScreen = false`, the other objects' materials swapped to black,
-  a mix ShaderPass): see `examples/effects.as` and
-  `examples/shaders/bloom_mix.wgsl`.
+  a mix ShaderPass): see the gallery's `examples/effects/effects.as` and
+  `examples/effects/bloom_mix.wgsl`.
 
 ## Cube maps and CubeCamera
 

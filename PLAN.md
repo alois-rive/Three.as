@@ -27,21 +27,28 @@ composited into the artboard like any other drawing.
 
 ## Layout
 
+Two Rive CLI projects (see README.md); the root holds docs/ and tools/.
+
 ```
-three/            the library (no protocol classes; import "three/Three")
-  Three.as        re-exports everything: import * as THREE from "../three/Three"
-  constants.as    three.js's constants
-  math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
-  textures/ loaders/ animation/ extras/
-                  as three.js's src/
-  renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
-  rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
-  shaders/        WGSL (three.wgsl, mips, post/)
-  addons/         three.js's examples/jsm ports, imported by path:
-                  controls/, loaders/, postprocessing/, shaders/
-examples/         example artboards (examples.rml + one .as each)
-tests/            rive --test suites
-docs/             DEVIATIONS.md, screenshots
+packages/threeas/   the engine, published as the Rive library "threeas"
+  three/            the library (no protocol classes; import "three/Three",
+                    from another project "lib:threeas/three/Three")
+    Three.as        re-exports everything: import * as THREE from "../three/Three"
+    constants.as    three.js's constants
+    math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
+    textures/ loaders/ animation/ extras/
+                    as three.js's src/
+    renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
+    rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
+    shaders/        WGSL (three.wgsl, mips, post/)
+    addons/         three.js's examples/jsm ports, imported by path:
+                    controls/, loaders/, postprocessing/, shaders/
+  tests/            rive --test suites, fixtures/
+packages/gallery/   the gallery page and the example artboards
+  gallery/          the landing page (gallery.rml, make_gallery.py)
+  examples/<name>/  one example each (<name>.as, <name>.rml, its assets)
+tools/              cross-package scripts (publish, bench, screenshots, ...)
+docs/               DEVIATIONS.md, screenshots
 ```
 
 ## Milestones
@@ -398,6 +405,12 @@ Numbers, method and the three.js comparison recipe: [docs/PERFORMANCE.md](docs/P
   scenes and what to measure: docs/PERFORMANCE.md.
 - Not done: `--publish=web` and publishing the library (left to the main
   session), three.js measurements, baked-mode timing on WebGL2 and mobile.
+- **Packaging (done).** The repository is two Rive projects:
+  packages/threeas (the engine, published as the library `threeas`, on UAT
+  for now) and packages/gallery (the page and the examples, one folder
+  each), which imports the engine with `lib:threeas/...` and builds it from
+  the sources next door through a library override. `tools/publish.sh`
+  publishes the library (UAT or production) and the gallery.
 
 The plan this milestone started from:
 

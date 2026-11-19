@@ -1,11 +1,14 @@
-"""Writes examples/assets/studio_{px,nx,py,ny,pz,nz}.png: the Environment
-example's procedural studio as six cube faces, laid out as three.js
+"""Writes studio_{px,nx,py,ny,pz,nz}.png (into
+packages/gallery/examples/environments/): the Environment example's
+procedural studio as six cube faces, laid out as three.js
 expects skybox images (it samples image cube maps at (-x, y, z) with the
 GL cube rules). Pure Python, no dependencies.
 
     python3 tools/make_cube_faces.py [size]
 """
 import math, os, struct, sys, zlib
+
+import sample_paths
 
 def studio(d):
     x, y, z = d
@@ -36,7 +39,6 @@ def png(path, w, h, rows):
                 + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 size = int(sys.argv[1]) if len(sys.argv) > 1 else 128
-out = os.path.join(os.path.dirname(__file__), "..", "examples", "assets")
 for face, name in enumerate(["px", "nx", "py", "ny", "pz", "nz"]):
     rows = []
     for row in range(size):
@@ -48,5 +50,5 @@ for face, name in enumerate(["px", "nx", "py", "ny", "pz", "nz"]):
             n = math.sqrt(cx * cx + cy * cy + cz * cz)
             line += bytes(studio((-cx / n, cy / n, cz / n)))   # world = (-x, y, z)
         rows.append(line)
-    png(os.path.join(out, "studio_%s.png" % name), size, size, rows)
+    png(sample_paths.path("studio_%s.png" % name), size, size, rows)
 print("wrote 6 faces of", size)

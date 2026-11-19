@@ -1,0 +1,9 @@
+# packages/threeas's push binding on production: the public library
+# "threeas" in the production project "ThreeAS". tools/publish.sh --env=prod
+# swaps it into rive.yaml for the publish and puts the UAT binding back after.
+#
+# TODO: set projectId to the production project's id. The first
+# tools/publish.sh --env=prod run creates the file there (rive push) and
+# writes its fileId into this file; commit it.
+push:
+  projectId: PRODUCTION_PROJECT_ID

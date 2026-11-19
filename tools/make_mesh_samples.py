@@ -4,7 +4,9 @@ binary STL with per-face colours, ASCII STL with two solids, ASCII PLY
 with normals, colours and a quad, binary big-endian PLY with uvs."""
 import math, os, struct
 
-ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", "assets")
+import sample_paths
+
+ASSETS = sample_paths.FIXTURES   # test fixtures only
 
 def pyramid():
     """Square pyramid: 6 triangles (two for the base)."""

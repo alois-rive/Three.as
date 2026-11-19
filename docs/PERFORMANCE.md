@@ -9,13 +9,17 @@ waits for. Your machine will differ: compare runs on one machine.
 ## Measuring
 
 ```bash
+cd packages/gallery
 rive . --artboard=Benchmark --bench=300            # interpreted tier
 rive . --artboard=Benchmark --bench=300 --aot      # ahead of time (as devices run it)
 rive . --artboard=Benchmark --bench=600 --arg profile=1   # + per-stage render times
-tools/bench.sh                                     # CI: checks + bench against the baseline
+../../tools/bench.sh                               # CI: checks + bench against the baseline
 ```
 
-The Benchmark artboard (`examples/benchmark.as`) is 1000 separate
+The gallery builds the engine from packages/threeas (its library
+override), so these time the local engine.
+
+The Benchmark artboard (`packages/gallery/examples/benchmark/benchmark.as`) is 1000 separate
 MeshStandardMaterial boxes (8 materials, each its own draw) and one
 InstancedMesh of 10000 Lambert icosahedra, everything moving. Its `--arg`s:
 `profile=1` logs `renderer.info.timings` (CPU per render stage), `meshes=N`
@@ -80,7 +84,7 @@ when bones moved; overlay occlusion stops at the first hit.
 
 Not run here (no downloaded code in this environment). To do it:
 
-1. **Build both sides.** ThreeAS: `rive . --publish=web` (or a local web
+1. **Build both sides.** ThreeAS: the gallery's `--publish=web` (or a local web
    build) of the artboards below. three.js: a page of the same scene with
    the same three.js version the port follows (r170), `WebGLRenderer` and
    `WebGPURenderer`, served locally.
@@ -120,7 +124,7 @@ Not run here (no downloaded code in this environment). To do it:
    (a 5 x 3 grid of MeshStandardMaterial spheres under an equirectangular
    environment), Lights (RectAreaLights, a street of point lights, a light
    probe, CSM) and MaterialsPlus (physical materials). Copy their scenes
-   from `examples/*.as`, which keep three.js's calls.
+   from the gallery's `examples/*/*.as`, which keep three.js's calls.
 3. **Measure**, interleaving the pages and dropping the first round (see
    `rive docs gpu-performance`, "Measuring"):
    - frame time to the GPU's finish, not to the end of submission: three.js

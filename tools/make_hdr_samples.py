@@ -1,11 +1,13 @@
-"""Writes examples/assets/studio_rgbe.hdr (Radiance RGBE, run-length encoded) and
-examples/assets/studio_exr.exr (OpenEXR, ZIP, half RGB): the Environment
+"""Writes studio_rgbe.hdr (Radiance RGBE, run-length encoded) and
+studio_exr.exr (OpenEXR, ZIP, half RGB): the Environment
 example's studio as linear HDR, softboxes at 6 and a warm key at 40.
 Pure Python, no dependencies.
 
     python3 tools/make_hdr_samples.py [width]
 """
 import math, os, struct, sys, zlib
+
+import sample_paths
 
 def studio(lat, lon):
     if lat > 0:
@@ -102,7 +104,9 @@ def write_exr(path, rows, w, h):
 w = int(sys.argv[1]) if len(sys.argv) > 1 else 256
 h = w // 2
 rows = pixels(w, h)
-out = os.path.join(os.path.dirname(__file__), "..", "examples", "assets")
-write_hdr(os.path.join(out, "studio_rgbe.hdr"), rows, w, h)
-write_exr(os.path.join(out, "studio_exr.exr"), rows, w, h)
-print("wrote studio_rgbe.hdr and studio_exr.exr,", w, "x", h)
+write_hdr(sample_paths.path("studio_rgbe.hdr"), rows, w, h)
+write_exr(sample_paths.path("studio_exr.exr"), rows, w, h)
+for name in ("studio_rgbe.hdr", "studio_exr.exr"):
+    sample_paths.copy(name)
+    print("wrote", sample_paths.rel(name))
+print(w, "x", h)

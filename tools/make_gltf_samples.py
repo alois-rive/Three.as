@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Writes glTF samples for GLTFLoader's tests and the Models example:
 
-  examples/assets/features.glb        EXT_meshopt_compression (attributes with
+  features.glb        EXT_meshopt_compression (attributes with
       octahedral, quaternion and exponential filters, triangles, indices),
       KHR_mesh_quantization, a sparse morph target, EXT_mesh_gpu_instancing,
       KHR_materials_transmission / volume / iridescence / anisotropy /
       dispersion / specular.
-  examples/assets/features_embedded.gltf   .gltf JSON with a base64 buffer.
+  features_embedded.gltf   .gltf JSON with a base64 buffer.
 
 The meshopt encoder follows the EXT_meshopt_compression specification's
 bitstream appendix; a decoder written from the same text checks every
@@ -14,8 +14,9 @@ stream round-trips before it is written.
 """
 import base64, json, math, os, struct
 
+import sample_paths
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.path.join(HERE, "..", "examples", "assets")
 
 # ------------------------------------------------------------ meshopt encode
 
@@ -524,9 +525,10 @@ def build():
         js += b" "
     glb = struct.pack("<3I", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(b.bin))
     glb += struct.pack("<2I", len(js), 0x4E4F534A) + js + struct.pack("<2I", len(b.bin), 0x004E4942) + bytes(b.bin)
-    with open(os.path.join(ASSETS, "features.glb"), "wb") as f:
+    with open(sample_paths.path("features.glb"), "wb") as f:
         f.write(glb)
-    print("features.glb", len(glb), "bytes")
+    sample_paths.copy("features.glb")
+    print(sample_paths.rel("features.glb"), len(glb), "bytes")
 
 def build_embedded():
     """A .gltf with one base64 buffer: a triangle with a colour per vertex."""
@@ -546,7 +548,7 @@ def build_embedded():
         "buffers": [{"byteLength": len(data),
                      "uri": "data:application/octet-stream;base64," + base64.b64encode(data).decode()}],
     }
-    with open(os.path.join(ASSETS, "features_embedded.gltf"), "w") as f:
+    with open(sample_paths.path("features_embedded.gltf"), "w") as f:
         json.dump(gltf, f, indent=1)
     print("features_embedded.gltf")
 

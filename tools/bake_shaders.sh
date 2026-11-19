@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Bakes specialized variants of three/shaders/three.wgsl for the program
-# keys a project draws ("optimized" mode, PLAN.md M14). The uber-shader
+# Bakes specialized variants of the engine's three/shaders/three.wgsl for
+# the program keys the gallery's examples draw ("optimized" mode, PLAN.md
+# M14): it records keys by running packages/gallery (which builds the
+# engine from packages/threeas, its library override) and writes the
+# variants into packages/threeas. The uber-shader
 # stays the default and the fallback: GPURenderer uses a baked variant only
 # for a draw whose key was baked from the current three.wgsl.
 #
 #   tools/bake_shaders.sh                  record every example artboard and bake
+#   tools/bake_shaders.sh --gallery=DIR    record another gallery checkout
 #   tools/bake_shaders.sh Lights Shadows   record only these artboards
 #   tools/bake_shaders.sh --keys=keys.txt  also bake keys from a file (one per
 #                                          line, e.g. copied from the "no baked
@@ -17,7 +21,8 @@
 # 1. Records: runs the artboards headless with `--arg threeShaderKeys=1`
 #    (one build, `rive --commands`); the renderer logs each program key it
 #    draws once ("three shader key: kind=3;present=1;...;lights=dp").
-# 2. Generates three/shaders/baked/three_v_<hash>.wgsl per key: three.wgsl
+# 2. Generates three/shaders/baked/three_v_<hash>.wgsl per key (paths in
+#    packages/threeas from here on): three.wgsl
 #    with the lines between `// @variant-begin` and `// @variant-end`
 #    replaced by functions returning the key's constants (the shading
 #    model, maps, flags, discard or not, the light count and types), so the
@@ -29,14 +34,17 @@
 #    at runtime with THREE_WGSL_HASH, which tools/make_shader_chunks.py
 #    writes). .wgsl files register themselves as shader assets: no RML.
 #
-# Then build a release .riv and run tools/check_glsl.py on it (WebGL2).
+# Then republish the engine library, build a release .riv of the gallery
+# and run tools/check_glsl.py on it (WebGL2); tools/publish.sh does both.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SRC=three/shaders/three.wgsl
-OUT=three/shaders/baked
-REG=three/renderers/gpu/BakedShaders.as
-HASH_FILE=three/renderers/gpu/ShaderSourceHash.as
+ENGINE=packages/threeas
+GALLERY=packages/gallery
+SRC=$ENGINE/three/shaders/three.wgsl
+OUT=$ENGINE/three/shaders/baked
+REG=$ENGINE/three/renderers/gpu/BakedShaders.as
+HASH_FILE=$ENGINE/three/renderers/gpu/ShaderSourceHash.as
 WORK=build/bake
 max=48
 mode=bake
@@ -47,8 +55,9 @@ for arg in "$@"; do
         --max=*) max="${arg#--max=}" ;;
         --keys=*) keys_file="${arg#--keys=}" ;;
         --check) mode=check ;;
+        --gallery=*) GALLERY="${arg#--gallery=}" ;;
         --clean) mode=clean ;;
-        -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
         -*) echo "unknown option $arg" >&2; exit 2 ;;
         *) artboards+=("$arg") ;;
     esac
@@ -117,8 +126,8 @@ if [ "$mode" = bake ]; then
     write_registry "$REG" "" "$WORK/empty.tsv"
 fi
 if [ ${#artboards[@]} -eq 0 ]; then
-    while IFS= read -r a; do artboards+=("$a"); done < <(grep -o '<Artboard isComponent="true"[^>]*name="[^"]*"' \
-        examples/examples.rml | sed 's/.*name="\([^"]*\)"/\1/')
+    while IFS= read -r a; do artboards+=("$a"); done < <(cat "$GALLERY"/examples/*/*.rml \
+        | grep -o '<Artboard isComponent="true"[^>]*name="[^"]*"' | sed 's/.*name="\([^"]*\)"/\1/')
 fi
 commands="$WORK/commands.txt"
 : > "$commands"
@@ -128,8 +137,13 @@ for a in "${artboards[@]}"; do
 done
 echo "quit" >> "$commands"
 echo "recording ${#artboards[@]} artboards..."
-if ! rive . --commands="$commands" --arg threeShaderKeys=1 > "$WORK/record.log" 2>&1; then
+if ! rive "$GALLERY" --commands="$commands" --arg threeShaderKeys=1 > "$WORK/record.log" 2>&1; then
     echo "rive failed; see $WORK/record.log" >&2
+    exit 1
+fi
+if grep -q "falling back to the downloaded library" "$WORK/record.log"; then
+    echo "the gallery did not build packages/threeas (its library override was refused):" >&2
+    grep "falling back" "$WORK/record.log" >&2
     exit 1
 fi
 if grep -q "^err" "$WORK/record.log"; then
@@ -261,4 +275,4 @@ if [ "$mode" = check ]; then
     exit 1
 fi
 echo "baked $count variants into $OUT ($(du -sh "$OUT" | cut -f1)); registry $REG"
-echo "next: rive . --verify, then a release build and python3 tools/check_glsl.py"
+echo "next: rive packages/threeas --verify, then tools/publish.sh (release build, check_glsl.py, publish)"

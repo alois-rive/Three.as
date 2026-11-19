@@ -4,7 +4,7 @@ LTC_MAT_2 tables (64 x 64 RGBA), resampled to 32 x 32 and packed as half
 floats so both fit one 16 KB uniform block.
 
     curl -sSfLO https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/jsm/lights/RectAreaLightTexturesLib.js
-    python3 -I tools/make_ltc_tables.py RectAreaLightTexturesLib.js
+    python3 -I tools/make_ltc_tables.py RectAreaLightTexturesLib.js   # in packages/threeas
 
 The input is only parsed for its two number arrays, never executed.
 """

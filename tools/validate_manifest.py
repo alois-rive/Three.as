@@ -6,7 +6,9 @@ is not shipped with the CLI.
 
     python3 tools/validate_manifest.py build/manifest.json [more.json ...]
     python3 tools/validate_manifest.py --all     # every example artboard and the
-                                                 # Gallery, into build/manifests/
+                                                 # Gallery of packages/gallery, into
+                                                 # packages/gallery/build/manifests/
+    python3 tools/validate_manifest.py --all --gallery=DIR   # another gallery checkout
 
 What it checks (descriptor sanity, not a GPU):
   layouts     bindings 0-7 (Rive), unique; uniform minBindingSize <= 16 KB
@@ -31,6 +33,7 @@ Not checked (no data in the manifest, or needs a GPU): dynamic offsets at
 draw time (256-byte alignment), textures written and sampled in one pass,
 resource usage flags, formats' filterability per device, timing.
 """
+import glob
 import json
 import os
 import re
@@ -256,7 +259,7 @@ def split_params(text):
 def capture_all(root):
     out = os.path.join(root, "build", "manifests")
     os.makedirs(out, exist_ok=True)
-    rml = open(os.path.join(root, "examples", "examples.rml")).read()
+    rml = "".join(open(p).read() for p in sorted(glob.glob(os.path.join(root, "examples", "*", "*.rml"))))
     names = re.findall(r'<Artboard isComponent="true"[^>]*name="([^"]*)"', rml) + ["Gallery"]
     paths = []
     for name in names:
@@ -272,7 +275,10 @@ def capture_all(root):
 
 
 def main(args):
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packages", "gallery")
+    for a in [a for a in args if a.startswith("--gallery=")]:
+        root = a[len("--gallery="):]
+        args.remove(a)
     paths = capture_all(root) if args == ["--all"] else args
     if not paths:
         print(__doc__)

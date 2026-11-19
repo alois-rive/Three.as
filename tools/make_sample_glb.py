@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Writes examples/assets/sample.glb: a small glTF 2.0 binary exercising what
-ThreeAS's GLTFLoader reads. Standard library only (struct, zlib, json).
+"""Writes sample.glb (packages/gallery/examples/model/): a small glTF 2.0
+binary exercising what ThreeAS's GLTFLoader reads. Standard library only (struct, zlib, json).
 
 Contents: an embedded PNG (base colour), PBR materials (textured, metallic,
 alpha-blended double-sided), a node hierarchy (an arm), a skinned tail
@@ -11,7 +11,9 @@ a KHR_lights_punctual light and a camera.
 """
 import json, math, os, struct, zlib
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "examples", "assets", "sample.glb")
+import sample_paths
+
+OUT = sample_paths.path("sample.glb")
 
 bin_data = bytearray()
 buffer_views, accessors = [], []

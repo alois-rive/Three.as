@@ -1,21 +1,34 @@
 #!/usr/bin/env bash
 # Screenshots of every example artboard (and the Gallery) from one headless
-# build, for before/after comparisons of renderer changes:
+# build of the gallery, for before/after comparisons of renderer changes:
 #
 #   tools/screenshots.sh build/shots/before            # capture
 #   tools/screenshots.sh build/shots/after --aot       # extra flags go to rive
+#   tools/screenshots.sh build/shots/x --project=DIR   # another gallery checkout
 #   python3 tools/compare_shots.py build/shots/before build/shots/after
 #
-# Each artboard is captured after 1 s (60 frames) and again after 3 s.
+# The gallery builds the engine from packages/threeas (its library
+# override), so engine edits show here without publishing. Each artboard is
+# captured after 1 s (60 frames) and again after 3 s. Paths are relative to
+# the repository root.
 set -euo pipefail
 
-out="${1:?usage: tools/screenshots.sh <out-dir> [rive flags...]}"
+out="${1:?usage: tools/screenshots.sh <out-dir> [--project=DIR] [rive flags...]}"
 shift
 cd "$(dirname "$0")/.."
+project=packages/gallery
+flags=()
+for arg in "$@"; do
+    case "$arg" in
+        --project=*) project="${arg#--project=}" ;;
+        *) flags+=("$arg") ;;
+    esac
+done
 mkdir -p "$out"
+out="$(cd "$out" && pwd)"
 
-# Every isComponent artboard of examples.rml, plus the Gallery.
-artboards=$(grep -o '<Artboard isComponent="true"[^>]*name="[^"]*"' examples/examples.rml \
+# Every isComponent artboard of the examples, plus the Gallery.
+artboards=$(cat "$project"/examples/*/*.rml | grep -o '<Artboard isComponent="true"[^>]*name="[^"]*"' \
     | sed 's/.*name="\([^"]*\)"/\1/')
 artboards="$artboards Gallery"
 
@@ -33,7 +46,7 @@ done
 echo "quit" >> "$commands"
 
 log="$out/rive.log"
-if ! rive . --commands="$commands" "$@" > "$log" 2>&1; then
+if ! rive "$project" --commands="$commands" ${flags[@]+"${flags[@]}"} > "$log" 2>&1; then
     echo "rive failed; see $log" >&2
     exit 1
 fi
