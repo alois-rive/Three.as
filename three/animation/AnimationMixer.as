@@ -8,20 +8,28 @@
 //     mixer.update(seconds);
 //
 // Events ("finished", "loop") are not dispatched; poll action.isRunning()
-// or action.enabled / action.paused.
+// or action.enabled / action.paused. Additive clips (AnimationUtils.
+// makeClipAdditive, or AdditiveAnimationBlendMode on the action) add on
+// top of the normal blend. The root may be an AnimationObjectGroup.
 
 import { Object3D } from "../core/Object3D";
 import { AnimationClip } from "./AnimationClip";
 import { PropertyBinding } from "./PropertyBinding";
-import { LoopOnce, LoopRepeat, LoopPingPong } from "../constants";
+import { LoopOnce, LoopRepeat, LoopPingPong, NormalAnimationBlendMode, AdditiveAnimationBlendMode } from "../constants";
 
-/// Accumulates the weighted values of every action driving one property.
+/// Accumulates the weighted values of every action driving one property:
+/// normal actions blend by weight (towards the original value where their
+/// weights sum below 1), additive ones are summed on top (quaternions
+/// multiplied), as three.js's PropertyMixer.
 export class PropertyMixer {
     binding: PropertyBinding;
     valueSize: i32;
     original: Float64Array;
     accum: Float64Array;
+    additive: Float64Array;
+    private work: Float64Array;
     cumulativeWeight: f64 = 0;
+    cumulativeWeightAdditive: f64 = 0;
     useCount: i32 = 0;
 
     constructor(binding: PropertyBinding) {
@@ -29,6 +37,8 @@ export class PropertyMixer {
         this.valueSize = binding.valueSize;
         this.original = new Float64Array(this.valueSize);
         this.accum = new Float64Array(this.valueSize);
+        this.additive = new Float64Array(this.valueSize);
+        this.work = new Float64Array(max<i32>(4, this.valueSize));
         binding.getValue(this.original);
     }
 
@@ -44,42 +54,94 @@ export class PropertyMixer {
         }
     }
 
-    /// Writes the blend to the property (towards the original value where
-    /// the actions' weights sum below 1).
+    /// Adds `incoming` (a difference from the reference pose, see
+    /// AnimationUtils.makeClipAdditive) scaled by `weight`.
+    accumulateAdditive(incoming: Float64Array, weight: f64): void {
+        if (weight == 0) return;
+        if (this.cumulativeWeightAdditive == 0) this.setAdditiveIdentity();
+        this.mixAdditive(this.additive, incoming, weight);
+        this.cumulativeWeightAdditive += weight;
+    }
+
+    /// Writes the blend to the property.
     apply(): void {
         const weight = this.cumulativeWeight;
-        if (weight > 0) {
-            if (weight < 1) this.mix(this.accum, this.original, 1 - weight);
-            this.binding.setValue(this.accum);
-        }
+        const weightAdditive = this.cumulativeWeightAdditive;
         this.cumulativeWeight = 0;
+        this.cumulativeWeightAdditive = 0;
+        if (weight <= 0 && weightAdditive <= 0) return;
+        const n = this.valueSize;
+        if (weight <= 0) {
+            for (let i = 0; i < n; i++) this.accum[i] = this.original[i];
+        } else if (weight < 1) {
+            this.mix(this.accum, this.original, 1 - weight);
+        }
+        if (weightAdditive > 0) this.mixAdditive(this.accum, this.additive, 1);
+        this.binding.setValue(this.accum);
     }
 
     saveOriginalState(): void { this.binding.getValue(this.original); }
     restoreOriginalState(): void { this.binding.setValue(this.original); }
 
+    private setAdditiveIdentity(): void {
+        const a = this.additive;
+        if (this.binding.isBoolean) {
+            for (let i = 0; i < this.valueSize; i++) a[i] = this.original[i];
+            return;
+        }
+        for (let i = 0; i < this.valueSize; i++) a[i] = 0;
+        if (this.binding.isQuaternion) a[3] = 1;
+    }
+
     private mix(into: Float64Array, from: Float64Array, t: f64): void {
         const n = this.valueSize;
-        if (this.binding.isQuaternion) {
-            let x1 = from[0], y1 = from[1], z1 = from[2], w1 = from[3];
-            const x0 = into[0], y0 = into[1], z0 = into[2], w0 = into[3];
-            let cos = x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1;
-            if (cos < 0) { x1 = -x1; y1 = -y1; z1 = -z1; w1 = -w1; cos = -cos; }
-            let s0 = 1 - t, s1 = t;
-            if (cos < 0.9995) {
-                const theta = Math.acos(Math.min(1, cos));
-                const sin = Math.sin(theta);
-                s0 = Math.sin((1 - t) * theta) / sin;
-                s1 = Math.sin(t * theta) / sin;
-            }
-            into[0] = x0 * s0 + x1 * s1; into[1] = y0 * s0 + y1 * s1;
-            into[2] = z0 * s0 + z1 * s1; into[3] = w0 * s0 + w1 * s1;
-            const l = Math.sqrt(into[0] * into[0] + into[1] * into[1] + into[2] * into[2] + into[3] * into[3]);
-            if (l > 0) for (let i = 0; i < 4; i++) into[i] /= l;
+        if (this.binding.isBoolean) {
+            if (t >= 0.5) for (let i = 0; i < n; i++) into[i] = from[i];
+        } else if (this.binding.isQuaternion) {
+            slerp(into, from, t);
         } else {
             for (let i = 0; i < n; i++) into[i] += (from[i] - into[i]) * t;
         }
     }
+
+    // into = into + from x t (numbers); into = slerp(into, into x from, t)
+    // (quaternions); booleans pick.
+    private mixAdditive(into: Float64Array, from: Float64Array, t: f64): void {
+        const n = this.valueSize;
+        if (this.binding.isBoolean) {
+            if (t >= 0.5) for (let i = 0; i < n; i++) into[i] = from[i];
+        } else if (this.binding.isQuaternion) {
+            const w = this.work;
+            const ax = into[0], ay = into[1], az = into[2], aw = into[3];
+            const bx = from[0], by = from[1], bz = from[2], bw = from[3];
+            w[0] = ax * bw + aw * bx + ay * bz - az * by;
+            w[1] = ay * bw + aw * by + az * bx - ax * bz;
+            w[2] = az * bw + aw * bz + ax * by - ay * bx;
+            w[3] = aw * bw - ax * bx - ay * by - az * bz;
+            slerp(into, w, t);
+        } else {
+            for (let i = 0; i < n; i++) into[i] += from[i] * t;
+        }
+    }
+}
+
+// Shortest-arc slerp of `into` towards `from` by t, normalized.
+function slerp(into: Float64Array, from: Float64Array, t: f64): void {
+    let x1 = from[0], y1 = from[1], z1 = from[2], w1 = from[3];
+    const x0 = into[0], y0 = into[1], z0 = into[2], w0 = into[3];
+    let cos = x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1;
+    if (cos < 0) { x1 = -x1; y1 = -y1; z1 = -z1; w1 = -w1; cos = -cos; }
+    let s0 = 1 - t, s1 = t;
+    if (cos < 0.9995) {
+        const theta = Math.acos(Math.min(1, cos));
+        const sin = Math.sin(theta);
+        s0 = Math.sin((1 - t) * theta) / sin;
+        s1 = Math.sin(t * theta) / sin;
+    }
+    into[0] = x0 * s0 + x1 * s1; into[1] = y0 * s0 + y1 * s1;
+    into[2] = z0 * s0 + z1 * s1; into[3] = w0 * s0 + w1 * s1;
+    const l = Math.sqrt(into[0] * into[0] + into[1] * into[1] + into[2] * into[2] + into[3] * into[3]);
+    if (l > 0) for (let i = 0; i < 4; i++) into[i] /= l;
 }
 
 export class AnimationAction {
@@ -97,6 +159,9 @@ export class AnimationAction {
     paused: bool = false;
     /// Hold the last frame when a LoopOnce (or the last repetition) ends.
     clampWhenFinished: bool = false;
+    /// NormalAnimationBlendMode or AdditiveAnimationBlendMode (the clip's
+    /// unless clipAction was given one).
+    blendMode: i32 = NormalAnimationBlendMode;
 
     private mixers: Array<PropertyMixer?> = [];
     private buffers: Array<Float64Array> = [];
@@ -110,10 +175,11 @@ export class AnimationAction {
     private fadeFrom: f64 = 0;
     private fadeTo: f64 = 0;
 
-    constructor(mixer: AnimationMixer, clip: AnimationClip, localRoot: Object3D) {
+    constructor(mixer: AnimationMixer, clip: AnimationClip, localRoot: Object3D, blendMode: i32 = -1) {
         this.mixer = mixer;
         this.clip = clip;
         this.localRoot = localRoot;
+        this.blendMode = blendMode >= 0 ? blendMode : clip.blendMode;
         const tracks = clip.tracks;
         for (let i = 0; i < tracks.length; i++) {
             const pm = mixer.bindingFor(localRoot, tracks[i].name);
@@ -237,12 +303,14 @@ export class AnimationAction {
         const clipTime = this.updateTime(deltaTime);
         const weight = this.updateWeight(mixerTime);
         if (weight > 0) {
+            const additive = this.blendMode == AdditiveAnimationBlendMode;
             const tracks = this.clip.tracks;
             for (let i = 0; i < tracks.length; i++) {
                 const pm = this.mixers[i];
                 if (pm == null) continue;
                 tracks[i].evaluate(clipTime, this.buffers[i]);
-                pm.accumulate(this.buffers[i], weight);
+                if (additive) pm.accumulateAdditive(this.buffers[i], weight);
+                else pm.accumulate(this.buffers[i], weight);
             }
         }
     }
@@ -321,12 +389,12 @@ export class AnimationMixer {
     }
 
     /// The action playing `clip` on `optionalRoot` (default: the mixer's
-    /// root), made on first use.
-    clipAction(clip: AnimationClip, optionalRoot: Object3D? = null): AnimationAction {
+    /// root), made on first use; `blendMode` -1 takes the clip's.
+    clipAction(clip: AnimationClip, optionalRoot: Object3D? = null, blendMode: i32 = -1): AnimationAction {
         const root = optionalRoot != null ? optionalRoot : this.root;
         const existing = this.existingAction(clip, root);
-        if (existing != null) return existing;
-        const action = new AnimationAction(this, clip, root);
+        if (existing != null && (blendMode < 0 || existing.blendMode == blendMode)) return existing;
+        const action = new AnimationAction(this, clip, root, blendMode);
         this.actions.push(action);
         return action;
     }
@@ -390,7 +458,7 @@ export class AnimationMixer {
     bindingFor(root: Object3D, trackName: string): PropertyMixer? {
         const key = root.id.toString() + ":" + trackName;
         if (this.bindings.has(key)) return this.bindings.get(key);
-        const binding = new PropertyBinding(root, trackName);
+        const binding = PropertyBinding.create(root, trackName);
         if (!binding.isBound) return null;
         const pm = new PropertyMixer(binding);
         this.bindings.set(key, pm);

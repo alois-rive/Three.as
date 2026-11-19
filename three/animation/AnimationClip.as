@@ -6,6 +6,8 @@ import {
     QuaternionKeyframeTrack,
 } from "./KeyframeTrack";
 import { NormalAnimationBlendMode } from "../constants";
+import { BufferAttribute } from "../core/BufferAttribute";
+import { getKeyframeOrder, sortedArray } from "./AnimationUtils";
 import { MathUtils } from "../math/MathUtils";
 import { jstr, jnum, jint, jarr, jnumbers, jhas } from "../core/JSON";
 
@@ -14,8 +16,8 @@ export class AnimationClip {
     tracks: Array<KeyframeTrack>;
     /// Seconds; -1 computes it from the tracks.
     duration: f64;
-    /// NormalAnimationBlendMode or AdditiveAnimationBlendMode (kept and
-    /// written to JSON; the mixer blends normally).
+    /// NormalAnimationBlendMode or AdditiveAnimationBlendMode (the default
+    /// blend mode of the clip's actions).
     blendMode: i32;
     private _uuid: string = "";
 
@@ -43,6 +45,89 @@ export class AnimationClip {
         }
         this.duration = d;
         return this;
+    }
+
+    /// Cuts every track to [0, duration].
+    trim(): AnimationClip {
+        for (let i = 0; i < this.tracks.length; i++) this.tracks[i].trim(0, this.duration);
+        return this;
+    }
+
+    /// Whether every track validates (KeyframeTrack.validate).
+    validate(): bool {
+        let valid = true;
+        for (let i = 0; i < this.tracks.length; i++) valid = valid && this.tracks[i].validate();
+        return valid;
+    }
+
+    /// Drops redundant keys from every track.
+    optimize(): AnimationClip {
+        for (let i = 0; i < this.tracks.length; i++) this.tracks[i].optimize();
+        return this;
+    }
+
+    /// A copy with cloned tracks.
+    clone(): AnimationClip {
+        const tracks: Array<KeyframeTrack> = [];
+        for (let i = 0; i < this.tracks.length; i++) tracks.push(this.tracks[i].clone());
+        return new AnimationClip(this.name, this.duration, tracks, this.blendMode);
+    }
+
+    /// A clip that plays `morphTargetSequence` (morph attributes, by name)
+    /// one after the other at `fps`, as three.js.
+    static CreateFromMorphTargetSequence(name: string, morphTargetSequence: Array<BufferAttribute>, fps: f64,
+                                         noLoop: bool = false): AnimationClip {
+        const numMorphTargets = morphTargetSequence.length;
+        const tracks: Array<KeyframeTrack> = [];
+        for (let i = 0; i < numMorphTargets; i++) {
+            let times: Array<f64> = [<f64>((i + numMorphTargets - 1) % numMorphTargets), <f64>i,
+                <f64>((i + 1) % numMorphTargets)];
+            let values: Array<f64> = [0, 1, 0];
+            const order = getKeyframeOrder(times);
+            times = sortedArray(times, 1, order);
+            values = sortedArray(values, 1, order);
+            if (!noLoop && times[0] == 0) {
+                times.push(<f64>numMorphTargets);
+                values.push(values[0]);
+            }
+            tracks.push(new NumberKeyframeTrack(".morphTargetInfluences[" + morphTargetSequence[i].name + "]",
+                times, values).scale(1.0 / fps));
+        }
+        return new AnimationClip(name, -1, tracks);
+    }
+
+    /// Groups morph targets named "name0", "name1"... into one clip per
+    /// name, as three.js.
+    static CreateClipsFromMorphTargetSequences(morphTargets: Array<BufferAttribute>, fps: f64,
+                                               noLoop: bool = false): Array<AnimationClip> {
+        const names: Array<string> = [];
+        const groups: Array<Array<BufferAttribute>> = [];
+        for (let i = 0; i < morphTargets.length; i++) {
+            const n = morphTargets[i].name;
+            // three.js's /^([\w-]*?)([\d]+)$/: a word prefix, then a number.
+            let end = n.length;
+            while (end > 0 && n.charCodeAt(end - 1) >= 48 && n.charCodeAt(end - 1) <= 57) end--;
+            if (end == n.length) continue;
+            let word = true;
+            for (let k = 0; k < end; k++) {
+                const c = n.charCodeAt(k);
+                if (!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 45)) word = false;
+            }
+            if (!word) continue;
+            const prefix = n.substring(0, end);
+            let index = names.indexOf(prefix);
+            if (index < 0) {
+                index = names.length;
+                names.push(prefix);
+                groups.push([]);
+            }
+            groups[index].push(morphTargets[i]);
+        }
+        const clips: Array<AnimationClip> = [];
+        for (let i = 0; i < names.length; i++) {
+            clips.push(AnimationClip.CreateFromMorphTargetSequence(names[i], groups[i], fps, noLoop));
+        }
+        return clips;
     }
 
     static findByName(clips: Array<AnimationClip>, name: string): AnimationClip? {

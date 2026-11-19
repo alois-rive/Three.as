@@ -93,10 +93,15 @@ export class Skeleton {
     /// Takes the bones' current world transforms as the bind pose.
     calculateInverses(): void {
         this.boneInverses = [];
+        // A bone whose parent was updated earlier in this loop updates
+        // alone (long chains stay linear).
+        const done = new Set<i32>();
         for (let i = 0; i < this.bones.length; i++) {
             const inverse = new Matrix4();
             const bone = this.bones[i];
-            bone.updateWorldMatrix(true, false);
+            const parent = bone.parent;
+            bone.updateWorldMatrix(parent == null || !done.has(parent.id), false);
+            done.add(bone.id);
             inverse.copy(bone.matrixWorld).invert();
             this.boneInverses.push(inverse);
         }

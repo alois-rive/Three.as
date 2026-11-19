@@ -182,6 +182,24 @@ struct BonesU {
     bones: array<mat4x4<f32>, 256>,   // bone.matrixWorld x boneInverse
 };
 
+// Vertex data a draw reads from textures (morph targets, big skeletons),
+// described by M. The textures borrow extra map slots (Layout.as):
+// t_x4 morph deltas, t_x3 bone matrices, t_x2 InstancedMesh.morphTexture.
+struct MorphU {
+    // x: targets to loop over (the active ones, or every target of an
+    //    instanced mesh), y: flags, z: morph texture width,
+    // w: texels a target takes (vertex count x texels a vertex).
+    info: vec4<u32>,
+    // x: bone texture width.
+    bones: vec4<u32>,
+    // (target, weight) pairs, two a vec4: the targets with a weight.
+    weights: array<vec4<f32>, 1022>,
+};
+
+const MORPH_NORMALS: u32 = 1u;
+const MORPH_INSTANCED: u32 = 2u;
+const BONE_TEXTURE: u32 = 4u;
+
 @group(0) @binding(0) var<uniform> F: FrameU;
 @group(0) @binding(1) var t_env: texture_2d<f32>;
 @group(0) @binding(2) var s_env: sampler;
@@ -198,6 +216,7 @@ struct LtcTable {
 @group(0) @binding(6) var s_transmission: sampler;
 @group(1) @binding(0) var<uniform> O: ObjU;
 @group(1) @binding(1) var<uniform> B: BonesU;
+@group(1) @binding(7) var<uniform> M: MorphU;
 @group(1) @binding(2) var t_x0: texture_2d<f32>;
 @group(1) @binding(3) var t_x1: texture_2d<f32>;
 @group(1) @binding(4) var t_x2: texture_2d<f32>;
@@ -227,6 +246,8 @@ struct VsIn {
     @location(3) color: vec4<f32>,
     @location(11) uv1: vec2<f32>,
     @location(12) tangent: vec4<f32>,
+    @builtin(vertex_index) vertex: u32,
+    @builtin(instance_index) instance: u32,
 };
 
 struct InstanceIn {
@@ -260,7 +281,59 @@ struct SkinIn {
 
 @vertex
 fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
-    return transform_vertex(in.position, in.normal, in, inst);
+    let m = morph(in);
+    return transform_vertex(m.position, m.normal, in, inst);
+}
+
+// Morph targets (three.js's morph target texture): the deltas of every
+// target, relative to the base geometry, as rgba16float texels of t_x4,
+// target-major: texel (target x M.info.w + vertex x stride + k), k 0 the
+// position and 1 the normal (when the geometry morphs normals). An
+// instanced mesh reads each instance's weights from its morphTexture
+// (t_x2, a row per instance, weight k at texel k + 1).
+struct Morphed {
+    position: vec3<f32>,
+    normal: vec3<f32>,
+};
+
+fn morph_texel(index: u32) -> vec4<f32> {
+    let w = max(M.info.z, 1u);
+    return textureLoad(t_x4, vec2<i32>(i32(index % w), i32(index / w)), 0);
+}
+
+fn morph(in: VsIn) -> Morphed {
+    var out: Morphed;
+    out.position = in.position;
+    out.normal = in.normal;
+    let count = M.info.x;
+    if (count == 0u) {
+        return out;
+    }
+    let normals = (M.info.y & MORPH_NORMALS) != 0u;
+    let stride = select(1u, 2u, normals);
+    let base = in.vertex * stride;
+    let instanced = (M.info.y & MORPH_INSTANCED) != 0u;
+    for (var k = 0u; k < count; k++) {
+        var morph_target = k;
+        var weight = 0.0;
+        if (instanced) {
+            weight = textureLoad(t_x2, vec2<i32>(i32(k + 1u), i32(in.instance)), 0).r;
+        } else {
+            let pair = M.weights[k >> 1u];
+            let odd = (k & 1u) == 1u;
+            morph_target = u32(select(pair.x, pair.z, odd));
+            weight = select(pair.y, pair.w, odd);
+        }
+        if (weight == 0.0) {
+            continue;
+        }
+        let t = morph_target * M.info.w + base;
+        out.position += morph_texel(t).xyz * weight;
+        if (normals) {
+            out.normal += morph_texel(t + 1u).xyz * weight;
+        }
+    }
+    return out;
 }
 
 // displacementMap: the vertex moves along its normal by the map's red
@@ -277,30 +350,56 @@ fn displace(position: vec3<f32>, normal: vec3<f32>, in: VsIn) -> vec3<f32> {
 
 @vertex
 fn vs_displaced(in: VsIn, inst: InstanceIn) -> VsOut {
-    return transform_vertex(displace(in.position, in.normal, in), in.normal, in, inst);
+    let m = morph(in);
+    return transform_vertex(displace(m.position, m.normal, in), m.normal, in, inst);
+}
+
+// A bone matrix: from B (256 bones), or for bigger skeletons from t_x3,
+// six rgba16float texels a bone: the three rows of its affine matrix, each
+// as a half-float value plus the half-float remainder (hi + lo), so the
+// sum keeps about 22 bits.
+fn bone_texel(index: u32) -> vec4<f32> {
+    let w = max(M.bones.x, 1u);
+    return textureLoad(t_x3, vec2<i32>(i32(index % w), i32(index / w)), 0);
+}
+
+fn bone_matrix(i: u32) -> mat4x4<f32> {
+    if ((M.info.y & BONE_TEXTURE) == 0u) {
+        return B.bones[min(i, MAX_BONES - 1u)];
+    }
+    let o = i * 6u;
+    let r0 = bone_texel(o) + bone_texel(o + 1u);
+    let r1 = bone_texel(o + 2u) + bone_texel(o + 3u);
+    let r2 = bone_texel(o + 4u) + bone_texel(o + 5u);
+    return mat4x4<f32>(vec4<f32>(r0.x, r1.x, r2.x, 0.0), vec4<f32>(r0.y, r1.y, r2.y, 0.0),
+        vec4<f32>(r0.z, r1.z, r2.z, 0.0), vec4<f32>(r0.w, r1.w, r2.w, 1.0));
 }
 
 // Skinned meshes: three.js's skinning (bindMatrixInverse x weighted bone
-// matrices x bindMatrix) before the usual transform.
+// matrices x bindMatrix) after the morph targets, before the usual
+// transform.
+fn skin_matrix(skin: SkinIn) -> mat4x4<f32> {
+    let w = skin.weight;
+    let i = vec4<u32>(skin.index);
+    let bones = bone_matrix(i.x) * w.x + bone_matrix(i.y) * w.y + bone_matrix(i.z) * w.z + bone_matrix(i.w) * w.w;
+    return O.bind_matrix_inverse * bones * O.bind_matrix;
+}
+
 @vertex
 fn vs_skinned(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
-    let w = skin.weight;
-    let i = vec4<u32>(min(vec4<u32>(skin.index), vec4<u32>(MAX_BONES - 1u)));
-    let bones = B.bones[i.x] * w.x + B.bones[i.y] * w.y + B.bones[i.z] * w.z + B.bones[i.w] * w.w;
-    let m = O.bind_matrix_inverse * bones * O.bind_matrix;
-    let p = (m * vec4<f32>(in.position, 1.0)).xyz;
-    let n = (m * vec4<f32>(in.normal, 0.0)).xyz;
+    let mt = morph(in);
+    let m = skin_matrix(skin);
+    let p = (m * vec4<f32>(mt.position, 1.0)).xyz;
+    let n = (m * vec4<f32>(mt.normal, 0.0)).xyz;
     return transform_vertex(p, n, in, inst);
 }
 
 @vertex
 fn vs_skinned_displaced(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
-    let w = skin.weight;
-    let i = vec4<u32>(min(vec4<u32>(skin.index), vec4<u32>(MAX_BONES - 1u)));
-    let bones = B.bones[i.x] * w.x + B.bones[i.y] * w.y + B.bones[i.z] * w.z + B.bones[i.w] * w.w;
-    let m = O.bind_matrix_inverse * bones * O.bind_matrix;
-    let p = (m * vec4<f32>(displace(in.position, in.normal, in), 1.0)).xyz;
-    let n = (m * vec4<f32>(in.normal, 0.0)).xyz;
+    let mt = morph(in);
+    let m = skin_matrix(skin);
+    let p = (m * vec4<f32>(displace(mt.position, mt.normal, in), 1.0)).xyz;
+    let n = (m * vec4<f32>(mt.normal, 0.0)).xyz;
     return transform_vertex(p, n, in, inst);
 }
 

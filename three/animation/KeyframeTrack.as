@@ -78,6 +78,117 @@ export class KeyframeTrack {
         return this;
     }
 
+    /// Values stored per key: getValueSize(), or three times that for glTF
+    /// cubic spline keys (in-tangent, value, out-tangent).
+    getKeyStride(): i32 {
+        return this.interpolation == InterpolateGLTFCubicSpline ? this.getValueSize() * 3 : this.getValueSize();
+    }
+
+    /// Keeps the keys between `startTime` and `endTime` (at least one), as
+    /// three.js.
+    trim(startTime: f64, endTime: f64): KeyframeTrack {
+        const times = this.times;
+        const nKeys = times.length;
+        let from = 0, to = nKeys - 1;
+        while (from != nKeys && <f64>times[from] < startTime) ++from;
+        while (to != -1 && <f64>times[to] > endTime) --to;
+        ++to;
+        if (from != 0 || to != nKeys) {
+            if (from >= to) {
+                to = max<i32>(to, 1);
+                from = to - 1;
+            }
+            const stride = this.getKeyStride();
+            this.times = times.slice(from, to);
+            this.values = this.values.slice(from * stride, to * stride);
+        }
+        return this;
+    }
+
+    /// Whether the track can play: a whole value size, keys, times in order
+    /// and no NaN (three.js logs each problem; here `validationError` says
+    /// the first).
+    validate(): bool {
+        this.validationError = "";
+        const n = this.times.length;
+        if (n == 0) { this.validationError = "Track is empty."; return false; }
+        const stride = this.interpolation == InterpolateGLTFCubicSpline ? 3 : 1;
+        if (this.values.length % (n * stride) != 0) { this.validationError = "Invalid value size in track."; return false; }
+        let prev: f64 = -Infinity;
+        for (let i = 0; i < n; i++) {
+            const t: f64 = this.times[i];
+            if (isNaN(t)) { this.validationError = "Time is not a valid number."; return false; }
+            if (prev > t) { this.validationError = "Out of order keys."; return false; }
+            prev = t;
+        }
+        for (let i = 0; i < this.values.length; i++) {
+            if (isNaN(<f64>this.values[i])) { this.validationError = "Value is not a valid number."; return false; }
+        }
+        return true;
+    }
+    /// Why the last validate() failed ("" when it passed).
+    validationError: string = "";
+
+    /// Removes keys that change nothing (repeated values between equal
+    /// neighbours, duplicate times), as three.js.
+    optimize(): KeyframeTrack {
+        const times = this.times.slice(0);
+        const values = this.values.slice(0);
+        const stride = this.getKeyStride();
+        const smoothInterpolation = this.interpolation == InterpolateSmooth;
+        const lastIndex = times.length - 1;
+        let writeIndex = 1;
+        for (let i = 1; i < lastIndex; ++i) {
+            let keep = false;
+            const time = times[i];
+            const timeNext = times[i + 1];
+            if (time != timeNext && (i != 1 || time != times[0])) {
+                if (!smoothInterpolation) {
+                    const offset = i * stride, offsetP = offset - stride, offsetN = offset + stride;
+                    for (let j = 0; j != stride; ++j) {
+                        const value = values[offset + j];
+                        if (value != values[offsetP + j] || value != values[offsetN + j]) {
+                            keep = true;
+                            break;
+                        }
+                    }
+                } else {
+                    keep = true;
+                }
+            }
+            if (keep) {
+                if (i != writeIndex) {
+                    times[writeIndex] = times[i];
+                    const readOffset = i * stride, writeOffset = writeIndex * stride;
+                    for (let j = 0; j != stride; ++j) values[writeOffset + j] = values[readOffset + j];
+                }
+                ++writeIndex;
+            }
+        }
+        if (lastIndex > 0) {
+            times[writeIndex] = times[lastIndex];
+            const readOffset = lastIndex * stride, writeOffset = writeIndex * stride;
+            for (let j = 0; j != stride; ++j) values[writeOffset + j] = values[readOffset + j];
+            ++writeIndex;
+        }
+        if (writeIndex != times.length) {
+            this.times = times.slice(0, writeIndex);
+            this.values = values.slice(0, writeIndex * stride);
+        } else {
+            this.times = times;
+            this.values = values;
+        }
+        return this;
+    }
+
+    /// A copy of the same class, with copied times and values.
+    clone(): KeyframeTrack {
+        const track = makeKeyframeTrack(this.ValueTypeName, this.name, [], [], this.interpolation);
+        track.times = this.times.slice(0);
+        track.values = this.values.slice(0);
+        return track;
+    }
+
     /// Writes the value at `time` into `out` (getValueSize() entries).
     evaluate(time: f64, out: Float64Array): void {
         const times = this.times;
@@ -219,6 +330,18 @@ export class QuaternionKeyframeTrack extends KeyframeTrack {
         super.smooth(i0, i1, t, size, out);
         normalize4(out);
     }
+}
+
+/// A track of the class three.js names `typeName` ("number", "vector",
+/// "color", "quaternion", "bool"; anything else is a plain KeyframeTrack).
+export function makeKeyframeTrack(typeName: string, name: string, times: Array<f64>, values: Array<f64>,
+                                  interpolation: i32 = InterpolateLinear): KeyframeTrack {
+    if (typeName == "number") return new NumberKeyframeTrack(name, times, values, interpolation);
+    if (typeName == "vector") return new VectorKeyframeTrack(name, times, values, interpolation);
+    if (typeName == "color") return new ColorKeyframeTrack(name, times, values, interpolation);
+    if (typeName == "quaternion") return new QuaternionKeyframeTrack(name, times, values, interpolation);
+    if (typeName == "bool") return new BooleanKeyframeTrack(name, times, values);
+    return new KeyframeTrack(name, times, values, interpolation);
 }
 
 /// Shortest-arc slerp of two flat quaternions into out[0..3].

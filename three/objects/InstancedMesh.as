@@ -1,6 +1,9 @@
 // three.js InstancedMesh: `count` copies of a mesh in one draw, each with
 // its own matrix (setMatrixAt) and optional colour (setColorAt). Set
 // `instanceMatrix.needsUpdate = true` (and instanceColor's) after changes.
+// setMorphAt gives each instance its own morph target weights (in
+// `morphTexture`, a row per instance; set `morphTexture.needsUpdate = true`
+// after changes, as three.js).
 
 import { Object3D } from "../core/Object3D";
 import { Mesh } from "./Mesh";
@@ -16,6 +19,8 @@ import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastInstancedMesh } from "./raycasting";
 import { Dynamic } from "rive/dynamic";
 import { JSONMeta } from "../core/JSON";
+import { DataTexture } from "../textures/DataTexture";
+import { RedFormat, FloatType } from "../constants";
 
 export class InstancedMesh extends Mesh {
     readonly isInstancedMesh: bool = true;
@@ -26,6 +31,10 @@ export class InstancedMesh extends Mesh {
     /// Bounds of every instance (computeBoundingBox/Sphere), for culling.
     boundingBox: Box3? = null;
     boundingSphere: Sphere? = null;
+    /// Per-instance morph weights: a FloatType RedFormat DataTexture,
+    /// (targets + 1) x count texels, row i holding instance i's base
+    /// influence then its weights (setMorphAt makes it).
+    morphTexture: DataTexture? = null;
 
     constructor(geometry: BufferGeometry, material: Material = new MeshBasicMaterial(), count: i32 = 1) {
         super(geometry, material);
@@ -77,6 +86,38 @@ export class InstancedMesh extends Mesh {
         c.array[index * 3 + 2] = <f32>color.b;
     }
 
+    /// Copies instance `index`'s morph weights into `object`'s
+    /// morphTargetInfluences.
+    getMorphAt(index: i32, object: Mesh): void {
+        const t = this.morphTexture;
+        if (t == null) return;
+        const objectInfluences = object.morphTargetInfluences;
+        const array = t.data as Float32Array;
+        const len = objectInfluences.length + 1;
+        const dataIndex = index * len + 1;
+        for (let i = 0; i < objectInfluences.length; i++) objectInfluences[i] = array[dataIndex + i];
+    }
+
+    /// Sets instance `index`'s morph weights from `object`'s
+    /// morphTargetInfluences (making `morphTexture` on first use).
+    setMorphAt(index: i32, object: Mesh): void {
+        const objectInfluences = object.morphTargetInfluences;
+        const len = objectInfluences.length + 1;
+        let t = this.morphTexture;
+        if (t == null) {
+            t = new DataTexture(new Float32Array(len * this.instanceMatrix.count), <u32>len,
+                <u32>this.instanceMatrix.count, RedFormat, FloatType);
+            this.morphTexture = t;
+        }
+        const array = t.data as Float32Array;
+        let morphInfluencesSum: f64 = 0;
+        for (let i = 0; i < objectInfluences.length; i++) morphInfluencesSum += objectInfluences[i];
+        const morphBaseInfluence = this.geometry.morphTargetsRelative ? 1 : 1 - morphInfluencesSum;
+        const dataIndex = len * index;
+        array[dataIndex] = <f32>morphBaseInfluence;
+        for (let i = 0; i < objectInfluences.length; i++) array[dataIndex + 1 + i] = <f32>objectInfluences[i];
+    }
+
     computeBoundingBox(): void {
         let box = this.boundingBox;
         if (box == null) {
@@ -114,7 +155,13 @@ export class InstancedMesh extends Mesh {
         return true;
     }
 
-    dispose(): void {}
+    dispose(): void {
+        const t = this.morphTexture;
+        if (t != null) {
+            t.dispose();
+            this.morphTexture = null;
+        }
+    }
 
     override copy(source: Object3D, recursive: bool = true): Object3D {
         super.copy(source, recursive);
@@ -124,6 +171,9 @@ export class InstancedMesh extends Mesh {
             const ic = s.instanceColor;
             if (ic != null) this.instanceColor = ic.clone() as InstancedBufferAttribute;
             this.count = s.count;
+            const mt = s.morphTexture;
+            if (mt != null) this.morphTexture = new DataTexture((mt.data as Float32Array).slice(0), mt.dataWidth,
+                mt.dataHeight, RedFormat, FloatType);
         }
         return this;
     }

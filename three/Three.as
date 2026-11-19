@@ -144,6 +144,10 @@ export * from "./animation/KeyframeTrack";
 export * from "./animation/AnimationClip";
 export * from "./animation/PropertyBinding";
 export * from "./animation/AnimationMixer";
+export * from "./animation/AnimationObjectGroup";
+// three.js exports AnimationUtils as a namespace: its functions are static
+// methods of the AnimationUtils class here (or import them by path).
+export { AnimationUtils } from "./animation/AnimationUtils";
 
 export * from "./renderers/GPURenderer";
 export * from "./renderers/RenderTarget";

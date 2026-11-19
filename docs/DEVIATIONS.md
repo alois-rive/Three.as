@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 2 in progress (see [../PLAN.md](../PLAN.md)). Features not yet ported
+Status: Milestone 13 in progress (see [../PLAN.md](../PLAN.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
 
@@ -198,7 +198,9 @@ export class Demo extends Layout {
   displacement, specular, and the physical maps; maps sharing a texture
   count once, as glTF packs them), beyond the eight base slots (map,
   normal, roughness/specular/gradient/matcap, metalness, ao, emissive,
-  alpha, envMap); further ones are ignored with a log line. **Extra map k
+  alpha, envMap); further ones are ignored with a log line. Morphed meshes
+  and skeletons over 256 bones lend slots to their vertex textures (see
+  [Skinning and morph targets](#skinning-and-morph-targets)). **Extra map k
   shares base slot k's sampler** (map, normal, roughness, metalness, ao): the renderer prefers a slot whose base map is absent or has
   the same wrapping and filters, else the extra map is sampled with the
   base map's sampler. (Rive allows 8 bindings a group and the web 16
@@ -511,16 +513,45 @@ export class Demo extends Layout {
   and stores `Float32Array`s. Interpolations: Discrete, Linear (slerp for
   quaternions), Smooth, plus `InterpolateGLTFCubicSpline` (three.js keeps
   that inside its GLTFLoader). `StringKeyframeTrack` is not ported
-  (`AnimationClip.parse` skips string tracks). A clip's `blendMode` is kept
-  and written to JSON; the mixer blends every clip normally.
+  (`AnimationClip.parse` skips string tracks). Tracks and clips have
+  three.js's `clone`, `trim`, `optimize` and `validate` (validate's
+  reason is in `track.validationError` instead of a console error);
+  `track.getKeyStride()` is the values a key takes (3 x the value size for
+  glTF cubic splines). `AnimationClip.CreateFromMorphTargetSequence` and
+  `CreateClipsFromMorphTargetSequences` take morph attributes
+  (`Array<BufferAttribute>`); `findByName` takes an array of clips only.
+- **Additive blending** as three.js: an action's `blendMode` (the clip's,
+  or `clipAction(clip, root, blendMode)`) of `AdditiveAnimationBlendMode`
+  adds its weighted values on top of the normal blend (quaternions
+  multiplied). A property no action drives this frame keeps its value
+  (three.js writes the original value back while an action is still
+  bound).
+- **AnimationUtils** is a class of static methods (`THREE.AnimationUtils.
+  subclip(...)`; three.js exports a namespace object): `subclip`,
+  `makeClipAdditive`, `getKeyframeOrder`, `sortedArray`, `flattenJSON`
+  (keys as a `Dynamic` array), `convertArray` (to a Float32Array) and
+  `isTypedArray`; the array helpers take `Array<f64>`. The functions are
+  also module exports of `three/animation/AnimationUtils`.
+- **AnimationObjectGroup** is an Object3D subclass so it can be a mixer's
+  root (three.js types the root as either): never add it to a scene. Its
+  `add`, `remove` and `uncache` take one object each and do not parent
+  it; `stats.objects.total / inUse` and `stats.bindingsPerObject` as
+  three.js. Tracks bind on each object (`PropertyBindingComposite`,
+  three.js's `PropertyBinding.Composite`, made by `PropertyBinding.
+  create`); the value's kind comes from the first object, so add objects
+  before the first `clipAction`.
 - `PropertyBinding` resolves `node.position|quaternion|scale|rotation|
-  visible`, `node.morphTargetInfluences[i|name]` and `node.material.color|
-  opacity|emissive`; nodes by name under the root (names cannot hold
+  visible`, one component of them (`node.position[x]`, x/y/z/w or 0-3),
+  `node.morphTargetInfluences[i|name]`, `node.material.color|opacity|
+  emissive|emissiveIntensity|roughness|metalness` (`material[i]` for an
+  entry of `mesh.materials`; colours also by `[r|g|b]`) and lights'
+  `node.intensity|color`; nodes by name under the root (names cannot hold
   dots: `PropertyBinding.sanitizeNodeName`). No uuid paths, no arbitrary
-  properties. The static `PropertyBinding.findNode(root, nodeName)` is
-  three.js's (the root, a skeleton bone, or a descendant by name or
-  uuid); `parseTrackName` splits "node.bones[Arm].position" with
-  `objectIndex` "Arm".
+  properties (there is no reflection). `isBoolean` / `isColor` /
+  `isQuaternion` tell how a value blends. The static
+  `PropertyBinding.findNode(root, nodeName)` is three.js's (the root, a
+  skeleton bone, or a descendant by name or uuid); `parseTrackName` splits
+  "node.bones[Arm].position" with `objectIndex` "Arm".
 - `mixer.clipAction(clip)` takes an `AnimationClip` (not a clip name).
   Mixer events (`finished`, `loop`) are not dispatched: poll
   `action.isRunning()`, `action.enabled`, `action.paused`. Cross-fades
@@ -532,11 +563,31 @@ export class Demo extends Layout {
   inverses) updates each bone's world matrix first; three.js inverts
   `matrixWorld` as it is. Pass the inverses to set them from matrices you
   wrote into `matrixWorld` yourself (FBXLoader does).
-- GPU skinning, up to **256 bones** per skeleton (more: drawn unskinned,
-  with a log line). `Skeleton(bones: Array<Bone>, boneInverses)`.
-- **Morph targets are blended on the CPU** (whenever the influences change),
-  then uploaded; fine for faces and props, costly for big meshes animating
-  every frame.
+- GPU skinning: up to 256 bones from a uniform block, **bigger skeletons
+  from a bone texture** (three.js's `boneTexture`, here rgba16float: each
+  bone's three affine rows as half floats plus their half-float
+  remainders, about 22 bits; three.js uses Float32). `Skeleton(bones:
+  Array<Bone>, boneInverses)`; `skeleton.boneTexture` is not exposed.
+- **Morph targets blend on the GPU** from a morph target texture, any
+  number of targets, as three.js's WebGL2 path: the geometry's deltas
+  (relative to the base, whatever `morphTargetsRelative` says) for
+  positions and normals, as rgba16float texels (half floats: three.js
+  stores Float32), rebuilt when a morph attribute's `version` changes.
+  Only targets with a non-zero weight cost anything, at most 2044 of them
+  at once (the rest are skipped). Morph colours are not read. A texture
+  bigger than the device allows (`maxTextureSize2D` squared texels) falls
+  back to blending on the CPU, with a log line.
+- **InstancedMesh morphs**: `setMorphAt(index, mesh)` / `getMorphAt`,
+  `morphTexture` (a FloatType RedFormat DataTexture, a row per instance:
+  base influence, then the weights; uploaded as half floats) as three.js;
+  set `morphTexture.needsUpdate = true` after changing it.
+- **The vertex textures borrow extra map slots**: the morph texture takes
+  extra slot 4, the bone texture slot 3 and an instanced morphTexture
+  slot 2 (group 1 bindings 6, 5, 4; the web allows 16 textures a stage
+  and the shader already declares 16). A morphed or big-skinned mesh's
+  material keeps the other extra slots for its extra maps (see
+  [Materials](#materials)); maps that do not fit are ignored with a log
+  line. ShaderMaterials do not morph or skin.
 - A SkinnedMesh is frustum culled only after `computeBoundingSphere()` (its
   posed bounds); otherwise it is always drawn.
 
@@ -1098,4 +1149,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-the rest of M13 and M14 (GPU morph targets, 2D overlays, data binding helpers).
+the rest of M13 and M14 (2D overlays, data binding helpers).

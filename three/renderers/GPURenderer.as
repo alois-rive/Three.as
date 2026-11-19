@@ -104,6 +104,8 @@ import { RenderTarget, RenderTargetOptions, RenderTargetTexture } from "./Render
 import { FramebufferTexture } from "../textures/FramebufferTexture";
 import { DepthTexture } from "../textures/DepthTexture";
 import { Box2 } from "../math/Box2";
+import { fromHalf } from "../textures/DataUpload";
+import { Skeleton } from "../objects/Skeleton";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
     FRAME_HEMI_SKY, FRAME_HEMI_GROUND, FRAME_HEMI_DIR, FRAME_FOG_COLOR, FRAME_FOG_PARAMS, FRAME_OUTPUT,
@@ -114,6 +116,8 @@ import {
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT, LIGHT_RECT, FRAME_PROBE,
     FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
+    MORPH_INFO, MORPH_BONES, MORPH_ACTIVE, MORPH_BYTES, MAX_ACTIVE_MORPHS, MORPH_NORMALS, MORPH_INSTANCED, BONE_TEXTURE,
+    X_SLOT_MORPH, X_SLOT_BONES, X_SLOT_MORPH_INSTANCES, BONE_TEXELS,
 } from "./gpu/Layout";
 
 // The main shader: newer CLIs name assets by path, 1.9.x by file name.
@@ -229,6 +233,32 @@ class MorphGPU {
     normals: Float32Array = new Float32Array(0);
     influences: Array<f64> = [];
     geometryVersion: i32 = -1;
+}
+
+// A geometry's morph target deltas as an rgba16float texture (three.wgsl's
+// morph()): target-major, a position texel (and a normal texel) a vertex.
+class MorphTargetsGPU {
+    texture: GPUTexture? = null;
+    view: GPUTextureView? = null;
+    width: i32 = 0;
+    targets: i32 = 0;
+    texelsPerTarget: i32 = 0;
+    normals: bool = false;
+    /// The geometry's position and morph attribute versions it was built from.
+    key: i32 = -1;
+}
+
+// A mesh's MorphU block (group 1 binding 7) and, for skeletons above
+// MAX_BONES, its bone texture.
+class DeformGPU {
+    ubo: GPUBuffer? = null;
+    staging: ArrayBuffer = new ArrayBuffer(MORPH_BYTES);
+    frame: i32 = -1;
+    boneTexture: GPUTexture? = null;
+    boneView: GPUTextureView? = null;
+    boneWidth: i32 = 0;
+    boneData: Uint16Array = new Uint16Array(0);
+    boneFrame: i32 = -1;
 }
 
 // A wide line geometry's packed segments.
@@ -348,6 +378,7 @@ class DrawState {
     objGroup: GPUBindGroup? = null;
     arena: GPUBuffer? = null;
     bones: GPUBuffer? = null;
+    morph: GPUBuffer? = null;
     matGroup: GPUBindGroup? = null;
     samplerGroup: GPUBindGroup? = null;
     views: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(TEXTURE_SLOTS);
@@ -379,6 +410,12 @@ class DrawItem {
     instanceFirst: u32 = 0;
     skinned: bool = false;
     bones: GPUBuffer? = null;
+    /// Morph targets / a bone texture: the mesh's MorphU block, and the
+    /// textures it borrows extra slots for.
+    morph: GPUBuffer? = null;
+    morphView: GPUTextureView? = null;
+    boneView: GPUTextureView? = null;
+    instanceMorphView: GPUTextureView? = null;
     custom: CustomPipeline? = null;
     customUniforms: CustomUniforms? = null;
     positionOverride: GPUBuffer? = null;
@@ -443,6 +480,10 @@ export class GPURenderer {
     private pointBuffers: Array<GPUVertexBufferLayout> = [];
     private skinBuffers: Array<GPUVertexBufferLayout> = [];
     private dummyBones: GPUBuffer? = null;
+    private dummyMorph: GPUBuffer? = null;
+    private morphTargets: Map<i32, MorphTargetsGPU> = new Map<i32, MorphTargetsGPU>();
+    private deforms: Map<i32, DeformGPU> = new Map<i32, DeformGPU>();
+    private warnedMorphs: bool = false;
     private boneBuffers: Map<i32, GPUBuffer> = new Map<i32, GPUBuffer>();
     private morphs: Map<i32, MorphGPU> = new Map<i32, MorphGPU>();
     private customPipelines: Map<string, CustomPipeline> = new Map<string, CustomPipeline>();
@@ -1433,6 +1474,7 @@ export class GPURenderer {
             ];
             this.skinBuffers = this.vertexBuffers.concat([skin]);
             this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
+            this.dummyMorph = new GPUBuffer(BufferUsage.uniform, <u32>MORPH_BYTES, new ArrayBuffer(MORPH_BYTES), true);
             const sd = new GPUTextureDesc();
             sd.width = 1; sd.height = 1;
             sd.format = TextureFormat.depth32float;
@@ -1832,7 +1874,16 @@ export class GPURenderer {
     }
 
     private drainDisposed(): void {
-        for (let i = 0; i < disposedGeometries.length; i++) this.geometries.dispose(disposedGeometries[i]);
+        for (let i = 0; i < disposedGeometries.length; i++) {
+            const id = disposedGeometries[i];
+            this.geometries.dispose(id);
+            if (this.morphTargets.has(id)) {
+                const mt = this.morphTargets.get(id);
+                const t = mt.texture;
+                if (t != null) t.release();
+                this.morphTargets.delete(id);
+            }
+        }
         disposedGeometries.length = 0;
         for (let i = 0; i < disposedTextures.length; i++) this.textures.dispose(disposedTextures[i]);
         disposedTextures.length = 0;
@@ -2070,41 +2121,260 @@ export class GPURenderer {
         return n;
     }
 
-    /// Morph targets (CPU) and skinning (GPU) for a mesh draw.
+    /// Morph targets and skinning for a mesh draw, on the GPU: the active
+    /// targets' weights in the mesh's MorphU block over the geometry's
+    /// morph texture (an InstancedMesh's morphTexture holds per-instance
+    /// weights), bones in a uniform block or, above MAX_BONES, a bone
+    /// texture. Morph textures too big for the device blend on the CPU.
     private deform(mesh: Mesh, geometry: BufferGeometry, g: GeometryGPU, item: DrawItem, frame: i32): void {
-        if (mesh.morphTargetInfluences.length > 0 && geometry.morphAttributes.has("position")) {
-            const m = this.morph(mesh, geometry);
-            if (m != null) {
-                item.positionOverride = m.position;
-                item.normalOverride = m.normal;
+        let flags: u32 = 0;
+        let count = 0;
+        let mt: MorphTargetsGPU? = null;
+        const morphs = geometry.morphAttributes.has("position") && geometry.morphAttributes.get("position").length > 0;
+        let instanceWeights: Texture? = null;
+        if (morphs && mesh instanceof InstancedMesh) instanceWeights = (mesh as InstancedMesh).morphTexture;
+        if (morphs && (mesh.morphTargetInfluences.length > 0 || instanceWeights != null)) {
+            mt = this.morphTargetsOf(geometry);
+            if (mt == null) {
+                // CPU fallback (the texture would not fit).
+                const m = this.morph(mesh, geometry);
+                if (m != null) {
+                    item.positionOverride = m.position;
+                    item.normalOverride = m.normal;
+                }
+            } else if (instanceWeights != null) {
+                this.textures.update(instanceWeights, frame);
+                const v = this.textures.view(instanceWeights, this.canvas!);
+                if (v != null) {
+                    item.instanceMorphView = v;
+                    flags |= MORPH_INSTANCED;
+                    count = mt.targets;
+                }
+            } else {
+                const infl = mesh.morphTargetInfluences;
+                for (let i = 0; i < infl.length && i < mt.targets; i++) if (infl[i] != 0) count++;
+            }
+            if (count > 0) {
+                if (mt!.normals) flags |= MORPH_NORMALS;
+                item.morphView = mt!.view;
             }
         }
-        if (!(mesh instanceof SkinnedMesh)) return;
-        const sm = mesh as SkinnedMesh;
-        const skeleton = sm.skeleton;
-        if (skeleton == null || g.skin == null) return;
-        if (skeleton.bones.length > MAX_BONES) {
-            if (!this.warnedBones) {
-                this.context.log("three: skeletons over " + MAX_BONES.toString() + " bones draw unskinned");
-                this.warnedBones = true;
+        let skeleton: Skeleton? = null;
+        let bigSkeleton = false;
+        if (mesh instanceof SkinnedMesh && g.skin != null) {
+            skeleton = (mesh as SkinnedMesh).skeleton;
+            if (skeleton != null) {
+                if (skeleton.frame != frame) {
+                    skeleton.update();
+                    skeleton.frame = frame;
+                }
+                bigSkeleton = skeleton.bones.length > MAX_BONES;
+                if (bigSkeleton) flags |= BONE_TEXTURE;
             }
+        }
+        if (count > 0 || bigSkeleton) {
+            const d = this.deformOf(mesh);
+            if (d.frame != frame) {
+                d.frame = frame;
+                this.writeMorphBlock(d, mesh, mt, count, flags, skeleton, frame);
+            }
+            item.morph = d.ubo;
+            if (bigSkeleton) item.boneView = d.boneView;
+        }
+        if (skeleton == null) return;
+        if (bigSkeleton) {
+            item.skinned = true;
+            item.bones = this.dummyBones;
+            item.pipelineKey |= KEY_SKINNED;
             return;
         }
-        if (skeleton.frame != frame) {
-            skeleton.update();
-            skeleton.frame = frame;
-        }
         let bones: GPUBuffer;
-        if (this.boneBuffers.has(sm.id)) bones = this.boneBuffers.get(sm.id);
+        if (this.boneBuffers.has(mesh.id)) bones = this.boneBuffers.get(mesh.id);
         else {
             bones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
-            this.boneBuffers.set(sm.id, bones);
+            this.boneBuffers.set(mesh.id, bones);
         }
         const data = skeleton.boneMatrices;
         if (data.length > 0) bones.update(0, data.buffer, <u32>data.byteLength);
         item.skinned = true;
         item.bones = bones;
         item.pipelineKey |= KEY_SKINNED;
+    }
+
+    private deformOf(mesh: Mesh): DeformGPU {
+        if (this.deforms.has(mesh.id)) return this.deforms.get(mesh.id);
+        const d = new DeformGPU();
+        d.ubo = new GPUBuffer(BufferUsage.uniform, <u32>MORPH_BYTES, d.staging);
+        this.deforms.set(mesh.id, d);
+        return d;
+    }
+
+    /// Writes a mesh's MorphU block (and bone texture) for this frame.
+    private writeMorphBlock(d: DeformGPU, mesh: Mesh, mt: MorphTargetsGPU?, count: i32, flags: u32,
+                            skeleton: Skeleton?, frame: i32): void {
+        const u = Uint32Array.wrap(d.staging);
+        const f = Float32Array.wrap(d.staging);
+        let active = 0;
+        let bytes = MORPH_ACTIVE;
+        if (mt != null && count > 0 && (flags & MORPH_INSTANCED) == 0) {
+            // The weighted targets, as (target, weight) pairs.
+            const infl = mesh.morphTargetInfluences;
+            const n = min<i32>(infl.length, mt.targets);
+            let o = MORPH_ACTIVE >> 2;
+            for (let i = 0; i < n && active < MAX_ACTIVE_MORPHS; i++) {
+                const w = infl[i];
+                if (w == 0) continue;
+                f[o++] = <f32>i;
+                f[o++] = <f32>w;
+                active++;
+            }
+            if ((active & 1) == 1) { f[o++] = 0; f[o++] = 0; }
+            bytes = o << 2;
+            count = active;
+        }
+        const ui = MORPH_INFO >> 2;
+        u[ui] = <u32>count;
+        u[ui + 1] = flags;
+        u[ui + 2] = mt != null ? <u32>mt.width : 0;
+        u[ui + 3] = mt != null ? <u32>mt.texelsPerTarget : 0;
+        const ub = MORPH_BONES >> 2;
+        u[ub] = 0; u[ub + 1] = 0; u[ub + 2] = 0; u[ub + 3] = 0;
+        if (skeleton != null && (flags & BONE_TEXTURE) != 0) {
+            this.writeBoneTexture(d, skeleton, frame);
+            u[ub] = <u32>d.boneWidth;
+        }
+        d.ubo!.update(0, d.staging, <u32>bytes);
+    }
+
+    /// Uploads a big skeleton's bone matrices: six rgba16float texels a
+    /// bone, its three affine rows as half floats plus their remainders.
+    private writeBoneTexture(d: DeformGPU, skeleton: Skeleton, frame: i32): void {
+        if (d.boneFrame == frame) return;
+        d.boneFrame = frame;
+        const n = skeleton.bones.length;
+        const texels = n * BONE_TEXELS;
+        const maxSize = <i32>this.context.features().maxTextureSize2D;
+        const width = min<i32>(texels, maxSize);
+        const height = (texels + width - 1) / width;
+        let tex = d.boneTexture;
+        if (tex == null || tex.width != <u32>width || tex.height != <u32>height) {
+            if (tex != null) tex.release();
+            const desc = new GPUTextureDesc();
+            desc.width = <u32>width;
+            desc.height = <u32>height;
+            desc.format = TextureFormat.rgba16float;
+            tex = new GPUTexture(desc);
+            d.boneTexture = tex;
+            d.boneView = tex.view();
+            d.boneWidth = width;
+            d.boneData = new Uint16Array(width * height * 4);
+        }
+        const m = skeleton.boneMatrices;
+        const out = d.boneData;
+        for (let b = 0; b < n; b++) {
+            const src = b * 16;
+            const dst = b * BONE_TEXELS * 4;
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 4; c++) {
+                    const v = m[src + c * 4 + r];   // column-major: column c, row r
+                    const hi = fastHalf(v);
+                    const lo = fastHalf(v - fromHalf(hi));
+                    out[dst + r * 8 + c] = hi;
+                    out[dst + r * 8 + 4 + c] = lo;
+                }
+            }
+        }
+        uploadRegion.width = <u32>width;
+        uploadRegion.height = <u32>height;
+        tex.upload(uploadRegion, out.buffer);
+    }
+
+    /// A geometry's morph texture, built (or rebuilt after its attributes
+    /// changed); null when it would exceed the device's texture size.
+    private morphTargetsOf(geometry: BufferGeometry): MorphTargetsGPU? {
+        const position = geometry.getAttribute("position");
+        if (position == null) return null;
+        const targets = geometry.morphAttributes.get("position");
+        const normal = geometry.getAttribute("normal");
+        const normalTargets = geometry.morphAttributes.has("normal") ? geometry.morphAttributes.get("normal") : null;
+        const normals = normal != null && normalTargets != null && normalTargets.length == targets.length;
+        let key = position.version * 31 + targets.length;
+        for (let i = 0; i < targets.length; i++) key = key * 31 + targets[i].version;
+        if (normals) for (let i = 0; i < normalTargets!.length; i++) key = key * 31 + normalTargets![i].version;
+        let mt: MorphTargetsGPU;
+        if (this.morphTargets.has(geometry.id)) {
+            mt = this.morphTargets.get(geometry.id);
+            if (mt.key == key) return mt.texture != null ? mt : null;
+        } else {
+            mt = new MorphTargetsGPU();
+            this.morphTargets.set(geometry.id, mt);
+        }
+        mt.key = key;
+        const vertices = position.count;
+        const stride = normals ? 2 : 1;
+        const perTarget = vertices * stride;
+        const total = perTarget * targets.length;
+        const maxSize = <i32>this.context.features().maxTextureSize2D;
+        const width = max<i32>(1, min<i32>(total, maxSize));
+        const height = (total + width - 1) / width;
+        if (height > maxSize) {
+            if (!this.warnedMorphs) {
+                this.context.log("three: morph targets too big for a texture blend on the CPU");
+                this.warnedMorphs = true;
+            }
+            const old = mt.texture;
+            if (old != null) old.release();
+            mt.texture = null;
+            mt.view = null;
+            return null;
+        }
+        const data = new Uint16Array(width * height * 4);
+        const relative = geometry.morphTargetsRelative;
+        const base = position.array;
+        const baseNormal = normal != null ? normal.array : null;
+        for (let t = 0; t < targets.length; t++) {
+            const a = targets[t];
+            const n = normals ? normalTargets![t] : null;
+            const av = a.array, as = a.itemSize, an = min<i32>(a.count, vertices);
+            for (let v = 0; v < an; v++) {
+                const o = (t * perTarget + v * stride) * 4;
+                for (let k = 0; k < 3; k++) {
+                    let delta: f32 = av[v * as + k];
+                    if (!relative) delta -= base[v * 3 + k];
+                    if (delta != 0) data[o + k] = fastHalf(delta);
+                }
+            }
+            if (n != null) {
+                const nv = n.array, ns = n.itemSize, nn = min<i32>(n.count, vertices);
+                for (let v = 0; v < nn; v++) {
+                    const o = (t * perTarget + v * stride) * 4 + 4;
+                    for (let k = 0; k < 3; k++) {
+                        let delta: f32 = nv[v * ns + k];
+                        if (!relative && baseNormal != null) delta -= baseNormal[v * 3 + k];
+                        if (delta != 0) data[o + k] = fastHalf(delta);
+                    }
+                }
+            }
+        }
+        let tex = mt.texture;
+        if (tex == null || tex.width != <u32>width || tex.height != <u32>height) {
+            if (tex != null) tex.release();
+            const desc = new GPUTextureDesc();
+            desc.width = <u32>width;
+            desc.height = <u32>height;
+            desc.format = TextureFormat.rgba16float;
+            tex = new GPUTexture(desc);
+            mt.texture = tex;
+            mt.view = tex.view();
+        }
+        uploadRegion.width = <u32>width;
+        uploadRegion.height = <u32>height;
+        tex.upload(uploadRegion, data.buffer);
+        mt.width = width;
+        mt.targets = targets.length;
+        mt.texelsPerTarget = perTarget;
+        mt.normals = normals;
+        return mt;
     }
 
     /// Blends the morph targets into a per-mesh position (and normal)
@@ -3018,25 +3288,28 @@ export class GPURenderer {
         const arena = this.arena!;
         const state = item.state;
         const skinned = item.skinned && item.bones != null;
-        if (!skinned && state.xcount == 0) {
+        const morph = item.morph != null ? item.morph! : this.dummyMorph!;
+        if (!skinned && state.xcount == 0 && item.morph == null) {
             let g = this.arenaGroup;
             if (g == null) {
                 const white = this.white!;
                 g = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                    new GPUBindGroupUBO(1, this.dummyBones!)], extraTextures(null, white));
+                    new GPUBindGroupUBO(1, this.dummyBones!), new GPUBindGroupUBO(7, this.dummyMorph!)],
+                    extraTextures(null, white));
                 this.arenaGroup = g;
             }
             return g;
         }
-        // Its own group: bones and/or extra maps.
+        // Its own group: bones, morphs and/or extra maps.
         const bones = skinned ? item.bones! : this.dummyBones!;
-        let changed = state.objGroup == null || state.arena !== arena || state.bones !== bones;
+        let changed = state.objGroup == null || state.arena !== arena || state.bones !== bones || state.morph !== morph;
         for (let i = 0; i < EXTRA_SLOTS && !changed; i++) changed = state.xgroupViews[i] !== state.xviews[i];
         if (changed) {
             state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
-                new GPUBindGroupUBO(1, bones)], extraTextures(state.xviews, this.white!));
+                new GPUBindGroupUBO(1, bones), new GPUBindGroupUBO(7, morph)], extraTextures(state.xviews, this.white!));
             state.arena = arena;
             state.bones = bones;
+            state.morph = morph;
             for (let i = 0; i < EXTRA_SLOTS; i++) state.xgroupViews[i] = state.xviews[i];
         }
         return state.objGroup!;
@@ -3082,6 +3355,17 @@ export class GPURenderer {
         for (let i = 0; i < EXTRA_SLOTS; i++) {
             state.xviews[i] = null;
             _xtex[i] = null;
+        }
+        // Vertex data borrows its slots first (read with textureLoad).
+        const mv = item.morphView;
+        if (mv != null) { state.xviews[X_SLOT_MORPH] = mv; used |= <u32>1 << <u32>X_SLOT_MORPH; count++; }
+        const bv = item.boneView;
+        if (bv != null) { state.xviews[X_SLOT_BONES] = bv; used |= <u32>1 << <u32>X_SLOT_BONES; count++; }
+        const iv = item.instanceMorphView;
+        if (iv != null) {
+            state.xviews[X_SLOT_MORPH_INSTANCES] = iv;
+            used |= <u32>1 << <u32>X_SLOT_MORPH_INSTANCES;
+            count++;
         }
         for (let r = 0; r < ROLE_COUNT; r++) {
             const t = mu.roles[r];
@@ -3708,4 +3992,33 @@ function worldSphere(o: Object3D, out: Sphere): bool {
     if (bounds.isEmpty()) return false;
     out.copy(bounds).applyMatrix4(o.matrixWorld);
     return true;
+}
+
+// f32 to f16 by table (van der Zijp's "Fast Half Float Conversions"):
+// truncates the mantissa (no rounding), flushes tiny values to zero, keeps
+// infinities. For vertex data built per frame or per geometry.
+const _halfBase = new StaticArray<u16>(512);
+const _halfShift = new StaticArray<u8>(512);
+let _halfReady = false;
+
+function initHalfTables(): void {
+    for (let i = 0; i < 256; i++) {
+        const e = i - 127;
+        let base: u32 = 0, shift: u32 = 24;
+        if (e < -24) { base = 0; shift = 24; }
+        else if (e < -14) { base = <u32>(0x0400 >> (-e - 14)); shift = <u32>(-e - 1); }
+        else if (e <= 15) { base = <u32>((e + 15) << 10); shift = 13; }
+        else if (e < 128) { base = 0x7C00; shift = 24; }
+        else { base = 0x7C00; shift = 13; }
+        _halfBase[i] = <u16>base; _halfBase[i | 0x100] = <u16>(base | 0x8000);
+        _halfShift[i] = <u8>shift; _halfShift[i | 0x100] = <u8>shift;
+    }
+    _halfReady = true;
+}
+
+function fastHalf(value: f32): u16 {
+    if (!_halfReady) initHalfTables();
+    const f = reinterpret<u32>(value);
+    const e = (f >> 23) & 0x1ff;
+    return <u16>(<u32>_halfBase[e] + ((f & 0x007fffff) >> <u32>_halfShift[e]));
 }

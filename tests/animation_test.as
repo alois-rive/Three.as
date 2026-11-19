@@ -13,7 +13,13 @@ import {
 import { AnimationClip } from "../three/animation/AnimationClip";
 import { AnimationMixer } from "../three/animation/AnimationMixer";
 import { PropertyBinding } from "../three/animation/PropertyBinding";
-import { InterpolateDiscrete, InterpolateSmooth, LoopOnce, LoopPingPong } from "../three/constants";
+import { AnimationObjectGroup } from "../three/animation/AnimationObjectGroup";
+import { AnimationUtils } from "../three/animation/AnimationUtils";
+import { PointLight } from "../three/lights/PointLight";
+import { Float32BufferAttribute } from "../three/core/BufferAttribute";
+import {
+    InterpolateDiscrete, InterpolateSmooth, LoopOnce, LoopPingPong, AdditiveAnimationBlendMode,
+} from "../three/constants";
 
 const EPS: f64 = 1e-4;
 
@@ -183,6 +189,155 @@ export class AnimationTests extends Tests {
                 expect.that(mesh.visible).is(true);
                 mixer.update(0.5);
                 expect.that(mesh.visible).is(false);
+            });
+        });
+
+        group("AnimationUtils", () => {
+            test("subclip keeps a frame range, shifted to 0", (expect) => {
+                const clip = new AnimationClip("walk", -1, [
+                    new NumberKeyframeTrack("Box.position[x]", [0, 1, 2, 3], [0, 10, 20, 30]),
+                    new NumberKeyframeTrack("Box.position[y]", [0, 3], [0, 3]),
+                ]);
+                const sub = AnimationUtils.subclip(clip, "mid", 30, 90, 30);   // frames 30-89: times 1, 2
+                expect.that(sub.name).is("mid");
+                expect.that(sub.tracks.length).is(1);
+                expect.that(sub.tracks[0].times.length).is(2);
+                near(expect, sub.tracks[0].times[0], 0);
+                near(expect, sub.tracks[0].values[1], 20);
+                near(expect, sub.duration, 1);
+                expect.that(clip.tracks[0].times.length).is(4);   // the source is untouched
+            });
+            test("makeClipAdditive subtracts the reference frame", (expect) => {
+                const q = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.5);
+                const clip = new AnimationClip("lean", -1, [
+                    new VectorKeyframeTrack("Box.position", [0, 1], [1, 2, 3, 2, 2, 3]),
+                    new QuaternionKeyframeTrack("Box.quaternion", [0, 1], [q.x, q.y, q.z, q.w, 0, 0, 0, 1]),
+                ]);
+                AnimationUtils.makeClipAdditive(clip);
+                expect.that(<f64>clip.blendMode).is(<f64>AdditiveAnimationBlendMode);
+                near(expect, clip.tracks[0].values[0], 0);
+                near(expect, clip.tracks[0].values[3], 1);
+                near(expect, clip.tracks[1].values[3], 1);   // the first key becomes the identity
+                near(expect, clip.tracks[1].values[2], 0);
+            });
+            test("key order and sorting", (expect) => {
+                const order = AnimationUtils.getKeyframeOrder([2, 0, 1]);
+                expect.that(order[0]).is(1);
+                expect.that(order[2]).is(0);
+                const sorted = AnimationUtils.sortedArray([20, 21, 0, 1, 10, 11], 2, order);
+                near(expect, sorted[0], 0);
+                near(expect, sorted[5], 21);
+            });
+            test("clone, trim, optimize, validate", (expect) => {
+                const track = new NumberKeyframeTrack(".x", [0, 1, 2, 3, 4], [0, 1, 1, 1, 2]);
+                const copy = track.clone();
+                expect.that(copy instanceof NumberKeyframeTrack).is(true);
+                copy.optimize();
+                expect.that(copy.times.length).is(4);   // the middle 1 goes
+                expect.that(track.times.length).is(5);
+                track.trim(1, 3);
+                expect.that(track.times.length).is(3);
+                expect.that(track.validate()).is(true);
+                const bad = new NumberKeyframeTrack(".x", [1, 0], [0, 0]);
+                expect.that(bad.validate()).is(false);
+            });
+            test("morph target sequences", (expect) => {
+                const a = new Float32BufferAttribute([0, 0, 0], 3); a.name = "run0";
+                const b = new Float32BufferAttribute([0, 0, 0], 3); b.name = "run1";
+                const c = new Float32BufferAttribute([0, 0, 0], 3); c.name = "jump0";
+                const clips = AnimationClip.CreateClipsFromMorphTargetSequences([a, b, c], 10);
+                expect.that(clips.length).is(2);
+                expect.that(clips[0].name).is("run");
+                expect.that(clips[0].tracks.length).is(2);
+                expect.that(clips[0].tracks[0].name).is(".morphTargetInfluences[run0]");
+                near(expect, clips[0].duration, 0.2);
+            });
+        });
+
+        group("additive blending", () => {
+            test("an additive action adds on top of the normal blend", (expect) => {
+                const root = moving();
+                const box = root.getObjectByName("Box")!;
+                const base = new AnimationClip("base", 1, [new VectorKeyframeTrack("Box.position", [0], [2, 0, 0])]);
+                const offset = new AnimationClip("offset", 1, [new VectorKeyframeTrack("Box.position", [0, 1], [0, 0, 0, 0, 4, 0])]);
+                AnimationUtils.makeClipAdditive(offset);
+                const mixer = new AnimationMixer(root);
+                mixer.clipAction(base).play();
+                const add = mixer.clipAction(offset).play();
+                expect.that(<f64>add.blendMode).is(<f64>AdditiveAnimationBlendMode);
+                mixer.update(0.5);
+                near(expect, box.position.x, 2);
+                near(expect, box.position.y, 2);
+                add.setEffectiveWeight(0.5);
+                mixer.update(0);
+                near(expect, box.position.y, 1);
+            });
+            test("additive quaternions multiply", (expect) => {
+                const root = moving();
+                const box = root.getObjectByName("Box")!;
+                const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.6);
+                const clip = new AnimationClip("turn", 1, [new QuaternionKeyframeTrack("Box.quaternion", [0],
+                    [turn.x, turn.y, turn.z, turn.w])]);
+                box.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), 0.4);
+                const mixer = new AnimationMixer(root);
+                mixer.clipAction(clip, null, AdditiveAnimationBlendMode).play();
+                mixer.update(0.1);
+                const want = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 1.0);
+                near(expect, box.quaternion.y, want.y);
+                near(expect, box.quaternion.w, want.w);
+            });
+        });
+
+        group("AnimationObjectGroup", () => {
+            test("one action drives every object", (expect) => {
+                const a = new Object3D(), b = new Object3D(), c = new Object3D();
+                const group = new AnimationObjectGroup([a, b]);
+                group.add(c);
+                const clip = new AnimationClip("rise", -1, [new NumberKeyframeTrack(".position[y]", [0, 1], [0, 2])]);
+                const mixer = new AnimationMixer(group);
+                mixer.clipAction(clip).play();
+                mixer.update(0.5);
+                near(expect, a.position.y, 1);
+                near(expect, c.position.y, 1);
+                expect.that(a.parent == null).is(true);   // not parented
+                group.remove(b);
+                mixer.update(0.25);
+                near(expect, a.position.y, 1.5);
+                near(expect, b.position.y, 1);
+                expect.that(group.stats.objects.total).is(3);
+                expect.that(group.stats.objects.inUse).is(2);
+                expect.that(group.stats.bindingsPerObject).is(1);
+            });
+        });
+
+        group("PropertyBinding paths", () => {
+            test("components, lights and material numbers", (expect) => {
+                const root = new Object3D();
+                const lamp = new PointLight(0xffffff, 2);
+                lamp.name = "Lamp";
+                root.add(lamp);
+                const mesh = new Mesh();
+                mesh.name = "M";
+                mesh.material = new MeshStandardMaterial({ roughness: 0.3 });
+                root.add(mesh);
+                const v = new Float64Array(4);
+                const i = new PropertyBinding(root, "Lamp.intensity");
+                expect.that(i.valueSize).is(1);
+                i.getValue(v);
+                near(expect, v[0], 2);
+                v[0] = 5; i.setValue(v);
+                near(expect, lamp.intensity, 5);
+                const x = new PropertyBinding(root, "M.position[x]");
+                v[0] = 3; x.setValue(v);
+                near(expect, mesh.position.x, 3);
+                const r = new PropertyBinding(root, "M.material.roughness");
+                r.getValue(v);
+                near(expect, v[0], 0.3);
+                const lc = new PropertyBinding(root, "Lamp.color");
+                expect.that(lc.valueSize).is(3);
+                expect.that(lc.isColor).is(true);
+                const bad = new PropertyBinding(root, "M.position[q]");
+                expect.that(bad.isBound).is(false);
             });
         });
     }

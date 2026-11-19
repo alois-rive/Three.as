@@ -73,8 +73,27 @@ export const OBJ_MISC1: i32 = 1248;   // farDistance, alphaHash
 export const OBJ_LIGHTS: i32 = 1264;  // 2 vec4 of u8s: count, then up to 31 frame light indices
 export const OBJ_USED: i32 = 1296;
 
+/// Bones the uniform block B holds; bigger skeletons read a bone texture.
 export const MAX_BONES: i32 = 256;
 export const BONES_BYTES: i32 = MAX_BONES * 64;   // 16384
+
+// MorphU (group 1 binding 7): two vec4<u32> headers, then (target, weight)
+// pairs, two a vec4.
+export const MORPH_INFO: i32 = 0;      // active count, flags, morph texture width, texels a target
+export const MORPH_BONES: i32 = 16;    // bone texture width
+export const MORPH_ACTIVE: i32 = 32;
+export const MORPH_BYTES: i32 = 16384;
+export const MAX_ACTIVE_MORPHS: i32 = (MORPH_BYTES - MORPH_ACTIVE) / 8;   // 2044
+export const MORPH_NORMALS: u32 = 1;
+export const MORPH_INSTANCED: u32 = 2;
+export const BONE_TEXTURE: u32 = 4;
+// The extra map slots (t_x0-t_x4) that vertex data borrows: a material
+// keeps the others for its extra maps.
+export const X_SLOT_MORPH: i32 = 4;          // morph target deltas
+export const X_SLOT_BONES: i32 = 3;          // bone matrices (above MAX_BONES)
+export const X_SLOT_MORPH_INSTANCES: i32 = 2;   // InstancedMesh.morphTexture
+/// Texels a bone takes in the bone texture (3 rows, hi + lo each).
+export const BONE_TEXELS: i32 = 6;
 /// The per-draw buffer size (room to grow).
 export const OBJ_BYTES: i32 = 1536;
 

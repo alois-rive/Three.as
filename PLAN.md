@@ -327,7 +327,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 
 ### M13: animation depth and Rive integration
 
-- **M13a, animation utilities.** AnimationUtils (`subclip`,
+- **M13a, animation utilities (done).** AnimationUtils (`subclip`,
   `makeClipAdditive`), additive blending, AnimationObjectGroup, morph
   targets on the GPU (target texture, any number of targets),
   InstancedMesh morphs (`setMorphAt`), skeletons above 256 bones (bone

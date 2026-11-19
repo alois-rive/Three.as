@@ -3,16 +3,24 @@
 //     "Cube.position"                      node "Cube"'s position
 //     ".quaternion"                        the mixer's root
 //     "Cube.scale" / ".rotation"           scale / Euler rotation (radians)
+//     "Cube.position[x]" / ".rotation[y]"  one component (x, y, z, w or 0-3)
 //     "Cube.visible"                       visibility (bool tracks)
 //     "Face.morphTargetInfluences[2]"      a morph target, by index ...
 //     "Face.morphTargetInfluences[smile]"  ... or by name
 //     "Cube.material.color" / ".material.opacity" / ".material.emissive"
+//     ".material.emissiveIntensity" / ".material.roughness" / ".material.metalness"
+//     "Cube.material[1].color"             an entry of mesh.materials
+//     "Lamp.intensity" / "Lamp.color"      a light's intensity or colour
 //
-// Nodes are found by name under the root (getObjectByName).
+// Nodes are found by name under the root (getObjectByName). A root that is
+// an AnimationObjectGroup binds the path on each of its objects
+// (PropertyBindingComposite, three.js's PropertyBinding.Composite):
+// `PropertyBinding.create` picks the right one.
 
 import { Object3D } from "../core/Object3D";
 import { Mesh } from "../objects/Mesh";
 import { SkinnedMesh } from "../objects/SkinnedMesh";
+import { Light } from "../lights/Light";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { MeshLambertMaterial } from "../materials/MeshLambertMaterial";
@@ -24,6 +32,7 @@ import { LineBasicMaterial } from "../materials/LineBasicMaterial";
 import { PointsMaterial } from "../materials/PointsMaterial";
 import { SpriteMaterial } from "../materials/SpriteMaterial";
 import { Color } from "../math/Color";
+import { AnimationObjectGroup } from "./AnimationObjectGroup";
 
 function searchNodeSubtree(children: Array<Object3D>, nodeName: string): Object3D? {
     for (let i = 0; i < children.length; i++) {
@@ -45,6 +54,11 @@ const P_MORPH: i32 = 6;
 const P_COLOR: i32 = 7;
 const P_OPACITY: i32 = 8;
 const P_EMISSIVE: i32 = 9;
+const P_EMISSIVE_INTENSITY: i32 = 10;
+const P_ROUGHNESS: i32 = 11;
+const P_METALNESS: i32 = 12;
+const P_LIGHT_INTENSITY: i32 = 13;
+const P_LIGHT_COLOR: i32 = 14;
 
 export class ParsedTrackName {
     nodeName: string = "";
@@ -60,14 +74,24 @@ export class PropertyBinding {
     path: string;
     parsedPath: ParsedTrackName;
     node: Object3D? = null;
-    private kind: i32 = P_NONE;
+    protected kind: i32 = P_NONE;
     private morphIndex: i32 = -1;
+    /// The component of "position[x]" (0-3), or -1 for the whole value.
+    private component: i32 = -1;
+    private materialIndex: i32 = -1;
 
     constructor(rootNode: Object3D, path: string) {
         this.rootNode = rootNode;
         this.path = path;
         this.parsedPath = PropertyBinding.parseTrackName(path);
         this.bind();
+    }
+
+    /// A binding of `path` under `root`: a PropertyBindingComposite when
+    /// `root` is an AnimationObjectGroup (three.js's PropertyBinding.create).
+    static create(root: Object3D, path: string): PropertyBinding {
+        if (root instanceof AnimationObjectGroup) return new PropertyBindingComposite(root as AnimationObjectGroup, path);
+        return new PropertyBinding(root, path);
     }
 
     /// Splits "node.object.property[index]".
@@ -128,12 +152,24 @@ export class PropertyBinding {
     /// Values per key the property takes.
     get valueSize(): i32 {
         const k = this.kind;
+        if (k == P_NONE) return 0;
+        if (this.component >= 0) return 1;
         if (k == P_QUATERNION) return 4;
-        if (k == P_POSITION || k == P_SCALE || k == P_ROTATION || k == P_COLOR || k == P_EMISSIVE) return 3;
-        return k == P_NONE ? 0 : 1;
+        if (k == P_POSITION || k == P_SCALE || k == P_ROTATION || k == P_COLOR || k == P_EMISSIVE
+            || k == P_LIGHT_COLOR) return 3;
+        return 1;
     }
 
-    get isQuaternion(): bool { return this.kind == P_QUATERNION; }
+    /// Whether the value is a whole quaternion (blended by slerp).
+    get isQuaternion(): bool { return this.kind == P_QUATERNION && this.component < 0; }
+
+    /// Whether the value is a boolean (blended by picking, not mixing).
+    get isBoolean(): bool { return this.kind == P_VISIBLE; }
+
+    /// Whether the value is a colour (material or light colour).
+    get isColor(): bool {
+        return this.component < 0 && (this.kind == P_COLOR || this.kind == P_EMISSIVE || this.kind == P_LIGHT_COLOR);
+    }
 
     bind(): void {
         const p = this.parsedPath;
@@ -141,19 +177,30 @@ export class PropertyBinding {
         const node = p.nodeName == "" || p.nodeName == root.name ? root : root.getObjectByName(p.nodeName);
         this.node = node;
         this.kind = P_NONE;
+        this.component = -1;
         if (node == null) return;
         const name = p.propertyName;
         if (p.objectName == "material") {
-            if (name == "color") this.kind = P_COLOR;
+            this.materialIndex = p.objectIndex.length > 0 ? I32.parseInt(p.objectIndex) : -1;
+            const m = this.material();
+            if (m == null) return;
+            if (name == "color" && colorOf(m) != null) this.kind = P_COLOR;
             else if (name == "opacity") this.kind = P_OPACITY;
-            else if (name == "emissive") this.kind = P_EMISSIVE;
+            else if (name == "emissive" && emissiveOf(m) != null) this.kind = P_EMISSIVE;
+            else if (name == "emissiveIntensity" && emissiveOf(m) != null) this.kind = P_EMISSIVE_INTENSITY;
+            else if (name == "roughness" && m instanceof MeshStandardMaterial) this.kind = P_ROUGHNESS;
+            else if (name == "metalness" && m instanceof MeshStandardMaterial) this.kind = P_METALNESS;
+            if (this.isColor) this.component = componentIndex(p.propertyIndex, true);
             return;
         }
+        if (p.objectName.length > 0) return;
         if (name == "position") this.kind = P_POSITION;
         else if (name == "quaternion") this.kind = P_QUATERNION;
         else if (name == "scale") this.kind = P_SCALE;
         else if (name == "rotation") this.kind = P_ROTATION;
         else if (name == "visible") this.kind = P_VISIBLE;
+        else if (name == "intensity" && node instanceof Light) this.kind = P_LIGHT_INTENSITY;
+        else if (name == "color" && node instanceof Light) this.kind = P_LIGHT_COLOR;
         else if (name == "morphTargetInfluences" && node instanceof Mesh) {
             const mesh = node as Mesh;
             const idx = p.propertyIndex;
@@ -164,6 +211,15 @@ export class PropertyBinding {
                 this.morphIndex = index;
                 this.kind = P_MORPH;
             }
+            return;
+        }
+        const k = this.kind;
+        if (k == P_POSITION || k == P_QUATERNION || k == P_SCALE || k == P_ROTATION || k == P_LIGHT_COLOR) {
+            if (p.propertyIndex.length > 0) {
+                this.component = componentIndex(p.propertyIndex, k == P_LIGHT_COLOR);
+                const limit = k == P_QUATERNION ? 4 : 3;
+                if (this.component < 0 || this.component >= limit) this.kind = P_NONE;
+            }
         }
     }
 
@@ -172,27 +228,45 @@ export class PropertyBinding {
         this.kind = P_NONE;
     }
 
+    private material(): Material? {
+        const node = this.node;
+        if (node == null || !(node instanceof Mesh)) return null;
+        const mesh = node as Mesh;
+        const i = this.materialIndex;
+        if (i >= 0) return i < mesh.materials.length ? mesh.materials[i] : (i == 0 ? mesh.material : null);
+        return mesh.material;
+    }
+
     getValue(out: Float64Array): void {
         const node = this.node;
         if (node == null) return;
         const k = this.kind;
-        if (k == P_POSITION) { out[0] = node.position.x; out[1] = node.position.y; out[2] = node.position.z; }
+        const c = this.component;
+        if (k == P_POSITION) read3(out, c, node.position.x, node.position.y, node.position.z);
         else if (k == P_QUATERNION) {
             const q = node.quaternion;
-            out[0] = q.x; out[1] = q.y; out[2] = q.z; out[3] = q.w;
-        } else if (k == P_SCALE) { out[0] = node.scale.x; out[1] = node.scale.y; out[2] = node.scale.z; }
-        else if (k == P_ROTATION) { out[0] = node.rotation.x; out[1] = node.rotation.y; out[2] = node.rotation.z; }
+            if (c < 0) { out[0] = q.x; out[1] = q.y; out[2] = q.z; out[3] = q.w; }
+            else out[0] = c == 0 ? q.x : c == 1 ? q.y : c == 2 ? q.z : q.w;
+        } else if (k == P_SCALE) read3(out, c, node.scale.x, node.scale.y, node.scale.z);
+        else if (k == P_ROTATION) read3(out, c, node.rotation.x, node.rotation.y, node.rotation.z);
         else if (k == P_VISIBLE) { out[0] = node.visible ? 1 : 0; }
         else if (k == P_MORPH) {
             const infl = (node as Mesh).morphTargetInfluences;
             out[0] = this.morphIndex < infl.length ? infl[this.morphIndex] : 0;
+        } else if (k == P_LIGHT_INTENSITY) out[0] = (node as Light).intensity;
+        else if (k == P_LIGHT_COLOR) {
+            const col = (node as Light).color;
+            read3(out, c, col.r, col.g, col.b);
         } else {
-            const m = materialOf(node);
+            const m = this.material();
             if (m == null) return;
             if (k == P_OPACITY) out[0] = m.opacity;
+            else if (k == P_EMISSIVE_INTENSITY) out[0] = emissiveIntensityOf(m);
+            else if (k == P_ROUGHNESS) out[0] = (m as MeshStandardMaterial).roughness;
+            else if (k == P_METALNESS) out[0] = (m as MeshStandardMaterial).metalness;
             else {
-                const c = k == P_COLOR ? colorOf(m) : emissiveOf(m);
-                if (c != null) { out[0] = c.r; out[1] = c.g; out[2] = c.b; }
+                const col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                if (col != null) read3(out, c, col.r, col.g, col.b);
             }
         }
     }
@@ -201,30 +275,139 @@ export class PropertyBinding {
         const node = this.node;
         if (node == null) return;
         const k = this.kind;
-        if (k == P_POSITION) node.position.set(v[0], v[1], v[2]);
-        else if (k == P_QUATERNION) node.quaternion.set(v[0], v[1], v[2], v[3]);
-        else if (k == P_SCALE) node.scale.set(v[0], v[1], v[2]);
-        else if (k == P_ROTATION) node.rotation.set(v[0], v[1], v[2]);
-        else if (k == P_VISIBLE) node.visible = v[0] >= 0.5;
+        const c = this.component;
+        if (k == P_POSITION) {
+            if (c < 0) node.position.set(v[0], v[1], v[2]);
+            else if (c == 0) node.position.x = v[0]; else if (c == 1) node.position.y = v[0]; else node.position.z = v[0];
+        } else if (k == P_QUATERNION) {
+            const q = node.quaternion;
+            if (c < 0) q.set(v[0], v[1], v[2], v[3]);
+            else q.set(c == 0 ? v[0] : q.x, c == 1 ? v[0] : q.y, c == 2 ? v[0] : q.z, c == 3 ? v[0] : q.w);
+        } else if (k == P_SCALE) {
+            if (c < 0) node.scale.set(v[0], v[1], v[2]);
+            else if (c == 0) node.scale.x = v[0]; else if (c == 1) node.scale.y = v[0]; else node.scale.z = v[0];
+        } else if (k == P_ROTATION) {
+            const r = node.rotation;
+            if (c < 0) r.set(v[0], v[1], v[2]);
+            else r.set(c == 0 ? v[0] : r.x, c == 1 ? v[0] : r.y, c == 2 ? v[0] : r.z);
+        } else if (k == P_VISIBLE) node.visible = v[0] >= 0.5;
         else if (k == P_MORPH) {
             const infl = (node as Mesh).morphTargetInfluences;
             while (infl.length <= this.morphIndex) infl.push(0);
             infl[this.morphIndex] = v[0];
-        } else {
-            const m = materialOf(node);
+        } else if (k == P_LIGHT_INTENSITY) (node as Light).intensity = v[0];
+        else if (k == P_LIGHT_COLOR) write3((node as Light).color, c, v);
+        else {
+            const m = this.material();
             if (m == null) return;
             if (k == P_OPACITY) m.opacity = v[0];
+            else if (k == P_EMISSIVE_INTENSITY) setEmissiveIntensity(m, v[0]);
+            else if (k == P_ROUGHNESS) (m as MeshStandardMaterial).roughness = v[0];
+            else if (k == P_METALNESS) (m as MeshStandardMaterial).metalness = v[0];
             else {
-                const c = k == P_COLOR ? colorOf(m) : emissiveOf(m);
-                if (c != null) c.setRGB(v[0], v[1], v[2]);
+                const col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                if (col != null) write3(col, c, v);
             }
         }
     }
 }
 
-function materialOf(node: Object3D): Material? {
-    if (node instanceof Mesh) return (node as Mesh).material;
-    return null;
+/// three.js's PropertyBinding.Composite: one path bound on every object of
+/// an AnimationObjectGroup. getValue reads the first object, setValue
+/// writes them all. The value's kind comes from the first object that
+/// binds, so add the objects before the first `clipAction`.
+export class PropertyBindingComposite extends PropertyBinding {
+    readonly group: AnimationObjectGroup;
+    private bindings: Map<i32, PropertyBinding> = new Map<i32, PropertyBinding>();
+    private size: i32 = 0;
+    private quaternion: bool = false;
+    private boolean: bool = false;
+    private color: bool = false;
+
+    constructor(group: AnimationObjectGroup, path: string) {
+        super(group, path);
+        this.group = group;
+        const objects = group.activeObjects;
+        for (let i = 0; i < objects.length && this.size == 0; i++) {
+            const b = this.bindingOf(objects[i]);
+            if (b.isBound) {
+                this.size = b.valueSize;
+                this.quaternion = b.isQuaternion;
+                this.boolean = b.isBoolean;
+                this.color = b.isColor;
+            }
+        }
+        if (this.size > 0 && group.paths.indexOf(path) < 0) group.paths.push(path);
+    }
+
+    override get isBound(): bool { return this.size > 0; }
+    override get valueSize(): i32 { return this.size; }
+    override get isQuaternion(): bool { return this.quaternion; }
+    override get isBoolean(): bool { return this.boolean; }
+    override get isColor(): bool { return this.color; }
+
+    private bindingOf(object: Object3D): PropertyBinding {
+        if (this.bindings.has(object.id)) return this.bindings.get(object.id);
+        const b = new PropertyBinding(object, this.path);
+        this.bindings.set(object.id, b);
+        return b;
+    }
+
+    override getValue(out: Float64Array): void {
+        const objects = this.group.activeObjects;
+        for (let i = 0; i < objects.length; i++) {
+            const b = this.bindingOf(objects[i]);
+            if (b.isBound) {
+                b.getValue(out);
+                return;
+            }
+        }
+    }
+
+    override setValue(v: Float64Array): void {
+        const objects = this.group.activeObjects;
+        for (let i = 0; i < objects.length; i++) {
+            const b = this.bindingOf(objects[i]);
+            if (b.isBound) b.setValue(v);
+        }
+    }
+
+    /// Drops the bindings of objects the group has uncached.
+    prune(): void {
+        const keep = new Map<i32, PropertyBinding>();
+        const g = this.group;
+        for (let i = 0; i < g.activeObjects.length; i++) {
+            const id = g.activeObjects[i].id;
+            if (this.bindings.has(id)) keep.set(id, this.bindings.get(id));
+        }
+        for (let i = 0; i < g.cachedObjects.length; i++) {
+            const id = g.cachedObjects[i].id;
+            if (this.bindings.has(id)) keep.set(id, this.bindings.get(id));
+        }
+        this.bindings = keep;
+    }
+}
+
+/// "x"/"y"/"z"/"w" (or "r"/"g"/"b" for colours), or a digit; -1 otherwise.
+function componentIndex(index: string, color: bool): i32 {
+    if (index.length == 0) return -1;
+    if (index == "x" || (color && index == "r")) return 0;
+    if (index == "y" || (color && index == "g")) return 1;
+    if (index == "z" || (color && index == "b")) return 2;
+    if (index == "w") return 3;
+    const c = index.charCodeAt(0);
+    if (index.length == 1 && c >= 48 && c <= 51) return c - 48;
+    return -1;
+}
+
+function read3(out: Float64Array, c: i32, x: f64, y: f64, z: f64): void {
+    if (c < 0) { out[0] = x; out[1] = y; out[2] = z; }
+    else out[0] = c == 0 ? x : c == 1 ? y : z;
+}
+
+function write3(color: Color, c: i32, v: Float64Array): void {
+    if (c < 0) color.setRGB(v[0], v[1], v[2]);
+    else if (c == 0) color.r = v[0]; else if (c == 1) color.g = v[0]; else color.b = v[0];
 }
 
 function colorOf(m: Material): Color? {
@@ -246,4 +429,19 @@ function emissiveOf(m: Material): Color? {
     if (m instanceof MeshPhongMaterial) return (m as MeshPhongMaterial).emissive;
     if (m instanceof MeshToonMaterial) return (m as MeshToonMaterial).emissive;
     return null;
+}
+
+function emissiveIntensityOf(m: Material): f64 {
+    if (m instanceof MeshStandardMaterial) return (m as MeshStandardMaterial).emissiveIntensity;
+    if (m instanceof MeshLambertMaterial) return (m as MeshLambertMaterial).emissiveIntensity;
+    if (m instanceof MeshPhongMaterial) return (m as MeshPhongMaterial).emissiveIntensity;
+    if (m instanceof MeshToonMaterial) return (m as MeshToonMaterial).emissiveIntensity;
+    return 0;
+}
+
+function setEmissiveIntensity(m: Material, v: f64): void {
+    if (m instanceof MeshStandardMaterial) (m as MeshStandardMaterial).emissiveIntensity = v;
+    else if (m instanceof MeshLambertMaterial) (m as MeshLambertMaterial).emissiveIntensity = v;
+    else if (m instanceof MeshPhongMaterial) (m as MeshPhongMaterial).emissiveIntensity = v;
+    else if (m instanceof MeshToonMaterial) (m as MeshToonMaterial).emissiveIntensity = v;
 }

@@ -10,6 +10,9 @@ import { Bone, Skeleton } from "../three/objects/Skeleton";
 import { SkinnedMesh } from "../three/objects/SkinnedMesh";
 import { Group } from "../three/objects/Group";
 import { PlaneGeometry } from "../three/geometries/PlaneGeometry";
+import { BoxGeometry } from "../three/geometries/BoxGeometry";
+import { InstancedMesh } from "../three/objects/InstancedMesh";
+import { MeshBasicMaterial } from "../three/materials/MeshBasicMaterial";
 
 const EPS: f64 = 1e-4;
 
@@ -87,6 +90,54 @@ export class DeformTests extends Tests {
                 expect.that(<f64>r0.intersectObject(mesh).length).is(0);
                 mesh.computeBoundingBox();
                 near(expect, mesh.boundingBox!.min.x, 4.5);
+            });
+        });
+
+        group("instanced morphs", () => {
+            test("setMorphAt / getMorphAt", (expect) => {
+                const g = new BoxGeometry();
+                const n = g.getAttribute("position")!.count;
+                const zeros: Array<f64> = new Array<f64>(n * 3);
+                g.morphAttributes.set("position", [new Float32BufferAttribute(zeros, 3), new Float32BufferAttribute(zeros, 3)]);
+                const im = new InstancedMesh(g, new MeshBasicMaterial(), 3);
+                const probe = new Mesh(g);
+                probe.updateMorphTargets();
+                probe.morphTargetInfluences[0] = 0.25;
+                probe.morphTargetInfluences[1] = 0.5;
+                im.setMorphAt(2, probe);
+                const t = im.morphTexture!;
+                expect.that(<f64>t.dataWidth).is(3);
+                expect.that(<f64>t.dataHeight).is(3);
+                const data = t.data as Float32Array;
+                near(expect, data[6], 0.25);    // 1 - (0.25 + 0.5): absolute targets
+                near(expect, data[8], 0.5);
+                probe.morphTargetInfluences[0] = 0;
+                probe.morphTargetInfluences[1] = 0;
+                im.getMorphAt(2, probe);
+                near(expect, probe.morphTargetInfluences[1], 0.5);
+                g.morphTargetsRelative = true;
+                im.setMorphAt(0, probe);
+                near(expect, data[0], 1);
+            });
+        });
+
+        group("long skeletons", () => {
+            test("inverses of a 400-bone chain", (expect) => {
+                const bones: Array<Bone> = [];
+                for (let i = 0; i < 400; i++) {
+                    const b = new Bone();
+                    if (i > 0) {
+                        b.position.y = 0.5;
+                        bones[i - 1].add(b);
+                    }
+                    bones.push(b);
+                }
+                const skeleton = new Skeleton(bones);
+                // The last bone sits at y = 199.5: its inverse moves it back.
+                const e = skeleton.boneInverses[399].elements;
+                near(expect, <f64>e[13], -199.5);
+                skeleton.update();
+                expect.that(<f64>skeleton.boneMatrices.length).is(6400);
             });
         });
     }
