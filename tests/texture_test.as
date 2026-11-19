@@ -10,6 +10,7 @@ import { WebGLCubeRenderTarget } from "../three/renderers/WebGLCubeRenderTarget"
 import { CubeReflectionMapping, HalfFloatType, RGB_S3TC_DXT1_Format, RGBA_ASTC_4x4_Format, SRGBColorSpace } from "../three/constants";
 import { KTX2Loader } from "../three/addons/loaders/KTX2Loader";
 import { CompressedTexture } from "../three/textures/CompressedTexture";
+import { unzlibSync } from "../three/addons/libs/fflate";
 
 function apply(t: Texture, u: f64, v: f64): Vector2 {
     const p = new Vector3(u, v, 1).applyMatrix3(t.matrix);
@@ -80,11 +81,11 @@ export class TextureTests extends Tests {
         });
         group("KTX2Loader", () => {
             test("BC1 with its mip chain", (expect) => {
-                const bytes = this.blob("checker_bc1");
+                const bytes = this.blob("checker_bc1.ktx2");
                 expect.that(bytes != null).is(true);
                 if (bytes == null) return;
                 const loader = new KTX2Loader();
-                const t = loader.parse(Uint8Array.wrap(bytes!));
+                const t = loader.parse(unzlibSync(Uint8Array.wrap(bytes!)));
                 expect.that(loader.error).is("");
                 expect.that(t instanceof CompressedTexture).is(true);
                 if (t == null) return;
@@ -96,9 +97,9 @@ export class TextureTests extends Tests {
                 expect.that(<f64>c.mipmaps[4].width).is(4);
             });
             test("ASTC header", (expect) => {
-                const bytes = this.blob("checker_astc");
+                const bytes = this.blob("checker_astc.ktx2");
                 if (bytes == null) return;
-                const h = new KTX2Loader().parseHeader(Uint8Array.wrap(bytes!));
+                const h = new KTX2Loader().parseHeader(unzlibSync(Uint8Array.wrap(bytes!)));
                 expect.that(h != null).is(true);
                 if (h == null) return;
                 expect.that(<f64>h.format).is(<f64>RGBA_ASTC_4x4_Format);

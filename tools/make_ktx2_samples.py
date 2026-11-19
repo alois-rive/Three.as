@@ -100,4 +100,13 @@ while True:
     cur = half(cur)
 ktx2(os.path.join(out, "checker_bc1.ktx2"), 132, chain, SIZE)          # VK_FORMAT_BC1_RGB_SRGB_BLOCK
 ktx2(os.path.join(out, "checker_astc.ktx2"), 158, [astc_void(px)], SIZE)   # VK_FORMAT_ASTC_4x4_SRGB_BLOCK
-print("wrote checker_bc1.ktx2 (%d levels) and checker_astc.ktx2" % len(chain))
+# Shipped zlib-compressed (.ktx2.zlib; the Textures example and the tests
+# inflate them with fflate's unzlibSync): `rive push` rejects KTX2 content in
+# blob assets with HTTP 400.
+import zlib
+for name in ("checker_bc1", "checker_astc"):
+    path = os.path.join(out, name + ".ktx2")
+    data = open(path, "rb").read()
+    open(path + ".zlib", "wb").write(zlib.compress(data, 9))
+    os.remove(path)
+print("wrote checker_bc1.ktx2.zlib (%d levels) and checker_astc.ktx2.zlib" % len(chain))

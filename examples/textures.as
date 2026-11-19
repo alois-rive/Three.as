@@ -4,6 +4,7 @@
 // from KTX2Loader (a device without ASTC shows that cube magenta, with a log
 // line: KTX2 files here hold one GPU format, no Basis transcoding).
 
+import { unzlibSync } from "../three/addons/libs/fflate";
 import * as THREE from "../three/Three";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
 import { KTX2Loader } from "../three/addons/loaders/KTX2Loader";
@@ -84,11 +85,13 @@ export class Textures extends THREE.ThreeLayout {
         scene.add(aoCube);
         this.cubes.push(aoCube);
 
-        // KTX2: BC1 (5 mip levels) and ASTC 4x4.
+        // KTX2: BC1 (5 mip levels) and ASTC 4x4, shipped zlib-compressed
+        // (tools/make_ktx2_samples.py says why).
         const loader = new KTX2Loader(context).detectSupport(renderer);
         const names: StaticArray<string> = ["checker_bc1", "checker_astc"];
         for (let i = 0; i < 2; i++) {
-            const t = loader.load(names[i]);
+            const packed = context.blob(names[i]);
+            const t = packed != null ? loader.parse(unzlibSync(Uint8Array.wrap(packed!))) : null;
             const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1),
                 new THREE.MeshStandardMaterial({ color: t != null ? 0xffffff : 0xff00ff, map: t, roughness: 0.5 }));
             m.position.set(0.9 + <f64>i * 1.5, 0, 0);
