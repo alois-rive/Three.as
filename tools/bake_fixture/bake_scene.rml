@@ -1,0 +1,36 @@
+<Rive version="1" kind="fragment">
+    <!-- tools/bake_e2e.sh's test project: two artboards of bake_scene.as. -->
+    <Artboard defaultStateMachineId="0:107" clip="true" width="480" height="320" styleId="0:101" name="Plain" id="0:100">
+        <LayoutComponentStyle name="Artboard Style" id="0:101"/>
+        <LayoutComponent width="480" height="320" styleId="0:103" name="Root" id="0:102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:103"/>
+            <ScriptedLayout scriptAssetId="0:900" name="Scene" id="0:104">
+                <ScriptInputNumber propertyValue="0" name="lit" id="0:105"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:107">
+            <StateMachineLayer name="Layer 1" id="0:108">
+                <AnyState x="0" y="-120" id="0:109"/>
+                <ExitState x="120" y="-120" id="0:110"/>
+                <EntryState id="0:111"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+    <Artboard defaultStateMachineId="0:207" clip="true" x="600" width="480" height="320" styleId="0:201" name="Lit" id="0:200">
+        <LayoutComponentStyle name="Artboard Style" id="0:201"/>
+        <LayoutComponent width="480" height="320" styleId="0:203" name="Root" id="0:202">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:203"/>
+            <ScriptedLayout scriptAssetId="0:900" name="Scene" id="0:204">
+                <ScriptInputNumber propertyValue="1" name="lit" id="0:205"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:207">
+            <StateMachineLayer name="Layer 1" id="0:208">
+                <AnyState x="0" y="-120" id="0:209"/>
+                <ExitState x="120" y="-120" id="0:210"/>
+                <EntryState id="0:211"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+    <ScriptAsset file="bake_scene.as" name="bake_scene" id="0:900" codeFileId="0:901"/>
+</Rive>

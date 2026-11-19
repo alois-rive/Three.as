@@ -587,6 +587,118 @@ through Rive's `Audio.play` without panning). The gallery as it ships
 (`tools/release_build.sh` without `--override`, on `.libraries/`) builds
 once the engine library is republished with `three/audio/`.
 
+### M18: shader baking for any project (done)
+
+As built (the plan it started from follows):
+
+- **Engine.** `three/renderers/gpu/ShaderVariants.as` (`fnv1a64`,
+  `bakedShaderName`): a key's variant is the shader asset
+  `threeas_baked/v_<FNV-1a 64 of THREE_WGSL_HASH|key>`. `GPURenderer`
+  looks a new key up once (`context.shader`) and caches the answer;
+  `gpu/BakedShaders.as` and the stale check are gone. `--arg
+  threeShaderKeys=1` logs `three shader key: <key> <asset> baked|uber`; a
+  project with a bake logs its misses once in dev builds.
+  `tests/shader_variants_test.as` (2 cases, vectors shared with the tool).
+- **Checked first.** A missing `context.shader` name returns null in
+  about 0.8 µs interpreted (the string included), with no log; a project
+  file `threeas_baked/v_x.wgsl` is the asset `threeas_baked/v_x`, found
+  from library code both through the override and from the downloaded
+  snapshot (the published v5 ShaderMaterial drew it). So the planned
+  naming stands.
+- **`tools/threeas_bake.sh <project>`** (bash 3.2): options as planned
+  plus `--max`, `--self-test` and `-h`. Artboards come from the project's
+  `.rml` files (not `.libraries/`, `build/` or dot folders); one `rive
+  --commands` run, each artboard drawn at 1 s and at `--time`; each
+  source's keys are those logged before its own capture. It checks that
+  the renderer named each key as the tool does (else the project runs
+  another three.wgsl: an error naming `--engine`), warns when the engine
+  predates M18, moves an old bake aside while recording. The snapshot is
+  `.libraries/*/three_shaders_three.wgsl` (the `LibraryAsset` assetId
+  picks one of several), its hash checked against its
+  `ShaderSourceHash.as`. `tools/bake_shaders.sh` is gone.
+- **Checks.** `tools/bake_e2e.sh` (bench.sh `--bake-e2e`): a copy of
+  `tools/bake_fixture/` (two artboards, a `--scenario`) outside the
+  repository, baked (9 keys), `--check`ed, run (every key found its
+  variant), compared with the uber-shader, benched, a stale edit caught,
+  cleaned, and a dry run against the downloaded snapshot. Gallery: 106
+  keys over 39 artboards in 24 s; all baked (`--max=200`), the 64
+  screenshots against `--arg threeUberShader=1`: up to 2.7% of a scene's
+  pixels differ (Batched), at most 0.64% by more than 2 levels (Deform's
+  flat shading), within M14d's "few edge pixels". Miss cost: Benchmark AOT
+  render 2.54-2.55 ms unbaked with lookups vs 2.56-2.60 with them off
+  (`threeUberShader`), noise; the fixture's Lit interpreted 1.89 vs 1.88
+  and 3.47 vs 3.58 ms in two runs on a loaded machine (1.05-1.11 baked).
+  The fixture's baked release: 9.4 MB, 215 GLSL shaders, 0 failing. Baked Benchmark AOT render 1.15 vs 2.46 ms
+  (p50). Release `.riv` (override): 15.6 MB, 222 GLSL shaders unbaked;
+  68.9 MB, 434 with 106 variants (0.50 MB and 2 GLSL shaders a variant),
+  0 failing; the engine's 108. The gallery is committed unbaked;
+  `tools/bench.sh` and `tools/publish.sh` run `--check` (passes with no
+  bake) and bench.sh `--self-test`.
+- Open: WebGL2 and mobile timing of baked variants (as M14d); keys that
+  only interaction reaches still need a scenario or `--keys` (no static
+  analysis is possible).
+
+M14d bakes variants for the gallery only: `tools/bake_shaders.sh` records
+the gallery's example artboards and writes the variants and a compiled-in
+registry (`gpu/BakedShaders.as`) into the engine library. A project that
+imports `lib:threeas` can do neither: it cannot edit the library, and the
+library's variants would be the gallery's, not its own. M18 moves baking
+into the project that draws.
+
+Scenes cannot be analysed statically: materials, lights, fog and shadows
+are built by script code at runtime, and loaded models (glTF, FBX ...)
+add their own. So "analysing the project" means running it with the
+renderer recording, as M14d does, on whatever the project contains.
+
+- **Content-addressed variants, no registry.** A variant's shader asset is
+  named `threeas_baked/v_<h>`, `<h>` a 64-bit FNV-1a hash (16 hex digits)
+  of `THREE_WGSL_HASH + "|" + programKey`. On a program key it has not
+  seen, `GPURenderer` computes the name, asks `context.shader(name)` once
+  and caches the answer (`null`: the uber-shader). The asset can be
+  anywhere the host file's assets are: the project (the normal case) or
+  the engine library. A variant baked from another `three.wgsl` is never
+  found, so a stale bake falls back by itself. `gpu/BakedShaders.as` and
+  the stale-hash check go; `--arg threeShaderKeys=1` keeps logging keys
+  (and says, per key, whether a variant was found). The bash tool and an
+  engine test share test vectors for the hash.
+- **`tools/threeas_bake.sh <project-dir>`**, bash, replacing
+  `tools/bake_shaders.sh` (which becomes a thin wrapper on the gallery, or
+  goes):
+  - The `three.wgsl` to bake from: the project's library snapshot
+    (`.libraries/threeas@<v>/three_shaders_three.wgsl`, the version the
+    project runs) by default; `--engine=DIR` for engine sources (the
+    gallery with its override, or the engine project itself).
+  - Scenes: every artboard in the project's RML (`--artboard=A,B` to
+    choose, `--main` for the main one only), each run headless for a set
+    time (`--time=3s`); `--scenario=FILE` (repeatable) adds `rive
+    --commands` scripts for states reached by interaction (pointer
+    events, view model changes, later frames); `--keys=FILE` adds keys
+    from logs of live sessions (`rive <dir> --arg threeShaderKeys=1` while
+    someone plays it, or a web build's console).
+  - Writes `<project>/threeas_baked/v_<h>.wgsl` (the M14d specialisation:
+    the `@variant` block replaced by the key's constants, only the key's
+    two entry points) and `threeas_baked/keys.txt` (key, asset, the
+    artboards that drew it; for people and `--check`, not read at
+    runtime).
+  - Prints a report: keys per artboard, keys shared, variants written,
+    the estimated .riv growth (about 0.5 MB a variant), what `--max`
+    (default 48, most shared first) left out.
+  - `--check` (CI: re-record, fail when keys.txt or a variant differs, or
+    a variant is stale for the project's `three.wgsl`), `--clean`,
+    `--dry-run`. Works on a project outside this repository.
+- **Gallery and engine.** The engine ships no variants. The gallery bakes
+  as any project (`tools/threeas_bake.sh packages/gallery
+  --engine=packages/threeas`), still optional: the uber-shader stays the
+  default. `tools/bench.sh`'s freshness check and `tools/publish.sh`
+  follow; `tools/check_glsl.py` on a baked release build.
+- **Checks.** Pixel comparison with and without a bake
+  (`tools/screenshots.sh` + `compare_shots.py`, same tolerance as M14d);
+  a test project outside `packages/` (a minimal scene importing the
+  engine) baked end to end; a miss costs one `context.shader` lookup per
+  key, measured with `--bench`.
+- **Docs.** README: "Optimizing shaders for your project" (for library
+  users, with the commands); AGENTS.md, DEVIATIONS.md, PERFORMANCE.md.
+
 ## Deviations from three.js
 
 Every difference is listed in [docs/DEVIATIONS.md](docs/DEVIATIONS.md),

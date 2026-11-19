@@ -1,0 +1,5 @@
+# A tools/threeas_bake.sh --scenario: the Lit artboard past 4 s, when the
+# toon mesh appears (the default --time=3s does not get there). The bake
+# tool captures a frame after a scenario's last command.
+artboard Lit
+advance 5s

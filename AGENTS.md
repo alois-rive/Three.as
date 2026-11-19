@@ -50,8 +50,9 @@ engine edit shows in the gallery without publishing:
   components`: that line counts markup components; the override's scripts
   and shaders are used all the same.
 - Local engine scripts are all compiled, new ones included. A **new
-  shader** (a new `.wgsl`, or baked variants) does not reach the gallery
-  until the library is republished and the gallery updated. Until then
+  engine shader** (a new `.wgsl` under `three/`) does not reach the
+  gallery until the library is republished and the gallery updated (baked
+  variants are the gallery's own files, so they do). Until then
   the gallery carries copies under the engine's asset names: the addon
   objects' shaders (`three/shaders/objects/`, M16) are copied to
   `packages/gallery/three/shaders/objects/` by
@@ -96,11 +97,18 @@ engine edit shows in the gallery without publishing:
   `three.wgsl`, run `python3 tools/make_shader_chunks.py` (from the root):
   it regenerates the ShaderChunk library (`three/shaders/lib/three_chunks.wgsl`),
   the gallery's `examples/custom_shader/lit.wgsl` and
-  `three/renderers/gpu/ShaderSourceHash.as` (baked variants of an older
-  three.wgsl are then ignored). Read fragment features through the `v_*`
-  functions between `// @variant-begin` and `// @variant-end`
-  (tools/bake_shaders.sh replaces them with constants), and keep
-  `GPURenderer.programKey` in step with them.
+  `three/renderers/gpu/ShaderSourceHash.as` (baked variants are named from
+  that hash, so those of an older three.wgsl are then never found). Read
+  fragment features through the `v_*` functions between
+  `// @variant-begin` and `// @variant-end` (tools/threeas_bake.sh replaces
+  them with constants), and keep `GPURenderer.programKey` in step with them
+  (and the tool's `variant_block`, which parses the key).
+- Baked shader variants belong to the project that draws, never the engine:
+  `tools/threeas_bake.sh <project>` writes `<project>/threeas_baked/`
+  (`v_<h>.wgsl`, h the FNV-1a hash of `THREE_WGSL_HASH|<programKey>`,
+  `gpu/ShaderVariants.as`). Its hash and `tests/shader_variants_test.as`
+  share test vectors (`tools/threeas_bake.sh --self-test`): change both or
+  neither. The engine ships no variants and no registry.
 - No WGSL identifier named `gl` or starting with `gl_` (WebGL2 reserves them).
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
@@ -132,15 +140,20 @@ rive .                                           # live preview window
 From the repository root:
 
 ```bash
-tools/bench.sh                     # CI: verify and test both packages, bake freshness,
-                                   # release GLSL checks, Benchmark interp + AOT against
-                                   # tools/bench_baseline.txt
+tools/bench.sh                     # CI: verify and test both packages, bake tool self-test
+                                   # and freshness, release GLSL checks, Benchmark interp +
+                                   # AOT against tools/bench_baseline.txt (--bake-e2e: also
+                                   # tools/bake_e2e.sh)
 tools/bench.sh --update            # refresh the baseline after an intended change
 rive packages/gallery --artboard=Benchmark --bench=300 --arg profile=1   # per-stage render times
 tools/screenshots.sh build/shots/before                   # every example, twice
 python3 tools/compare_shots.py build/shots/before build/shots/after
-tools/bake_shaders.sh              # optional "optimized" mode: bake shader variants
-tools/bake_shaders.sh --clean      # back to the uber-shader only (the default)
+tools/threeas_bake.sh packages/gallery --engine=packages/threeas   # optional "optimized"
+                                   # mode: bake the gallery's shader variants (any project:
+                                   # tools/threeas_bake.sh <dir>; README.md)
+tools/threeas_bake.sh packages/gallery --clean   # back to the uber-shader (the default)
+tools/bake_e2e.sh                  # the bake tool end to end on tools/bake_fixture/, a
+                                   # project outside the repository (3 minutes)
 python3 tools/validate_manifest.py --all   # every example's --gpu-manifest checked against
                                            # WebGPU rules and the web limits (no GPU)
 python3 tools/check_audio.py       # audio: --render-audio the gallery's AudioCheck scenarios
@@ -161,18 +174,20 @@ Optimizations must not change pixels: capture `tools/screenshots.sh` before
 and after and compare (the uber-shader path is pixel-identical across M14;
 baked variants differ at a few edge pixels, see docs/DEVIATIONS.md). The
 same capture order matters: a session's first artboards can differ by a
-level or two at 1 s. A baked engine ships its `three/shaders/baked/` and
-registry; check them in CI with `tools/bake_shaders.sh --check`
-(tools/bench.sh does). bake_shaders.sh records the keys by running the
-gallery's examples and writes the variants into packages/threeas.
+level or two at 1 s. To compare a bake with the uber-shader, capture with
+`--arg threeUberShader=1` and without, and pass `--tolerance=2
+--max-differing=1` to compare_shots.py. The repository commits the gallery
+unbaked; a committed bake is checked by `tools/threeas_bake.sh
+packages/gallery --engine=packages/threeas --check` (tools/bench.sh and
+tools/publish.sh run it; it passes when nothing is baked).
 
 `--verify` does not compile the GL backend's GLSL either. Before publishing
 after a shader change, build release `.riv`s (`tools/release_build.sh
 build/release`) and run `python3 tools/check_glsl.py` on both (needs
 glslangValidator; tools/publish.sh does): WebGL2 rejects what the native
 backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
-`gl_1`). The gallery's release has 95 GLSL shaders (the engine's 89 and the
-examples' 6).
+`gl_1`). The gallery's release has 222 GLSL shaders (the engine's 108, the
+rest the examples').
 
 ## Publishing
 

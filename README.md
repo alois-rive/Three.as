@@ -83,9 +83,10 @@ Its `rive.yaml` names the library and sets `override: ../threeas`, so the
 gallery builds against the engine sources next door and an engine edit
 shows in the gallery without publishing. The override replaces the
 library's published scripts and shaders with the local ones and compiles
-local scripts the published version lacks; a new shader (a new `.wgsl`,
-baked variants included) only reaches the gallery once the library is
-republished and the gallery updated (`tools/publish.sh`).
+local scripts the published version lacks; a new engine shader (a new
+`.wgsl`) only reaches the gallery once the library is republished and the
+gallery updated (`tools/publish.sh`). Baked shader variants are the
+project's own (`threeas_baked/`, below), so they need no republish.
 
 ## Run it
 
@@ -181,6 +182,61 @@ import { GLTFLoader } from "lib:threeas/three/addons/loaders/GLTFLoader";
 
 Or copy `packages/threeas/three/` into the project (shaders included) and
 import it by relative path (`"../three/Three"`).
+
+## Optimizing shaders for your project
+
+Every built-in material draws with one uber-shader
+(`three/shaders/three.wgsl`) that picks its features (maps, lights, fog,
+shadows ...) by uniform branches: nothing to compile per material, and it
+draws anything. On GPU-bound scenes, shader variants specialized for what a
+project actually draws are faster (three.js's per-material programs; in the
+gallery, AOT render time went from 2.4 to 1.0 ms on Benchmark and 0.8 to
+0.1 ms on Environment, see [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+`tools/threeas_bake.sh` bakes them into your project; it is optional, and
+works on any project that imports the library:
+
+```bash
+git clone <this repository> threeas                        # for the tool
+threeas/tools/threeas_bake.sh path/to/my_project           # record, bake, report
+threeas/tools/threeas_bake.sh path/to/my_project --check   # CI: still fresh?
+threeas/tools/threeas_bake.sh path/to/my_project --clean   # back to the uber-shader
+```
+
+It plays every artboard of the project headless for 3 s (one `rive`
+build) while the renderer logs the program key of each draw (three.js's
+`getProgramCacheKey`: material type, maps, lights by type, fog, shadows,
+flat shading ...), then writes one variant per key into
+`my_project/threeas_baked/` (`v_<hash>.wgsl`, plus `keys.txt` for people
+and `--check`) and reports the keys per artboard, the variants written, the
+estimated growth of the `.riv` and the keys `--max` left out. Commit the
+folder with the project: the variants are shader assets of the project, and
+the renderer finds a draw's variant by its name, a hash of the key and of
+the `three.wgsl` the project runs (the one in `.libraries/`). A draw with no
+variant, or a bake left over from another version of the library, simply
+uses the uber-shader.
+
+- Scenes are made by script code at runtime, so what is not drawn while
+  recording is not baked. `--time=10s` plays longer; `--scenario=FILE`
+  (repeatable) plays a `rive --commands` script (`pointer`, `data`,
+  `advance` ...) for states reached by interaction; `--keys=FILE` adds the
+  keys logged by `rive my_project --arg threeShaderKeys=1` while someone
+  played it. `--artboard=A,B` or `--main` records fewer artboards;
+  `--dry-run` reports without writing.
+- Cost: each variant adds about 0.5 MB to the `.riv` (it is compiled for
+  every shader backend; `shaderOutputs` in `rive.yaml` drops backends you
+  do not ship) and one pipeline compile when first drawn. `--max=N`
+  (default 48) bakes the keys most artboards share first.
+- Rebake after updating the library (`rive pull`) or changing materials or
+  lights; `--check` fails when the bake no longer matches. Before
+  publishing, build a release `.riv` and run `tools/check_glsl.py` on it
+  (WebGL2 compiles the variants too).
+- `--engine=DIR` bakes from engine sources instead of the downloaded
+  library: a library `override:`, or the engine copied into the project.
+- Compare with and without the bake: `rive my_project --arg
+  threeUberShader=1` (or `renderer.useBakedShaders = false`) ignores it.
+  Baked and uber-shader renders match except for a few edge pixels.
+- Needs bash, the Rive CLI and a threeas version with project bakes (the
+  tool warns when the project's is older).
 
 Publishing the library and the gallery is `tools/publish.sh` (see
 [AGENTS.md](AGENTS.md)).

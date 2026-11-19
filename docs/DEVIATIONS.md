@@ -85,23 +85,30 @@ uber-shader** (`three/shaders/three.wgsl`) whose features are uniform
 branches, so there is no compile per material and no `onBeforeCompile` /
 `customProgramCacheKey` (`material.version` / `needsUpdate` cost nothing).
 The **optional "optimized" mode** bakes three.js-style variants ahead of
-time: `tools/bake_shaders.sh` records the program keys a project draws
-(`--arg threeShaderKeys=1`) and generates `three/shaders/baked/*.wgsl`,
-three.wgsl with the fragment features as constants (shading model, maps,
-extra maps, flags, cut-out or not, flat shading, environments, fog type,
-hemisphere light, linear output, the light count and types in list order)
-and only the draw's two entry points, plus the registry
-`three/renderers/gpu/BakedShaders.as`. At runtime a draw whose key is baked
-from the current three.wgsl (`THREE_WGSL_HASH`) uses its variant; any other
-draw, the transmission pass, shadow passes and ShaderMaterials use the
-uber-shader. Unbaked keys are logged once (silence with
-`--define=THREE_RELEASE`); `renderer.useBakedShaders = false` or
-`--arg threeUberShader=1` ignores the bake. Baked and uber renders match
-except for a few high-contrast or grazing-angle pixels (compiling without
-`discard` and with folded constants changes derivatives and rounding: up to
-about 1% of a scene's pixels, mostly by a few levels). Each variant adds
-about 0.5 MB to the .riv (five backends) and a pipeline compile on first
-use. The default repository state bakes nothing.
+time, in the project that draws (Rive-only): `tools/threeas_bake.sh
+<project>` plays the project's artboards headless while the renderer logs
+the program keys it draws (`--arg threeShaderKeys=1`), and writes
+`<project>/threeas_baked/v_<h>.wgsl` per key: three.wgsl with the fragment
+features as constants (shading model, maps, extra maps, flags, cut-out or
+not, flat shading, environments, fog type, hemisphere light, linear output,
+the light count and types in list order) and only the draw's two entry
+points. There is no registry: `<h>` is the 64-bit FNV-1a hash of
+`THREE_WGSL_HASH + "|" + key` (`three/renderers/gpu/ShaderVariants.as`),
+and on a key it has not seen the renderer asks `context.shader` for that
+name once (a miss returns null in about a microsecond, silently). A draw
+whose key has a variant baked from the three.wgsl it runs uses it; any
+other draw (a key the recording did not see, a bake of another library
+version, which has other names), the transmission pass, shadow passes and
+ShaderMaterials use the uber-shader. In a project with a bake, keys without
+a variant are logged once (silence with `--define=THREE_RELEASE`);
+`renderer.useBakedShaders = false` or `--arg threeUberShader=1` ignores the
+bake. Baked and uber renders match except for a few high-contrast or
+grazing-angle pixels (compiling without `discard` and with folded constants
+changes derivatives and rounding; on the gallery's 32 artboards, up to
+2.7% of a scene's pixels differ at all and at most 0.64% by more than 2
+levels). Each variant adds about 0.5 MB to the .riv (five backends) and a
+pipeline compile on first use. The engine ships no variants, and the
+repository commits the gallery unbaked.
 
 ## Language (AnimaScript is typed and compiled)
 
