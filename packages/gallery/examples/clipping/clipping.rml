@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Clipping: clipping planes with stencil caps, clipShadows,
+         clipIntersection (examples/clipping/clipping.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1907" clip="true" x="2700" y="3500" width="800" height="600" styleId="0:1901" name="Clipping" id="0:1900">
+        <LayoutComponentStyle name="Artboard Style" id="0:1901"/>
+        <LayoutComponent width="800" height="600" styleId="0:1903" name="Root" id="0:1902">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1903"/>
+            <ScriptedLayout scriptAssetId="0:1990" name="Scene" id="0:1904"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1907">
+            <StateMachineLayer name="Layer 1" id="0:1908">
+                <AnyState x="0" y="-120" id="0:2759"/>
+                <ExitState x="120" y="-120" id="0:2760"/>
+                <EntryState id="0:2761"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/clipping/clipping.as" name="clipping" id="0:1990" codeFileId="0:90149"/>
+</Rive>

@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- HelloCube: three.js's "Creating a scene" tutorial, verbatim apart
+         from types (examples/hello_cube/hello_cube.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:307" clip="true" y="700" width="800" height="600" styleId="0:301" name="HelloCube" id="0:300">
+        <LayoutComponentStyle name="Artboard Style" id="0:301"/>
+        <LayoutComponent width="800" height="600" styleId="0:303" name="Root" id="0:302">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:303"/>
+            <ScriptedLayout scriptAssetId="0:191" name="Scene" id="0:304"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:307">
+            <StateMachineLayer name="Layer 1" id="0:308">
+                <AnyState x="0" y="-120" id="0:2670"/>
+                <ExitState x="120" y="-120" id="0:2671"/>
+                <EntryState id="0:2672"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/hello_cube/hello_cube.as" name="hello_cube" id="0:191" codeFileId="0:8839"/>
+</Rive>

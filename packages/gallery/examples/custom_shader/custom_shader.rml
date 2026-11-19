@@ -1,0 +1,23 @@
+<Rive version="1" kind="fragment">
+    <!-- CustomShader: a ShaderMaterial with a WGSL shader asset
+         (examples/custom_shader/custom_shader.as, examples/custom_shader/wave.wgsl). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1107" clip="true" y="2800" width="800" height="600" styleId="0:1101" name="CustomShader" id="0:1100">
+        <LayoutComponentStyle name="Artboard Style" id="0:1101"/>
+        <LayoutComponent width="800" height="600" styleId="0:1103" name="Root" id="0:1102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1103"/>
+            <ScriptedLayout scriptAssetId="0:1190" name="Scene" id="0:1104">
+                <ScriptInputArtboard artboardId="0:200" name="screen" id="0:1105"/>
+                <ScriptInputNumber propertyValue="0.18" name="amplitude" id="0:1106"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1107">
+            <StateMachineLayer name="Layer 1" id="0:1108">
+                <AnyState x="0" y="-120" id="0:2735"/>
+                <ExitState x="120" y="-120" id="0:2736"/>
+                <EntryState id="0:2737"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/custom_shader/custom_shader.as" name="custom_shader" id="0:1190" codeFileId="0:52672"/>
+</Rive>

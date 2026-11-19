@@ -1,0 +1,19 @@
+<Rive version="1" kind="fragment">
+    <!-- Editor: helpers, controls, utilities (examples/editor/editor.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2107" clip="true" x="0" y="4200" width="800" height="600" styleId="0:2101" name="Editor" id="0:2100">
+        <LayoutComponentStyle name="Artboard Style" id="0:2101"/>
+        <LayoutComponent width="800" height="600" styleId="0:2103" name="Root" id="0:2102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2103"/>
+            <ScriptedLayout scriptAssetId="0:2190" name="Scene" id="0:2104"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2107">
+            <StateMachineLayer name="Layer 1" id="0:2108">
+                <AnyState x="0" y="-120" id="0:2765"/>
+                <ExitState x="120" y="-120" id="0:2766"/>
+                <EntryState id="0:2767"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/editor/editor.as" name="editor" id="0:2190" codeFileId="0:103014"/>
+</Rive>

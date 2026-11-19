@@ -1,0 +1,27 @@
+<Rive version="1" kind="fragment">
+    <!-- FirstScene: a ScriptedLayout running examples/first_scene/first_scene.as, filling
+         the artboard. Its `screen` input is the Screen artboard (examples/shared/shared.rml), which
+         the script draws onto the cube as a live texture. -->
+    <Artboard isComponent="true" defaultStateMachineId="0:107" clip="true" width="800" height="600" styleId="0:101" name="FirstScene" id="0:100">
+        <Fill name="Background" id="0:2613">
+            <SolidColor colorValue="FF0E1116" name="Color" id="0:2614"/>
+        </Fill>
+        <LayoutComponentStyle name="Artboard Style" id="0:101"/>
+        <LayoutComponent width="800" height="600" styleId="0:103" name="Root" id="0:102">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:103"/>
+            <ScriptedLayout scriptAssetId="0:190" name="Scene" id="0:104">
+                <ScriptInputArtboard artboardId="0:200" name="screen" id="0:105"/>
+                <ScriptInputNumber propertyValue="1" name="speed" id="0:106"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:107">
+            <StateMachineLayer name="Layer 1" id="0:108">
+                <AnyState x="0" y="-120" id="0:2615"/>
+                <ExitState x="120" y="-120" id="0:2616"/>
+                <EntryState id="0:2617"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/first_scene/first_scene.as" name="first_scene" id="0:190" codeFileId="0:4057"/>
+</Rive>

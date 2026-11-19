@@ -1,0 +1,24 @@
+# The ThreeAS gallery: the landing page and every example, built on the
+# engine in ../threeas. See ../../README.md.
+name: three_as
+main: Gallery
+scripting: wasm
+
+exclude:
+  - build
+  - tools
+  - "*.md"
+  - "**/*.md"
+  # The gallery's generator and font licences are not sources.
+  - "gallery/*.py"
+  - "gallery/fonts/*.txt"
+
+logs:
+  file: build/rive.log
+  problems: build/problems.log
+pages:
+  workspaceId: 40887
+  name: "threeas"
+push:
+  projectId: 44599
+  fileId: 38626

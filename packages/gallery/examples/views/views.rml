@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Views: viewports, scissors, ArrayCamera, StereoCamera and two scenes
+         in one canvas (examples/views/views.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:3007" clip="true" x="900" y="5600" width="800" height="600" styleId="0:3001" name="Views" id="0:3000">
+        <LayoutComponentStyle name="Artboard Style" id="0:3001"/>
+        <LayoutComponent width="800" height="600" styleId="0:3003" name="Root" id="0:3002">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:3003"/>
+            <ScriptedLayout scriptAssetId="0:3090" name="Scene" id="0:3004"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:3007">
+            <StateMachineLayer name="Layer 1" id="0:3008">
+                <AnyState x="0" y="-120" id="0:3009"/>
+                <ExitState x="120" y="-120" id="0:3010"/>
+                <EntryState id="0:3011"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/views/views.as" name="views" id="0:3090" codeFileId="0:130001"/>
+</Rive>

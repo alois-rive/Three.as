@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- PostProcessing: EffectComposer with bloom, output and FXAA passes
+         (examples/postprocessing/postprocessing.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1407" clip="true" x="2700" y="2800" width="800" height="600" styleId="0:1401" name="PostProcessing" id="0:1400">
+        <LayoutComponentStyle name="Artboard Style" id="0:1401"/>
+        <LayoutComponent width="800" height="600" styleId="0:1403" name="Root" id="0:1402">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1403"/>
+            <ScriptedLayout scriptAssetId="0:1490" name="Scene" id="0:1404"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1407">
+            <StateMachineLayer name="Layer 1" id="0:1408">
+                <AnyState x="0" y="-120" id="0:2744"/>
+                <ExitState x="120" y="-120" id="0:2745"/>
+                <EntryState id="0:2746"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/postprocessing/postprocessing.as" name="postprocessing" id="0:1490" codeFileId="0:64883"/>
+</Rive>

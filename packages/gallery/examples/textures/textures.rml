@@ -1,0 +1,22 @@
+<Rive version="1" kind="fragment">
+    <!-- Textures: uv transforms, uv channels, KTX2 compressed textures
+         (examples/textures/textures.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1707" clip="true" x="900" y="3500" width="800" height="600" styleId="0:1701" name="Textures" id="0:1700">
+        <LayoutComponentStyle name="Artboard Style" id="0:1701"/>
+        <LayoutComponent width="800" height="600" styleId="0:1703" name="Root" id="0:1702">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1703"/>
+            <ScriptedLayout scriptAssetId="0:1790" name="Scene" id="0:1704"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1707">
+            <StateMachineLayer name="Layer 1" id="0:1708">
+                <AnyState x="0" y="-120" id="0:2753"/>
+                <ExitState x="120" y="-120" id="0:2754"/>
+                <EntryState id="0:2755"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/textures/textures.as" name="textures" id="0:1790" codeFileId="0:75485"/>
+    <BlobAsset file="examples/textures/checker_bc1.ktx2.zlib" name="checker_bc1" id="0:1791"/>
+    <BlobAsset file="examples/textures/checker_astc.ktx2.zlib" name="checker_astc" id="0:1792"/>
+</Rive>

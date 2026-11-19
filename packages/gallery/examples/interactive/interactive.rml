@@ -1,0 +1,94 @@
+<Rive version="1" kind="fragment">
+    <!-- Interactive: a ThreeLayout with OrbitControls, a clickable Rive
+         toggle on a panel, a RenderTarget "TV", hover highlights and a
+         propeller driven by the Screen artboard's animated Spinner node
+         (examples/interactive/interactive.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:807" clip="true" y="2100" width="800" height="600" styleId="0:801" name="Interactive" id="0:800">
+        <LayoutComponentStyle name="Artboard Style" id="0:801"/>
+        <LayoutComponent width="800" height="600" styleId="0:803" name="Root" id="0:802">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:803"/>
+            <ScriptedLayout scriptAssetId="0:196" name="Scene" id="0:804">
+                <ScriptInputArtboard artboardId="0:850" name="toggle" id="0:805"/>
+                <ScriptInputArtboard artboardId="0:200" name="screen" id="0:806"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:807">
+            <StateMachineLayer name="Layer 1" id="0:808">
+                <AnyState x="0" y="-120" id="0:2697"/>
+                <ExitState x="120" y="-120" id="0:2698"/>
+                <EntryState id="0:2699"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <!-- Toggle: a switch; clicking the track fires `flip`, which moves
+         between the Off and On states. -->
+    <Artboard defaultStateMachineId="0:870" x="900" y="2100" width="360" height="200" styleId="0:851" name="Toggle" id="0:850">
+        <LayoutComponentStyle name="Toggle Style" id="0:851"/>
+        <Fill name="Background" id="0:2700">
+            <SolidColor colorValue="FF1F2430" name="Color" id="0:2701"/>
+        </Fill>
+        <!-- The first shape declared paints on top: the knob, then the track. -->
+        <Shape x="125" y="100" name="Knob" id="0:854">
+            <Ellipse width="86" height="86" originX="0.5" originY="0.5" name="KnobPath" id="0:2702"/>
+            <Fill name="Fill" id="0:2703">
+                <SolidColor colorValue="FFF4F1EA" name="Color" id="0:2704"/>
+            </Fill>
+        </Shape>
+        <Shape x="180" y="100" name="Track" id="0:852">
+            <Rectangle width="240" height="110" originX="0.5" originY="0.5" linkCornerRadius="true" cornerRadiusTL="55" cornerRadiusTR="55" cornerRadiusBL="55" cornerRadiusBR="55" name="TrackPath" id="0:2705"/>
+            <Fill name="Fill" id="0:2706">
+                <SolidColor colorValue="FF5C6370" name="TrackColor" id="0:853"/>
+            </Fill>
+        </Shape>
+        <StateMachine name="State Machine 1" id="0:870">
+            <StateMachineTrigger name="flip" id="0:871"/>
+            <StateMachineLayer name="Layer 1" id="0:872">
+                <AnyState x="0" y="-120" id="0:2707"/>
+                <ExitState x="120" y="-120" id="0:2708"/>
+                <EntryState id="0:2709">
+                    <StateTransition stateToId="0:873" id="0:2710"/>
+                </EntryState>
+                <AnimationState x="200" animationId="0:860" id="0:873">
+                    <StateTransition stateToId="0:874" duration="200" id="0:2711">
+                        <TransitionTriggerCondition inputId="0:871" id="0:2712"/>
+                    </StateTransition>
+                </AnimationState>
+                <AnimationState x="400" animationId="0:861" id="0:874">
+                    <StateTransition stateToId="0:873" duration="200" id="0:2713">
+                        <TransitionTriggerCondition inputId="0:871" id="0:2714"/>
+                    </StateTransition>
+                </AnimationState>
+            </StateMachineLayer>
+            <StateMachineListenerSingle targetId="0:852" listenerTypeValue="click" name="Flip" id="0:2715">
+                <ListenerTriggerChange inputId="0:871" id="0:2716"/>
+            </StateMachineListenerSingle>
+        </StateMachine>
+        <LinearAnimation duration="1" name="Off" id="0:860">
+            <KeyedObject objectId="0:854" id="0:2717">
+                <KeyedProperty property="x" id="0:2718">
+                    <KeyFrameDouble value="125" interpolationType="hold" id="0:2719"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:853" id="0:2720">
+                <KeyedProperty property="colorValue" id="0:2721">
+                    <KeyFrameColor value="FF5C6370" interpolationType="hold" id="0:2722"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+        <LinearAnimation duration="1" name="On" id="0:861">
+            <KeyedObject objectId="0:854" id="0:2723">
+                <KeyedProperty property="x" id="0:2724">
+                    <KeyFrameDouble value="235" interpolationType="hold" id="0:2725"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:853" id="0:2726">
+                <KeyedProperty property="colorValue" id="0:2727">
+                    <KeyFrameColor value="FF2EC4B6" interpolationType="hold" id="0:2728"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+    </Artboard>
+
+    <ScriptAsset file="examples/interactive/interactive.as" name="interactive" id="0:196" codeFileId="0:38689"/>
+</Rive>

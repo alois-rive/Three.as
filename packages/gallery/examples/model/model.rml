@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Model: a glb loaded with GLTFLoader, animated (examples/model/model.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1007" clip="true" x="2700" y="2100" width="800" height="600" styleId="0:1001" name="Model" id="0:1000">
+        <LayoutComponentStyle name="Artboard Style" id="0:1001"/>
+        <LayoutComponent width="800" height="600" styleId="0:1003" name="Root" id="0:1002">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1003"/>
+            <ScriptedLayout scriptAssetId="0:198" name="Scene" id="0:1004"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1007">
+            <StateMachineLayer name="Layer 1" id="0:1008">
+                <AnyState x="0" y="-120" id="0:2732"/>
+                <ExitState x="120" y="-120" id="0:2733"/>
+                <EntryState id="0:2734"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/model/model.as" name="model" id="0:198" codeFileId="0:50439"/>
+    <BlobAsset file="examples/model/sample.glb" name="sample" id="0:199"/>
+</Rive>

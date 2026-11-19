@@ -1,0 +1,44 @@
+<Rive version="1" kind="fragment">
+    <!-- Shapes: curves, extrusion, tubes, and a Rive path extruded
+         (examples/shapes/shapes.as). The Emblem artboard's StarPath is read by the
+         script and extruded. -->
+    <Artboard isComponent="true" defaultStateMachineId="0:707" clip="true" x="2700" y="1400" width="800" height="600" styleId="0:701" name="Shapes" id="0:700">
+        <LayoutComponentStyle name="Artboard Style" id="0:701"/>
+        <LayoutComponent width="800" height="600" styleId="0:703" name="Root" id="0:702">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:703"/>
+            <ScriptedLayout scriptAssetId="0:195" name="Scene" id="0:704">
+                <ScriptInputArtboard artboardId="0:750" name="emblem" id="0:705"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:707">
+            <StateMachineLayer name="Layer 1" id="0:708">
+                <AnyState x="0" y="-120" id="0:2682"/>
+                <ExitState x="120" y="-120" id="0:2683"/>
+                <EntryState id="0:2684"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <Artboard x="3600" y="1400" width="200" height="200" styleId="0:751" name="Emblem" id="0:750">
+        <LayoutComponentStyle name="Emblem Style" id="0:751"/>
+        <Shape x="100" y="100" name="Star" id="0:752">
+            <PointsPath isClosed="true" name="StarPath" id="0:753">
+                <StraightVertex x="0.0" y="-90.0" id="0:2685"/>
+                <StraightVertex x="22.34" y="-30.74" id="0:2686"/>
+                <StraightVertex x="85.6" y="-27.81" id="0:2687"/>
+                <StraightVertex x="36.14" y="11.74" id="0:2688"/>
+                <StraightVertex x="52.9" y="72.81" id="0:2689"/>
+                <StraightVertex x="0.0" y="38.0" id="0:2690"/>
+                <StraightVertex x="-52.9" y="72.81" id="0:2691"/>
+                <StraightVertex x="-36.14" y="11.74" id="0:2692"/>
+                <StraightVertex x="-85.6" y="-27.81" id="0:2693"/>
+                <StraightVertex x="-22.34" y="-30.74" id="0:2694"/>
+            </PointsPath>
+            <Fill name="Fill" id="0:2695">
+                <SolidColor colorValue="FFFFB400" name="Color" id="0:2696"/>
+            </Fill>
+        </Shape>
+    </Artboard>
+
+    <ScriptAsset file="examples/shapes/shapes.as" name="shapes" id="0:195" codeFileId="0:33011"/>
+</Rive>

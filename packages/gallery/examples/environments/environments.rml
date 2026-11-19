@@ -1,0 +1,27 @@
+<Rive version="1" kind="fragment">
+    <!-- Environments: cube maps, CubeTextureLoader, CubeCamera
+         (examples/environments/environments.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:1607" clip="true" x="0" y="3500" width="800" height="600" styleId="0:1601" name="Environments" id="0:1600">
+        <LayoutComponentStyle name="Artboard Style" id="0:1601"/>
+        <LayoutComponent width="800" height="600" styleId="0:1603" name="Root" id="0:1602">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:1603"/>
+            <ScriptedLayout scriptAssetId="0:1690" name="Scene" id="0:1604"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:1607">
+            <StateMachineLayer name="Layer 1" id="0:1608">
+                <AnyState x="0" y="-120" id="0:2750"/>
+                <ExitState x="120" y="-120" id="0:2751"/>
+                <EntryState id="0:2752"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/environments/environments.as" name="environments" id="0:1690" codeFileId="0:71559"/>
+    <ImageAsset file="examples/environments/studio_px.png" name="studio_px" id="0:1691"/>
+    <ImageAsset file="examples/environments/studio_nx.png" name="studio_nx" id="0:1692"/>
+    <ImageAsset file="examples/environments/studio_py.png" name="studio_py" id="0:1693"/>
+    <ImageAsset file="examples/environments/studio_ny.png" name="studio_ny" id="0:1694"/>
+    <ImageAsset file="examples/environments/studio_pz.png" name="studio_pz" id="0:1695"/>
+    <ImageAsset file="examples/environments/studio_nz.png" name="studio_nz" id="0:1696"/>
+    <BlobAsset file="examples/environments/studio_exr.exr" name="studio_exr" id="0:1698"/>
+</Rive>

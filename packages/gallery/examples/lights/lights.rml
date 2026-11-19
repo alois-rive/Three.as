@@ -1,0 +1,20 @@
+<Rive version="1" kind="fragment">
+    <!-- Lights: rect area lights, many point lights, a light probe
+         (examples/lights/lights.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:2007" clip="true" x="3600" y="3500" width="800" height="600" styleId="0:2001" name="Lights" id="0:2000">
+        <LayoutComponentStyle name="Artboard Style" id="0:2001"/>
+        <LayoutComponent width="800" height="600" styleId="0:2003" name="Root" id="0:2002">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:2003"/>
+            <ScriptedLayout scriptAssetId="0:2090" name="Scene" id="0:2004"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:2007">
+            <StateMachineLayer name="Layer 1" id="0:2008">
+                <AnyState x="0" y="-120" id="0:2762"/>
+                <ExitState x="120" y="-120" id="0:2763"/>
+                <EntryState id="0:2764"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/lights/lights.as" name="lights" id="0:2090" codeFileId="0:96895"/>
+</Rive>
