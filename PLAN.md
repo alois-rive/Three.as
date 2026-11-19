@@ -246,7 +246,7 @@ render as authored.
 - Example `Lights`: a night street of point and area lights with cascaded
   sun shadows.
 
-### M10: scene tools
+### M10: scene tools (done)
 
 Goal: the helpers, utilities and controls that three.js examples lean on.
 
