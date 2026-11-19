@@ -350,6 +350,31 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   (`rive/parallel`) or compute, where Rive exposes it.
 - Benchmarks with the ahead-of-time tier (`--aot`), against the same
   scenes in three.js in a browser; a regression bench in CI.
+- **Prebaked shader variants (optional, "optimized" mode).** The default
+  stays the uber-shader (one `three.wgsl`, features chosen by uniform
+  flags), which always works. A bash script, `tools/bake_shaders.sh`, bakes
+  specialized variants for what a project actually draws:
+  1. The renderer computes a program key per draw, as three.js's
+     `getProgramCacheKey`: material kind, maps present, skinning, morphs,
+     fog, shadows, clipping, light counts by type.
+  2. The script runs every artboard headless with a recording flag
+     (`--arg`), collecting the keys the renderer logs.
+  3. It generates WGSL per key from `three.wgsl`, the features as `const`
+     booleans and constant light counts, so the compiler drops dead
+     branches and unrolls loops (three.js's `#ifdef`s), as entry points of
+     one generated asset (or one asset each), plus a registry module
+     (key -> module and entry point, and a hash of `three.wgsl`).
+  4. At runtime the renderer uses a baked variant when the key is in the
+     registry and the hash matches, else falls back to the uber-shader
+     (logging the unbaked key once in development builds).
+  5. Variants keep the uber-shader's bind group layout first, so groups
+     and the pipeline cache stay shared; stripping unused bindings per
+     variant (more texture slots) comes after.
+  Check freshness in CI (rerun the script, fail on a diff, then
+  `tools/check_glsl.py` on the release .riv), cap the variant count, and
+  benchmark both modes (load time and frame time, WebGL2 and mobile
+  especially) before making it the recommended setup. `renderer.compile`
+  pre-warms baked pipelines.
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
 
