@@ -1,0 +1,46 @@
+<Rive version="1" kind="fragment">
+    <!-- Audio: three.js's spatial audio on Rive's audio thread: emitters
+         orbiting the listener (one with a directional cone and its
+         PositionalAudioHelper), a non-positional ambience, an AudioAnalyser
+         bar graph and a play / stop button (examples/audio/audio.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:4207" clip="true" y="9100" width="800" height="600" styleId="0:4201" name="Audio" id="0:4200">
+        <LayoutComponentStyle name="Artboard Style" id="0:4201"/>
+        <LayoutComponent width="800" height="600" styleId="0:4203" name="Root" id="0:4202">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:4203"/>
+            <ScriptedLayout scriptAssetId="0:4290" name="Scene" id="0:4204"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:4207">
+            <StateMachineLayer name="Layer 1" id="0:4208">
+                <AnyState x="0" y="-120" id="0:4209"/>
+                <ExitState x="120" y="-120" id="0:4210"/>
+                <EntryState id="0:4211"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <!-- AudioCheck: the scenarios tools/check_audio.py renders headless
+         with rive --render-audio (examples/audio/audio_check.as). Not in the
+         gallery's list. -->
+    <Artboard isComponent="true" defaultStateMachineId="0:4257" clip="true" x="900" y="9100" width="320" height="240" styleId="0:4251" name="AudioCheck" id="0:4250">
+        <LayoutComponentStyle name="Artboard Style" id="0:4251"/>
+        <LayoutComponent width="320" height="240" styleId="0:4253" name="Root" id="0:4252">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:4253"/>
+            <ScriptedLayout scriptAssetId="0:4296" name="Check" id="0:4254"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:4257">
+            <StateMachineLayer name="Layer 1" id="0:4258">
+                <AnyState x="0" y="-120" id="0:4259"/>
+                <ExitState x="120" y="-120" id="0:4260"/>
+                <EntryState id="0:4261"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/audio/audio.as" name="audio" id="0:4290"/>
+    <ScriptAsset file="examples/audio/audio_check.as" name="audio_check" id="0:4296"/>
+    <AudioAsset file="examples/audio/hum.wav" name="hum" id="0:4291"/>
+    <AudioAsset file="examples/audio/chime.wav" name="chime" id="0:4292"/>
+    <AudioAsset file="examples/audio/radio.wav" name="radio" id="0:4293"/>
+    <AudioAsset file="examples/audio/knock.wav" name="knock" id="0:4294"/>
+    <AudioAsset file="examples/audio/wind.wav" name="wind" id="0:4295"/>
+</Rive>

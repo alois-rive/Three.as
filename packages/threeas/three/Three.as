@@ -149,6 +149,14 @@ export * from "./animation/AnimationObjectGroup";
 // methods of the AnimationUtils class here (or import them by path).
 export { AnimationUtils } from "./animation/AnimationUtils";
 
+export * from "./audio/AudioListener";
+export * from "./audio/Audio";
+export * from "./audio/PositionalAudio";
+export * from "./audio/AudioAnalyser";
+export * from "./audio/AudioContext";
+export * from "./audio/AudioNodes";
+export * from "./loaders/AudioLoader";
+
 export * from "./renderers/GPURenderer";
 export * from "./renderers/RenderTarget";
 

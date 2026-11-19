@@ -1184,6 +1184,142 @@ use. The default repository state bakes nothing.
   arguments are hex numbers; the light helpers take `-1` for "the light's
   colour" (three.js's undefined). Lines are one pixel wide.
 
+## Audio
+
+three.js's audio classes (`src/audio/`, `AudioLoader`, the
+PositionalAudioHelper addon) sit on Web Audio; here they sit on Rive's
+`rive/audio`. The names, signatures and defaults are three.js's and Web
+Audio's; what differs:
+
+- **One mixer per listener, on the audio thread.** Each `AudioListener`
+  owns its `context` (an `AudioContext`, ThreeAS's audio engine, not a Web
+  Audio one), which starts one `AudioMixProcessor` (`Audio.start`) mixing
+  every `Audio` and `PositionalAudio` made with that listener, at most
+  `MIX_MAX_VOICES` (32) playing at once. Buffers are decoded once to
+  interleaved f32 frames in a shared `Blob` (`AudioSource.toBlob`, on a job
+  thread) and read in place by the processor. The main lane publishes each
+  voice's parameters through a `Snapshot` every update (the panning matrix
+  with distance and cone gains, volume, master volume, rate, loop points,
+  filters, interaural delays, head-shadow cutoffs); the processor sends back
+  its clock, each voice's position and which plays ended. `process`
+  allocates nothing but a Blob handle when a new buffer arrives (a
+  processor cannot receive shared objects through a ring, so the main lane
+  sends the blob's id). Parameter changes ramp over each block (a 10 ms
+  one-pole step), stops and pauses fade out over 10 ms, starts from an
+  offset and resumes fade in over 5 ms (a start from 0 keeps its attack), so
+  nothing clicks. The mixer fades out while nothing publishes for 0.5 s (the
+  script stopped advancing or went away) and stops when its context is
+  collected.
+- **When audio updates.** As three.js, in `updateMatrixWorld`: the
+  listener's override calls `listener.update()`, which computes every
+  source from the listener's and the sources' world matrices and publishes
+  the mix, so a render each frame keeps it current. Headless runs advance
+  without rendering, and scripts may not render every frame: call
+  `listener.update()` from `advance` (it updates the world matrices it
+  needs first; the Audio example does). Sources update in the listener's
+  update, not in their own `updateMatrixWorld`.
+- **`context` / `AudioContext`.** `listener.context` (also `audio.context`)
+  is the engine: `currentTime` (the mixer's clock), `sampleRate`, `state`
+  ("suspended" until the mixer runs, on the web until the page's first
+  click, tap or key press; "running"; "closed"), `resume()`, `suspend()`
+  (fades every voice out), `close()`, `createBiquadFilter()`,
+  `createOscillator()`, `createAnalyser()`, `createGain()`,
+  `createPanner()`, `createBuffer(channels, length, rate)` and
+  `decodeAudioData(bytes)` (a `Promise<AudioBuffer>`, WAV only).
+  `AudioContext.getContext()` / `setContext()` do not exist: there is no
+  shared Web Audio context, each listener has its own.
+- **Web Audio nodes are stand-ins** (`three/audio/AudioNodes`): `GainNode`
+  (`audio.gain`, `listener.gain`), `PannerNode` (`positionalAudio.panner`),
+  `BiquadFilterNode`, `OscillatorNode`, `AnalyserNode` and `AudioBuffer`,
+  with Web Audio's fields and defaults. `AudioParam` automation
+  (`setTargetAtTime`, `linearRampToValueAtTime` ...) sets the value at once
+  (the mixer ramps it); `connect` / `disconnect` are no-ops (the routing is
+  fixed: source, filters, panner, gain, listener gain). No other node types
+  (convolver, delay, dynamics compressor, wave shaper, media streams).
+- **Sources.** `setBuffer(audioBuffer)` takes an `AudioBuffer` (from
+  `AudioLoader`, `decodeAudioData` or `createBuffer`; created channel data
+  is taken when the buffer first plays, later writes do not reach the
+  mixer). `setMediaElementSource(source)` takes a Rive `AudioSource` (an
+  audio asset, `context.audio(name)`) and decodes it into a buffer; unlike
+  three.js's media elements it keeps playback control (`play`, `pause` ...).
+  `setNodeSource(oscillator)` takes an `OscillatorNode` (sine, square,
+  sawtooth, triangle; naive waveforms), heard between its `start()` and
+  `stop()`, without playback control as in three.js.
+  `setMediaStreamSource` is not ported (no microphone input).
+- **Transport.** `play(delay)`, `pause()`, `stop(delay)`, `setLoop`,
+  `setLoopStart/End`, `offset`, `setPlaybackRate`, `setDetune` (applied as
+  `playbackRate x 2^(detune / 1200)`, linear interpolation), `setVolume`,
+  `autoplay` behave as three.js. `duration` is 0 for "to the end" (three.js:
+  undefined). `pause()` takes the position from the mixer (three.js
+  estimates it from the clock) and `play()` after it resumes exactly where
+  the mixer held it. Playback rates are clamped at 0 (no reverse play).
+- **`onEnded`.** A play that reaches its end calls `onEnded()` (override it)
+  and dispatches an `"ended"` event (`addEventListener("ended", listener)`),
+  three.js's `source.onended`, about a frame after the end.
+- **Filters.** `setFilter(s)` and `listener.setFilter` take
+  `BiquadFilterNode`s (Web Audio's eight types and coefficients); at most
+  three per voice are applied: two of the Audio's and the listener's (which
+  filters each voice of its listener, the same as filtering their sum).
+- **PositionalAudio's panner.** Web Audio's distance models (`linear`,
+  `inverse`, `exponential`, with `refDistance`, `maxDistance`,
+  `rolloffFactor`), sound cones and azimuth are computed exactly as the Web
+  Audio spec writes them, in the listener's frame (forward -Z of its world
+  matrix, `up` its `up` vector, as three.js passes them). Panning is
+  **equal-power** (`panner.panningModel = "equalpower"`, the spec's mono and
+  stereo laws). three.js sets `"HRTF"`, which keeps that default here, but
+  there is no HRTF convolution: "HRTF" is equal-power panning plus a light
+  interaural delay (Woodworth's spherical head, 0.66 ms at the side, on the
+  far ear) and a head-shadow one-pole low-pass (the far ear down to 3 kHz at
+  the side, both ears down to 9 kHz behind). Equal-power panning cannot tell
+  front from back by level; the behind low-pass is the only cue. Positions
+  are in scene units; no Doppler (Web Audio removed it too).
+  `PositionalAudio` also keeps the last update's `distanceGain`,
+  `coneGain`, `azimuth` and `elevation` (Rive-only, to drive visuals).
+- **AudioAnalyser** / `AnalyserNode`: the audio thread sends the Audio's
+  latest samples every block (a PositionalAudio's after its panner and
+  before its volume, a plain Audio's after its volume, as three.js taps
+  `getOutput()`); the FFT runs on the main lane in `getFrequencyData`, with
+  Web Audio's Blackman window, `smoothingTimeConstant`, `minDecibels` and
+  `maxDecibels`. `fftSize` up to 4096 (Web Audio: 32768); at most four
+  analysers per listener. `getFloatFrequencyData`, `getByteTimeDomainData`
+  and `getFloatTimeDomainData` work too. Data comes back one frame late.
+- **AudioLoader** (`new AudioLoader(context)`): `load(name)` returns an
+  `AudioBuffer` at once for the Rive **audio asset** `name` (an `AudioAsset`
+  in the RML: WAV, MP3 or FLAC, which Rive decodes) and fills it when the
+  decode job ends (`buffer.ready`, `buffer.promise`); an Audio may play it
+  before then and starts once it is ready. No callbacks.
+  `loadAsync(url)` resolves with the decoded buffer: an audio asset's name,
+  or **WAV bytes** from an https: url (where the host allows the network) or
+  a blob asset, decoded by ThreeAS in a job (PCM 8 to 32-bit, float 32 and
+  64-bit, two channels at most). Rive decodes MP3 and FLAC only from its own
+  audio assets, not from bytes, so fetched MP3s cannot play.
+- **PositionalAudioHelper** (`three/addons/helpers/PositionalAudioHelper`):
+  lines take one material here, so the helper is a Line drawing the inner
+  cone with `materialInnerAngle` (three.js's `material[1]`) and holds a
+  child Line, `outer`, drawing the outer cone with `materialOuterAngle`
+  (`material[0]`); `outer.visible` is false when the cones are equal.
+- **Where processors cannot run** (`Audio.processorSampleRate()` is 0: a
+  web build without threads, i.e. a page without cross origin isolation,
+  or `rive --test`), or after the mixer failed `maxRestarts` (3) times,
+  `context.fallback` is true and Audio objects whose buffer came from a
+  Rive audio asset play through Rive's `Audio.play`: volume, distance and
+  cone gains (as one level), loops replayed from `loopStart`, but no
+  panning, rate, detune, filters or analyser data.
+- **Browsers start audio only after a gesture.** In a browser the
+  processor runs in an audio worklet whose AudioContext the Rive runtime
+  makes when the first processor starts, and resumes on the page's first
+  `pointerdown`, `pointerup`, `keydown` or `touchend` (warning "script audio
+  waits for a click, tap or key press on the page" after a second). The
+  mixer starts with the listener's first update, so any later click on the
+  page starts the sound; until then `context.state` is "suspended". A play
+  button (the Audio example's) is that click. Natively audio starts at once.
+- **Checking it.** `rive <dir> --render-audio=out.wav --advance=Ns`
+  renders the mixer's output headless (sounds Rive plays itself are not in
+  it). `tools/check_audio.py` renders the gallery's `AudioCheck` artboard
+  through panning, distance, cone, loop, stop, pause and analyser scenarios
+  and measures the WAVs against the formulas; `tests/audio_test.as` checks
+  the math and drives the mixer core directly, and logs its cost per block.
+
 ## Rive-only additions
 
 ### 2D overlays (CSS2DRenderer / CSS3DRenderer)
