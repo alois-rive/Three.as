@@ -90,6 +90,60 @@ M13 follow-ups: the 48-target morph texture of the Animation example took
 MorphU blocks share one buffer; a big skeleton's bone texture uploads only
 when bones moved; overlay occlusion stops at the first hit.
 
+## Pointer events in big scenes
+
+ThreeLayout used to update every world matrix and raycast the whole scene
+(every triangle the ray's bounds let through, skinned meshes skinned a
+corner at a time, every instance and point) at each pointer event, then
+sort the hits, only to learn whether the nearest one showed an interactive
+ArtboardTexture, even in scenes without one. Measured with
+`packages/threeas/tests/pointer_test.as` ("pointer stress", which logs
+its times): 3000 boxes, a sphere of 1M triangles, 4 skinned cylinders of
+8k triangles, an InstancedMesh of 10000 icosahedra, 100000 points; a
+layout of 800 x 600. Before, a pointer event over the big sphere cost
+0.8 s interpreted (the sphere's triangles 757 ms, the skinned cylinders
+40 ms each when the ray crossed them, points 14 ms, instances 11 ms,
+3000 boxes 1.5 ms, matrices 1.2 ms; 52-69 ms compiled): four times the
+200 ms headless call budget, and past the suite's 2 s for three events.
+
+Now (`ArtboardPicker`, `GeometryBVH`, see DEVIATIONS.md): without an
+ArtboardTexture nothing is raycast; with one, only the meshes that show
+it, then an any-hit occluder walk in front of the hit; matrices once a
+frame; big geometries through a BVH built in a job; skinned meshes posed
+once a raycast. Per event, ms (`rive . --test`, interpreted / `--aot`):
+
+| event | before | after |
+|---|---|---|
+| move over the sphere, no ArtboardTexture | 806-835 / 52-69 | 0.003 / 0.0 (the first event of a frame updates the matrices: 1.7 / 0.18) |
+| press there | 825 / 59-72 | 0.003 / 0.0 |
+| move over boxes and instances, no ArtboardTexture | 52-120 / 4.6-14 | 0.003 / 0.0 |
+| move over the sphere, an artboard plane behind it, tree built | ~806 / ~52 | 1.3 / 0.09 (press 1.1 / 0.08) |
+| same, tree building (occluded meanwhile) | - | 2.3 / 0.11 (first event, starting the job: 54 / 3.6) |
+| move over an unoccluded artboard plane | 49-109 / 4.6-11 | 20 / 1.1 (first event of a frame 23 / 1.3) |
+| move beside the artboards (every candidate missed) | 14-80 / 1.3-9 | 0.008 / 0.001 |
+
+Ranges: a warm event and the first one (bounding spheres computed, a
+fresh scene). Over the unoccluded plane the occluder walk visits the 3000
+objects; the instances and a skinned cylinder near the ray take most of
+it. The very first event of a scene also computes bounds and starts the
+trees' jobs (113 / 5.6 ms here).
+
+The tree of the 1M-triangle sphere builds in about 0.1 s compiled (106 ms
+on the main lane; as a job, done 109 ms after it started, 6 pool
+threads) and 2 s interpreted (250k triangles: 455 / 18 ms on the main
+lane). It has 340k nodes, about 15 MB (4 bytes a triangle, 32 a node);
+the job copies the positions and index once. With it, a raycast of the
+sphere takes 0.02 ms interpreted. Moves along the same ray in one frame
+reuse the last answer; hover is still resolved at every move (each
+move's uv goes to the artboard).
+
+Not done: per-instance bounds for InstancedMesh (10000 instances cost
+about 10 ms interpreted / 1 ms compiled when the ray crosses the whole
+mesh's sphere before the hit); trees for skinned and morphed meshes
+(refitting); building trees in a browser without threads, where a job
+runs on the page's thread at an advance and a very big geometry may
+exceed that call's budget.
+
 ## Comparing with three.js in a browser
 
 Not run here (no downloaded code in this environment). To do it:

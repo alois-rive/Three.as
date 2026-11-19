@@ -166,6 +166,8 @@ export * from "./renderers/RenderTarget";
 
 // Rive integrations.
 export * from "./rive/ArtboardTexture";
+export * from "./rive/ArtboardPicker";
+export * from "./rive/GeometryBVH";
 export * from "./rive/RivePaths";
 export * from "./rive/RiveNodes";
 export * from "./rive/ThreeLayout";

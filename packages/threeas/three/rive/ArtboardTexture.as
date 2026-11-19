@@ -25,6 +25,9 @@ import { Vector } from "rive/vector";
 import { Texture } from "../textures/Texture";
 import { Vector2 } from "../math/Vector2";
 
+// ArtboardTextures made and not disposed (ArtboardTexture.live()).
+let _live: i32 = 0;
+
 export class ArtboardTexture extends Texture {
     readonly isArtboardTexture: bool = true;
     /// The artboard instance drawn.
@@ -40,6 +43,11 @@ export class ArtboardTexture extends Texture {
     private requestedHeight: u32;
     private canvas: Canvas? = null;
     private drawnVersion: i32 = -1;
+    private counted: bool = true;
+
+    /// How many ArtboardTextures exist (made and not disposed): with none,
+    /// ThreeLayout does no pointer picking at all.
+    static live(): i32 { return _live; }
 
     /// Instances `artboard` (with `viewModel` bound, if given) and draws it
     /// at `width` x `height` pixels; 0 takes the artboard's own size.
@@ -51,6 +59,7 @@ export class ArtboardTexture extends Texture {
         this.premultiplyAlpha = true;
         this.colorSpace = "srgb";
         this.artboard.advance(0);
+        _live++;
     }
 
     /// Advances the artboard (and its state machine) by `seconds`. Returns
@@ -140,6 +149,8 @@ export class ArtboardTexture extends Texture {
         if (canvas != null) canvas.release();
         this.canvas = null;
         this.image = null;
+        if (this.counted) _live--;
+        this.counted = false;
         super.dispose();
     }
 }

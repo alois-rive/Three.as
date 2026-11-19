@@ -415,6 +415,22 @@ repository commits the gallery unbaked.
   bool (false stops the descent into children). As in three.js, world
   matrices must be current: call `scene.updateMatrixWorld()` before
   raycasting outside a render (ThreeLayout does it for pointer events).
+- **Raycasts of big geometries use a BVH (Rive-only, three-mesh-bvh's
+  idea, automatic).** A geometry of at least `GeometryBVH.AUTO_TRIANGLES`
+  (4096) triangles gets a bounding volume hierarchy at its first raycast,
+  built in a Rive job; raycasts test every triangle until it is done, then
+  only those in the leaves the ray crosses. Same hits; a direct
+  `object.raycast(raycaster, list)` lists them in the tree's order rather
+  than the index order (`intersectObject` sorts them, as before).
+  `GeometryBVH.request(geometry)` starts one early (any size),
+  `GeometryBVH.build(geometry)` builds it on the spot (about 0.1 s a
+  million triangles compiled, 2 s interpreted), `GeometryBVH.dispose`
+  drops it (`geometry.dispose()` too). A tree follows the position and index
+  attributes (a new attribute or array, or `needsUpdate`); writing
+  positions without `needsUpdate` leaves it stale, as three-mesh-bvh's.
+  Skinned and morphed meshes do not use one; they are posed once a
+  raycast (each vertex once, not once a triangle corner). A SkinnedMesh's
+  own `boundingBox`, when computed, culls rays as in three.js.
 - **Controls take Rive events, not DOM listeners.** `new OrbitControls(
   camera, renderer)`: the second argument is the GPURenderer (for the
   viewport size), three.js's `domElement`. Forward the script's pointer hooks
@@ -541,6 +557,23 @@ repository commits the gallery unbaked.
   `animate(seconds)`, `onResize`, `onPointerDown/Move/Up`, not
   `init/advance/resize`. It forwards pointer events into interactive
   `ArtboardTexture`s under the pointer (by raycast UV) before the controls.
+- Forwarding goes through `layout.picker` (an `ArtboardPicker`), built for
+  big scenes: it raycasts only the visible meshes and sprites whose
+  material maps an interactive ArtboardTexture (a list rebuilt by a scene
+  walk at the first pointer event of a frame), then looks for an occluder
+  in front of the nearest hit (any visible mesh or sprite of
+  `picker.occluders`, the scene by default, ending at the first hit).
+  Without any ArtboardTexture alive (`ArtboardTexture.live()`) it does
+  nothing. Differences from the plain raycast it replaces: **points and
+  lines no longer hide an artboard** (they are hit within a threshold, not
+  drawn as surfaces); a mesh whose BVH is still building counts as an
+  occluder where the ray crosses its bounding sphere (for the job's
+  duration, about 0.1 s a million triangles compiled); world matrices are
+  updated at the first pointer event after each advance instead of at
+  every event, so a hook that moves objects calls
+  `layout.invalidatePointer()` for the next event of the same frame to see
+  them (ThreeLayout does while a tool drags); moves along the same ray in
+  one frame reuse the last answer (presses and releases always pick).
 - `ArtboardTexture.pointerDown/Move/Up/Exit(uv, id)` forward events by
   texture coordinate; `artboardPoint(uv)` converts.
 - `copyNodeTransform(object, node, unitsPerPixel)` drives an Object3D from
@@ -1561,7 +1594,9 @@ artboards are drawn over it by the script's 2D renderer, in
   position (a raycast against `renderer.occluders`, the scene by default,
   stopping `occlusionBias` short of the object, ending at the first hit
   and skipping hidden subtrees; set `occluders` to a smaller group of big
-  meshes for crowded scenes). Rive scripts cannot read
+  meshes for crowded scenes). Meshes and sprites occlude, points and lines
+  do not (`ArtboardPicker.occluded`, shared with ThreeLayout's pointer
+  forwarding); a big mesh whose BVH is still building counts as one. Rive scripts cannot read
   the depth buffer back; for per-pixel depth, draw the artboard as an
   ArtboardTexture on a Sprite instead.
 - Pointer events go to the topmost interactive object whose artboard bounds

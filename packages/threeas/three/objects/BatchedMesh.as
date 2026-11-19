@@ -22,7 +22,7 @@ import { Sphere } from "../math/Sphere";
 import { Vector3 } from "../math/Vector3";
 import { Object3D } from "../core/Object3D";
 import { Raycaster, Intersection } from "../core/Raycaster";
-import { raycastMesh } from "./raycasting";
+import { raycastMesh, raycastAnyHit } from "./raycasting";
 
 export class BatchedGeometryInfo {
     vertexStart: i32 = 0;
@@ -347,6 +347,7 @@ export class BatchedMesh extends Mesh {
             const before = intersects.length;
             raycastMesh(this, raycaster, intersects, _world, -1);
             for (let k = before; k < intersects.length; k++) intersects[k].batchId = i;
+            if (raycastAnyHit() && intersects.length > before) break;
         }
         g.setDrawRange(saveStart, saveCount);
         return true;
