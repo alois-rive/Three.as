@@ -844,8 +844,114 @@ export class Demo extends Layout {
   replaces `pass.uniforms.name.value`.
 - `UnrealBloomPass` has no `bloomTintColors`; one shader holds its three
   stages, so every stage material carries all its uniforms.
-- Not ported: MaskPass/ClearMaskPass, SMAA, SSAO, BokehPass, the other
-  shader passes; `Uniform.clone()` is UniformsUtils.clone per uniform.
+- `Uniform.clone()` is UniformsUtils.clone per uniform.
+- The other passes (M12) are three.js r170's, with its constructors,
+  fields, defaults and `OUTPUT` values, and their shaders are
+  ShaderDefinitions, one file per three.js shader file in
+  `three/addons/shaders/` (SMAAShader, SSAOShader, SAOShader,
+  DepthLimitedBlurShader, GTAOShader, PoissonDenoiseShader, BokehShader,
+  AfterimageShader, FilmShader, DigitalGlitch, DotScreenShader,
+  HalftoneShader; LUTPass's, OutlinePass's and RenderPixelatedPass's stay in
+  their pass files, as three.js). What changes everywhere:
+  - **`defines` are uniforms or WGSL constants** (Rive pipelines take no
+    overridable constants); boolean and integer uniforms are numbers (0 or
+    1: FilmShader `grayscale`, DigitalGlitch `byp`, HalftoneShader
+    `greyscale` / `disable`); `PERSPECTIVE_CAMERA` is a `perspective`
+    uniform. three.js's uniform arrays are `Uniform<Float32Array>` (WGSL
+    `array<vec4<f32>, N>`).
+  - Depth is always a `DepthTexture` read with `textureLoad`, never
+    RGBA-packed (DepthLimitedBlur supports `DEPTH_PACKING` 0 only; GTAO and
+    the Poisson denoise read depth from x only, no `DEPTH_SWIZZLING`).
+  - A shader's textures share one sampler (the first texture's): textures
+    that need another filter or wrapping are read with `textureLoad` and
+    wrapped by hand (noise textures, SMAA's search texture, the glitch
+    heightmap). SSAODepthShader and GTAODepthShader have an unused
+    `tDiffuse` so their sampler pairs with a colour texture.
+  - New HalfFloat targets start undefined (WebGL zero-fills them), so
+    passes that keep history clear it first (AfterimagePass, SMAA's stages).
+  - `OutputPass` clamps alpha to 1 before un-premultiplying: additive passes
+    that sum alpha (a bloom mix, the bloom blend) no longer brighten the
+    result (three.js ignores alpha there).
+- **SMAAPass(width, height)**: three.js's SMAA 1x stages in its GL texture
+  coordinates; `SMAA_THRESHOLD` and the search and area constants are WGSL
+  constants. The area and search textures are three.js's texels, stored in
+  `SMAATextures.as` as zlib-compressed bytes (RG8 and R8 DataTextures,
+  `flipY` false) and inflated when the pass is made (decoding three.js's
+  PNGs takes longer than a script call's budget). `round` rounds halves away
+  from zero, as GLSL on GPUs.
+- **SSAARenderPass(scene, camera, clearColor, clearAlpha)**: `clearColor`
+  is a hex number; `sampleLevel` (0 to 5, default 4: 16 renders a frame),
+  `unbiased`, jitter by `camera.setViewOffset` (an earlier view offset is
+  restored), additive accumulation into HalfFloat targets; `stencilBuffer`
+  is ignored. Each sample is a full render, shadow maps included.
+  **TAARenderPass** as three.js (`accumulate`, `accumulateIndex`,
+  2^`sampleLevel` of 32 samples a frame); as the last pass its accumulating
+  path renders to the screen, and `setSize` restarts accumulation.
+- **SSAOPass, SAOPass, GTAOPass**: as three.js, a MeshNormalMaterial
+  prepass into a HalfFloatType target with a DepthTexture (points and lines
+  hidden for SSAO and GTAO), and the occlusion multiplied onto the read
+  buffer (put a RenderPass first; three.js's CustomBlending DstColor copies
+  are MultiplyBlending). The camera's projection, near and far are re-read
+  every render. SSAO's `kernelSize` is at most 32, DepthLimitedBlur's
+  `kernelRadius` 64 (`saoBlurRadius` is clamped), Poisson denoise `samples`
+  32; `generatePdSamplePointInitializer` returns the sample floats (the
+  `poissonDisk` uniform) instead of GLSL. SimplexNoise is not ported: the
+  rotation and denoise noise textures are uniform random values (random
+  noise either way). `SAOPass.params` is a typed `SAOPassParams`;
+  `updateGtaoMaterial(GTAOParameters)` and
+  `updatePdMaterial(PoissonDenoiseParameters)` take typed objects where NaN
+  (or -1 for `samples`) means "leave as is"; GTAO's constructor
+  `parameters` is a `GTAOPassParameters`. `GTAOPass.setGBuffer(depth,
+  normals)` takes a DepthTexture and optional packed view normals (an
+  attachment of a multiple render target works); without normals they are
+  rebuilt from depth.
+- **OutlinePass(resolution, scene, camera, selectedObjects)**: three.js's
+  stages and parameters (`visibleEdgeColor`, `hiddenEdgeColor`,
+  `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`,
+  `usePatternTexture` / `patternTexture`, `downSampleRatio`). The other
+  objects' depth is a DepthTexture read at the mask's own pixel
+  (`textureMatrix` unused); selected meshes are drawn instanced but not
+  skinned or morphed; the pulse follows the accumulated `deltaTime`; the
+  overlay's additive blend is done in the shader.
+- **BokehPass(scene, camera, params)**: a `BokehPassParameters` (focus 1,
+  aperture 0.025, maxblur 1); depth from a MeshDepthMaterial render whose
+  DepthTexture the shader reads. **AfterimagePass(damp)**,
+  **FilmPass(intensity, grayscale)**, **DotScreenPass(center, angle,
+  scale)** (a null center is (0.5, 0.5)) and **GlitchPass(dt_size)**
+  (counts frames, as three.js; its heightmap is a float DataTexture) as
+  three.js. DotScreen thresholds colour, so tone mapping whitens it: put it
+  after the OutputPass.
+- **HalftonePass(width, height, params)** takes a `HalftonePassParameters`.
+  **LUTPass(params)** takes a `LUTPassParameters` (`lut`, a Data3DTexture
+  sampled as a `texture_3d`, and `intensity`); without the `texture3D`
+  feature, or while `lut` is null, it copies its input (three.js samples a
+  null LUT as black). **LUTCubeLoader / LUT3dlLoader**: `load(name)` reads
+  a BlobAsset, `loadAsync(url)` fetches, `parse(text)`, `setType`; they
+  return a `LUTCubeResult` (`title` "" where three.js has null, `size`,
+  `domainMin`, `domainMax`, `texture3D`) or a `LUT3dlResult`, or null with
+  `loader.error` on a malformed file (three.js throws).
+- **RenderPixelatedPass(pixelSize, scene, camera, options)** as three.js;
+  an explicit 0 in `RenderPixelatedPassOptions` stays 0 (three.js's `||`
+  turns it into the default). **TexturePass(map, opacity)** decodes what the
+  texture holds (sRGB, premultiplied, flipY) before drawing over the
+  composer's linear buffer (three.js lets the texture format decode sRGB).
+  **ClearPass(clearColor, clearAlpha)** takes a hex colour.
+- **MaskPass / ClearMaskPass are emulated without stencil** (stencil does
+  not survive Rive passes): MaskPass renders its scene in white into its own
+  `maskTarget` (`inverse` and `clear` as three.js), and while a mask is
+  active EffectComposer restores, outside the mask, what each pass changed,
+  with a shader that discards inside it: a swapping pass gets the read
+  buffer drawn back into its write buffer (three.js's NOTEQUAL copy), a
+  non-swapping pass (RenderPass, TexturePass, ClearPass) has its buffer
+  backed up first and restored. Passes rendering to the screen are not
+  masked (end with a copy, as the Effects example does); the mask is
+  binary; each masked pass costs one or two fullscreen draws.
+  `EffectComposer.maskActiveAfter(pass, active)` is three.js's `instanceof
+  MaskPass / ClearMaskPass` step.
+- **Selective bloom** works as three.js's example (a second composer with
+  `renderToScreen = false`, the other objects' materials swapped to black,
+  a mix ShaderPass): see `examples/effects.as` and
+  `examples/shaders/bloom_mix.wgsl`.
 
 ## Cube maps and CubeCamera
 
@@ -896,4 +1002,4 @@ export class Demo extends Layout {
 ## Not yet supported
 
 Missing so far, planned in [../PLAN.md](../PLAN.md):
-more post-processing passes (SMAA, SSAO, bokeh), 
+the rest of M13 and M14 (GPU morph targets, 2D overlays, data binding helpers).

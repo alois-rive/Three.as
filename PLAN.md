@@ -313,14 +313,14 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   textures array), depth textures, `readRenderTargetPixels`,
   `copyFramebufferToTexture`, `copyTextureToTexture`, reversed or
   logarithmic depth for large scenes.
-- **M12c, anti-aliasing and AO passes.** SMAAPass, SSAARenderPass,
+- **M12c, anti-aliasing and AO passes (done; prepasses as three.js r170, MRT only through GTAOPass.setGBuffer).** SMAAPass, SSAARenderPass,
   TAARenderPass, SSAOPass, GTAOPass, SAOPass (normal and depth prepass
   via MRT).
-- **M12d, effect passes.** OutlinePass, BokehPass, AfterimagePass,
+- **M12d, effect passes (done; masks emulated without stencil).** OutlinePass, BokehPass, AfterimagePass,
   FilmPass, GlitchPass, DotScreenPass, HalftonePass, LUTPass (+ LUT
   loaders), RenderPixelatedPass, TexturePass, ClearPass,
   MaskPass/ClearMaskPass (stencil), selective bloom with layers.
-- Example `Effects`: a pass picker artboard (Rive UI) over one scene.
+- Example `Effects` (done): a pass picker (a Rive layout and view model) over one scene.
 
 ### M13: animation depth and Rive integration
 
