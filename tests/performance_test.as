@@ -8,6 +8,13 @@ import { Quaternion } from "../three/math/Quaternion";
 import { fromHalf, toHalf } from "../three/textures/DataUpload";
 import { MorphTexelInput, morphTexels, fastHalf } from "../three/renderers/gpu/MorphTexels";
 import { RenderTimings } from "../three/renderers/GPURenderer";
+import { cullObjects, prepareBounds, visible } from "../three/renderers/gpu/Culling";
+import { Parallel, SharedArray } from "rive/parallel";
+import { PerspectiveCamera } from "../three/cameras/PerspectiveCamera";
+import { Frustum } from "../three/math/Frustum";
+import { Object3D } from "../three/core/Object3D";
+import { Mesh } from "../three/objects/Mesh";
+import { BoxGeometry } from "../three/geometries/BoxGeometry";
 
 @editTime
 function near(expect: Expect, actual: f64, want: f64, eps: f64): void {
@@ -102,6 +109,44 @@ export class PerformanceTests extends Tests {
             test("projective matrices still take the full expansion", (expect) => {
                 const m = new Matrix4().makePerspective(-1, 1, 1, -1, 0.5, 10);
                 expect.that(m.determinant()).is(fullDeterminant(m));
+            });
+        });
+
+        group("parallel culling", () => {
+            test("cullObjects agrees with Frustum.intersectsObject", (expect) => {
+                const camera = new PerspectiveCamera(60, 1.5, 0.1, 50);
+                camera.position.set(0, 0, 10);
+                camera.updateMatrixWorld();
+                const vp = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+                const frustum = new Frustum().setFromProjectionMatrix(vp);
+                const planes = new Float64Array(24);
+                for (let p = 0; p < 6; p++) {
+                    const plane = frustum.planes[p];
+                    planes[p * 4] = plane.normal.x; planes[p * 4 + 1] = plane.normal.y;
+                    planes[p * 4 + 2] = plane.normal.z; planes[p * 4 + 3] = plane.constant;
+                }
+                const geometry = new BoxGeometry(1, 1, 1);
+                const objects: Array<Object3D> = [];
+                for (let i = 0; i < 400; i++) {
+                    const m = new Mesh(geometry);
+                    m.position.set(<f64>(i % 20) * 1.7 - 17, <f64>((i / 20) % 20) * 1.3 - 13, -<f64>(i % 7) * 6);
+                    m.scale.setScalar(0.5 + <f64>(i % 5) * 0.4);
+                    m.updateMatrixWorld();
+                    prepareBounds(m);
+                    objects.push(m);
+                }
+                const test = new Uint8Array(objects.length);
+                test.fill(1);
+                const out = new SharedArray<u8>(objects.length);
+                Parallel.run(cullObjects, objects, test, planes, out);
+                let inside = 0, agree = 0;
+                for (let i = 0; i < objects.length; i++) {
+                    const want = frustum.intersectsObject(objects[i]);
+                    if (want) inside++;
+                    if ((out[i] != 0) == want && visible(objects[i], planes) == want) agree++;
+                }
+                expect.that(agree).is(objects.length);
+                expect.that(inside > 0 && inside < objects.length).is(true);
             });
         });
 

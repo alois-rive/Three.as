@@ -3,7 +3,8 @@
 // (tools/bench.sh compares it with stored numbers). `--arg profile=1` logs
 // the renderer's per-stage CPU times (renderer.info.timings) every 300
 // frames; `--arg meshes=N` / `--arg instances=N` resize it; `--arg still=1`
-// keeps the meshes still (their object blocks unchanged from frame to frame).
+// keeps the meshes still (their object blocks unchanged from frame to frame);
+// `--arg serialcull=1` culls on the main lane only.
 
 import * as THREE from "../three/Three";
 import { Context } from "rive/host";
@@ -31,6 +32,7 @@ export class Benchmark extends THREE.ThreeLayout {
         const instances = context.arg("instances");
         if (instances != null) this.instances = I32.parseInt(instances!);
         if (this.profile) this.renderer!.info.timings.enabled = true;
+        if (context.arg("serialcull") != null) this.renderer!.parallelCulling = false;
         const scene = this.scene;
         scene.background = new THREE.Color(0x111318);
         scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 1.2));

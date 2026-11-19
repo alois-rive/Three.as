@@ -108,6 +108,8 @@ import { Box2 } from "../math/Box2";
 import { fromHalf } from "../textures/DataUpload";
 import { MorphTexelInput, morphTexels, fastHalf } from "./gpu/MorphTexels";
 import { Job, Jobs } from "rive/jobs";
+import { Parallel, SharedArray } from "rive/parallel";
+import { cullObjects, cullParts, prepareBounds } from "./gpu/Culling";
 import { Skeleton } from "../objects/Skeleton";
 import {
     MAX_LIGHTS, FRAME_VIEW_PROJ, FRAME_VIEW, FRAME_INV_VIEW_PROJ, FRAME_CAMERA_POS, FRAME_CAMERA_DIR, FRAME_AMBIENT,
@@ -696,6 +698,13 @@ export class GPURenderer {
     private materialEntries: Map<i32, MaterialEntry> = new Map<i32, MaterialEntry>();
     private itemPool: Array<DrawItem> = [];
     private itemsUsed: i32 = 0;
+    /// Cull big scenes (from PARALLEL_CULL_MIN candidates) in a Rive
+    /// parallel call (Rive-only; same result either way).
+    parallelCulling: bool = true;
+    private renderables: Array<Object3D> = [];
+    private cullTest: Uint8Array = new Uint8Array(0);
+    private cullOut: SharedArray<u8> = new SharedArray<u8>(0);
+    private cullPlanes: Float64Array = new Float64Array(24);
     // Pass descriptors reused from pass to pass (no garbage per frame).
     private attachmentList: Array<GPUColorAttachment> = [];
     private noAttachments: Array<GPUColorAttachment> = [];
@@ -2184,6 +2193,9 @@ export class GPURenderer {
         this.lights.length = 0;
         this.casterMeshes.length = 0;
         this.itemsUsed = 0;
+        const renderables = this.renderables;
+        renderables.length = 0;
+        let tested = 0;
         const stack = this.stack;
         stack.length = 0;
         stack.push(scene);
@@ -2196,13 +2208,43 @@ export class GPURenderer {
                 if (o instanceof Light) {
                     this.lights.push(o as Light);
                 } else if (o instanceof Mesh || o instanceof Line || o instanceof Points || o instanceof Sprite) {
-                    if (!o.frustumCulled || this.noCull || this.inFrustum(o)) this.collectObject(o, frame);
-                    else this.info.render.culled++;
+                    renderables.push(o);
+                    if (o.frustumCulled && !this.noCull) tested++;
                 }
             }
             const children = o.children;
             for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
         }
+        // Frustum culling: on every thread for big scenes (a parallel call),
+        // else here; then the draws, in scene order.
+        const n = renderables.length;
+        const parallel = this.parallelCulling && cullParts(tested) > 1;
+        if (parallel) {
+            if (this.cullTest.length < n) this.cullTest = new Uint8Array(max<i32>(n, this.cullTest.length * 2));
+            if (this.cullOut.length < n) this.cullOut = new SharedArray<u8>(max<i32>(n, this.cullOut.length * 2));
+            const test = this.cullTest;
+            for (let i = 0; i < n; i++) {
+                const o = unchecked(renderables[i]);
+                const t = o.frustumCulled && !this.noCull;
+                unchecked(test[i] = t ? 1 : 0);
+                if (t) prepareBounds(o);
+            }
+            const planes = this.cullPlanes;
+            for (let p = 0; p < 6; p++) {
+                const plane = _frustum.planes[p];
+                planes[p * 4] = plane.normal.x; planes[p * 4 + 1] = plane.normal.y; planes[p * 4 + 2] = plane.normal.z;
+                planes[p * 4 + 3] = plane.constant;
+            }
+            Parallel.run(cullObjects, renderables, test, planes, this.cullOut);
+        }
+        const out = this.cullOut;
+        for (let i = 0; i < n; i++) {
+            const o = unchecked(renderables[i]);
+            const keep = parallel ? out[i] != 0 : !o.frustumCulled || this.noCull || this.inFrustum(o);
+            if (keep) this.collectObject(o, frame);
+            else this.info.render.culled++;
+        }
+        renderables.length = 0;
     }
 
     private inFrustum(o: Object3D): bool {
