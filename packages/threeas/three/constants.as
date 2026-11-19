@@ -33,16 +33,41 @@ export const DepthFormat: i32 = 1026;
 export const DepthStencilFormat: i32 = 1027;
 export const RedFormat: i32 = 1028;
 export const RGFormat: i32 = 1030;
-// Compressed formats (CompressedTexture.format).
+// Compressed formats (CompressedTexture.format), three.js's values (the
+// WebGL enums).
 export const RGB_S3TC_DXT1_Format: i32 = 33776;
 export const RGBA_S3TC_DXT1_Format: i32 = 33777;
+export const RGBA_S3TC_DXT3_Format: i32 = 33778;
 export const RGBA_S3TC_DXT5_Format: i32 = 33779;
-export const RGBA_BPTC_Format: i32 = 36492;
+export const RGB_ETC1_Format: i32 = 36196;
 export const RGB_ETC2_Format: i32 = 37492;
 export const RGBA_ETC2_EAC_Format: i32 = 37496;
+/// ETC2 RGB8 with punch-through alpha (ThreeAS: three.js has no constant
+/// for it; the WebGL enum COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2).
+export const RGB_ETC2_A1_Format: i32 = 37494;
+export const R11_EAC_Format: i32 = 37488;
+export const SIGNED_R11_EAC_Format: i32 = 37489;
+export const RG11_EAC_Format: i32 = 37490;
+export const SIGNED_RG11_EAC_Format: i32 = 37491;
 export const RGBA_ASTC_4x4_Format: i32 = 37808;
+export const RGBA_ASTC_5x4_Format: i32 = 37809;
+export const RGBA_ASTC_5x5_Format: i32 = 37810;
+export const RGBA_ASTC_6x5_Format: i32 = 37811;
 export const RGBA_ASTC_6x6_Format: i32 = 37812;
-export const RGBA_ASTC_8x8_Format: i32 = 37818;
+export const RGBA_ASTC_8x5_Format: i32 = 37813;
+export const RGBA_ASTC_8x6_Format: i32 = 37814;
+export const RGBA_ASTC_8x8_Format: i32 = 37815;
+export const RGBA_ASTC_10x5_Format: i32 = 37816;
+export const RGBA_ASTC_10x6_Format: i32 = 37817;
+export const RGBA_ASTC_10x8_Format: i32 = 37818;
+export const RGBA_ASTC_10x10_Format: i32 = 37819;
+export const RGBA_ASTC_12x10_Format: i32 = 37820;
+export const RGBA_ASTC_12x12_Format: i32 = 37821;
+export const RGBA_BPTC_Format: i32 = 36492;
+export const RED_RGTC1_Format: i32 = 36283;
+export const SIGNED_RED_RGTC1_Format: i32 = 36284;
+export const RED_GREEN_RGTC2_Format: i32 = 36285;
+export const SIGNED_RED_GREEN_RGTC2_Format: i32 = 36286;
 
 // Texture.type / RenderTarget type
 export const UnsignedByteType: i32 = 1009;

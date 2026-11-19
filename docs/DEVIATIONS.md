@@ -989,15 +989,50 @@ use. The default repository state bakes nothing.
   multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
   `decompressSync` (no compression).
 - `CompressedTexture(mipmaps, width, height, format)`: `mipmaps` are
-  `CompressedMipmap(data, width, height)`; BC1/BC3/BC7, ETC2 and ASTC
-  (4x4, 6x6, 8x8) when the device has the feature (`bc`, `etc2`, `astc`
-  in `context.features()`); no CPU fallback. Sizes must be block
-  multiples. sRGB variants decode in the shader (`colorSpace`).
+  `CompressedMipmap(data, width, height)`. The GPU samples the blocks
+  directly for BC1/BC3/BC7, ETC2 (RGB8, RGBA8) and ASTC 4x4, 6x6, 8x8 when
+  the device has the feature (`bc`, `etc2`, `astc` in `context.features()`)
+  and the size is a block multiple. sRGB variants decode in the shader
+  (`colorSpace`). Mipmaps in `RGBAFormat` (three.js's KTX2Loader output
+  when Basis transcodes to RGBA32) upload as they are.
+- **CPU decoding fallback (ThreeAS addition; three.js has none for raw
+  formats, it transcodes Basis instead).** Any other compressed texture,
+  a format the device cannot sample, or one with `texture.cpuDecode` set,
+  is decoded on the CPU (`three/textures/decoders/`) and uploaded
+  uncompressed with its whole mip chain, keeping `format`, `colorSpace`
+  and the levels: RGBA8, or RGBA half floats for the signed formats (BC4 /
+  BC5 / EAC SNORM, to keep [-1, 1]). Decoded: BC1 (RGB, and RGBA with its
+  1-bit alpha), BC2, BC3, BC4, BC5, BC7, ETC1, ETC2 RGB8 / RGB8A1 / RGBA8,
+  EAC R11 / RG11, and ASTC LDR 2D in every footprint from 4x4 to 12x12
+  (void extents, weight grids, 1-4 partitions, dual planes, every LDR
+  endpoint mode; HDR modes decode to the error colour, magenta, per
+  partition). Not decoded: BC6H, ASTC HDR and 3D, PVRTC. Results match a
+  GPU's decoder (tools/make_texture_vectors.py checks them against Apple
+  silicon's): exactly for BC7, ETC2/EAC and sRGB ASTC; within one step
+  for linear ASTC (the decoder rounds the 16-bit result to 8 bits, Apple's
+  GPU keeps 12) and within two for BC1-BC5's interpolated values (the
+  decoder rounds the specification's thirds, fifths and sevenths; GPUs
+  differ there). Up to 21846 texels (a 128 x 128 chain) decode on the main
+  lane at the first draw (0.3 ms for the Textures example's 64 x 64 ASTC on
+  the interpreted tier); larger textures decode in a Rive job
+  (`decodeCompressedJob`) and sample nothing until it is done, a frame or
+  a few later (`texture.startDecode()`, which KTX2Loader calls, starts the
+  job at load). A 512 x 512 level takes about 20 ms (BC1), 40 ms (BC7) and
+  50-80 ms (ASTC) interpreted, 1-4 ms compiled (`--aot`). Each CPU decode
+  logs a line. `--arg threeCPUDecode` forces the fallback for every
+  compressed texture (screenshots of it on a machine with the formats).
+  `decodeCompressed(format, data, width, height, srgb)` is exported for
+  other uses. `RGB_ETC2_A1_Format` (ETC2 with punch-through alpha) is a
+  ThreeAS constant; three.js has none.
 - `KTX2Loader(context).detectSupport(renderer).load(name)` reads KTX2
-  BlobAssets holding a GPU format directly (the formats above, RGBA8,
-  RGBA16F). **No Basis Universal transcoding and no Zstandard**: ship
-  files in a format the target devices have (BC for desktop, ASTC/ETC2
-  for mobile). `setTranscoderPath` is accepted and ignored.
+  BlobAssets holding a GPU format directly: BC1-BC5, BC7, ETC2, EAC, ASTC
+  (all 2D footprints), RGBA8, RGBA16F. `detectSupport` fills
+  `workerConfig` (`astcSupported`, `etc2Supported`, `dxtSupported`,
+  `bptcSupported`, as three.js) from the device; a format it rules out
+  comes back as a CompressedTexture with `cpuDecode` set, so `parse`
+  returns a usable texture either way. Clear a `workerConfig` flag to
+  force the fallback for that family. **No Basis Universal transcoding and
+  no Zstandard**. `setTranscoderPath` is accepted and ignored.
 - Note for test suites: `rive --test` names blobs by file stem, so give
   blob files distinct stems (`studio_rgbe.hdr`, `studio_exr.exr`).
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),

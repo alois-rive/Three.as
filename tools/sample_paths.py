@@ -32,6 +32,10 @@ PLACES = {
     # make_ktx2_samples.py
     "checker_bc1.ktx2.zlib": [_example("textures"), FIXTURES],
     "checker_astc.ktx2.zlib": [_example("textures"), FIXTURES],
+    "checker_astc6x5.ktx2.zlib": [FIXTURES],
+    "ktx2_expected.zlib": [FIXTURES],
+    # make_texture_vectors.py
+    "texture_vectors.bin.zlib": [FIXTURES],
     # make_lut_samples.py
     "warm_grade.cube": [_example("effects")],
     "warm_grade_3dl.3dl": [_example("effects")],

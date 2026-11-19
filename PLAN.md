@@ -203,7 +203,9 @@ three.js lighting setups look the same.
 - **M7e, compressed textures (done; no Basis transcoding).** CompressedTexture with BC, ETC2 and ASTC
   (Rive's `bc` / `etc2` / `astc` features), KTX2Loader for KTX2 files that
   hold those formats directly (Basis transcoding later, if feasible in a
-  job).
+  job). Since: a CPU decoding fallback (BC1-5, BC7, ETC1/2, EAC, ASTC LDR
+  in every footprint, in a job for large textures) for devices without the
+  format, browsers included.
 - Examples `Environments` (cube, .hdr and .exr environments, a roughness
   sweep, CubeCamera reflections) and `Textures` (uv transforms, uv1, KTX2).
 
