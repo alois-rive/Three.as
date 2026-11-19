@@ -246,6 +246,10 @@
     <ScriptAsset file="three/textures/FramebufferTexture.as" isModule="true" codeFileId="0:2502608" folderPath="three/textures" name="FramebufferTexture" id="0:280"/>
     <ScriptAsset file="three/textures/Source.as" isModule="true" codeFileId="0:2503841" folderPath="three/textures" name="Source" id="0:281"/>
     <ScriptAsset file="three/textures/Texture.as" isModule="true" codeFileId="0:2505583" folderPath="three/textures" name="Texture" id="0:282"/>
+    <ScriptAsset file="three/textures/decoders/ASTCDecoder.as" isModule="true" codeFileId="0:2755730" folderPath="three/textures/decoders" name="ASTCDecoder" id="0:2716040"/>
+    <ScriptAsset file="three/textures/decoders/BCDecoder.as" isModule="true" codeFileId="0:2783834" folderPath="three/textures/decoders" name="BCDecoder" id="0:2716041"/>
+    <ScriptAsset file="three/textures/decoders/ETCDecoder.as" isModule="true" codeFileId="0:2807369" folderPath="three/textures/decoders" name="ETCDecoder" id="0:2716042"/>
+    <ScriptAsset file="three/textures/decoders/TextureDecoders.as" isModule="true" codeFileId="0:2819759" folderPath="three/textures/decoders" name="TextureDecoders" id="0:2716043"/>
     <ShaderAsset file="three_shaders_lib_three_chunks.wgsl" codeFileId="0:2514092" name="three/shaders/lib/three_chunks" id="0:283"/>
     <ShaderAsset file="three_shaders_post_afterimage.wgsl" codeFileId="0:2529728" name="three/shaders/post/afterimage" id="0:284"/>
     <ShaderAsset file="three_shaders_post_bloom.wgsl" codeFileId="0:2531123" name="three/shaders/post/bloom" id="0:285"/>

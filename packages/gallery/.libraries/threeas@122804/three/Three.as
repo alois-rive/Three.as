@@ -128,6 +128,10 @@ export { toHalf, fromHalf } from "./textures/DataUpload";
 export * from "./textures/CanvasTexture";
 export * from "./textures/CubeTexture";
 export * from "./textures/CompressedTexture";
+export {
+    decodeCompressed, canDecodeCompressed, decodesToHalfFloat, compressedBlockWidth, compressedBlockHeight,
+    compressedBlockBytes, compressedLevelBytes, DecodedLevels,
+} from "./textures/decoders/TextureDecoders";
 export * from "./loaders/CubeTextureLoader";
 export * from "./loaders/Loader";
 export * from "./loaders/LoadingManager";
