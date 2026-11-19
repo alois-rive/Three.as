@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestone 14 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 14 and 15 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -326,8 +326,9 @@ use. The default repository state bakes nothing.
   `stencilZFail`, `stencilZPass`, with three.js's constants. Colour passes
   use a `depth24plusStencil8` target (24-bit depth, was 32-bit float).
   **Stencil starts at 0 in every pass and does not survive across
-  passes**, and there is no `renderer.clearStencil()` or `onAfterRender`
-  mid-pass: order stencil draws with `renderOrder` within one render.
+  passes**, and there is no `renderer.clearStencil()` mid-pass (and
+  `onAfterRender` runs after the pass, see [Object hooks](#object-hooks-onbeforerender-onafterrender)):
+  order stencil draws with `renderOrder` within one render.
 - `depthFunc` (NeverDepth ... NotEqualDepth) and `polygonOffset` /
   `polygonOffsetFactor` / `polygonOffsetUnits` work (polygonOffset as the
   pipeline's depth bias). At most 511 distinct depth/stencil/offset
@@ -666,8 +667,9 @@ use. The default repository state bakes nothing.
   emissive_strength, clearcoat, sheen, ior, specular, transmission, volume,
   iridescence, anisotropy, dispersion (with their textures),
   KHR_texture_transform, KHR_mesh_quantization, EXT_texture_webp,
-  EXT_mesh_gpu_instancing (with `_COLOR_0`) and EXT_meshopt_compression;
-  sparse accessors too. Not read: Draco, KTX2 / Basis textures
+  EXT_mesh_gpu_instancing (with `_COLOR_0`), EXT_meshopt_compression and
+  KHR_draco_mesh_compression (`setDRACOLoader`); sparse accessors too. Not
+  read: KTX2 / Basis textures
   (KHR_texture_basisu), KHR_materials_variants, TEXCOORD_2 and up (the
   renderer has two uv sets). A file that *requires* another extension
   fails (`loader.error`), as three.js throws. `gltf.parser`,
@@ -677,9 +679,50 @@ use. The default repository state bakes nothing.
   `setMeshoptDecoder`, as three.js's module. It reads the attribute codec
   version 0 (meshoptimizer's default for EXT_meshopt_compression), the
   triangle and index codecs and the three filters.
+- **The Draco decoder is AnimaScript** (`three/addons/libs/draco`, Google's
+  Draco 1.5.7 C++ decoder ported, Apache 2.0), not draco_decoder.js /
+  .wasm in Web Workers. `three/addons/libs/draco/draco_decoder` exports the
+  decoder's JavaScript API under its names (`Decoder` with
+  `GetEncodedGeometryType`, `DecodeArrayToMesh`, `DecodeArrayToPointCloud`,
+  `GetAttributeId`, `GetAttributeByUniqueId`, `GetTrianglesUInt32Array`,
+  `GetAttributeFloatForAllPoints`, `GetAttributeDataArrayForAllPoints`;
+  `Mesh`, `PointCloud`, `PointAttribute`, `Status`, the `POSITION` ... and
+  `DT_*` constants), with no `destroy` (memory is managed) and metadata as
+  `pointCloud.metadata` (a `GeometryMetadata` with `getEntryString`,
+  `getEntryInt` ...) instead of a `MetadataQuerier`;
+  `GetAttributeDataArrayForAllPoints` returns the values (a Float64Array,
+  null when they do not fit the type) instead of filling a heap pointer.
+  It reads bitstreams up to 2.2 (meshes) and 2.3 (point clouds), tested
+  from 1.1 (Draco 0.9) on:
+  sequential and Edgebreaker (standard, valence, predictive) connectivity,
+  every attribute decoder, prediction scheme and transform, metadata, and
+  sequential and kd-tree point clouds. Not read: kd-tree point clouds
+  older than 2.3 (Draco 1.3), whose coders were not ported.
+- **DRACOLoader** (`three/addons/loaders/DRACOLoader`, r170): `load(name)`
+  decodes the BlobAsset at once and returns the BufferGeometry (or null,
+  with `loader.error`), `loadAsync(url)` / `parseAsync(bytes)` return a
+  `Promise<BufferGeometry>` and decode in a Rive job (`decodeDraco`, in
+  place of the worker), `parse(buffer)` returns the geometry (three.js's
+  `parse(buffer, onLoad, onError)`). `decodeDracoFile(buffer, attributeIDs,
+  attributeTypes, vertexColorSpace)` returns the geometry instead of calling
+  back; `attributeIDs` is a `Map<string, i32>` of unique ids (glTF's case;
+  null reads attributes by type, `defaultAttributeIDs`), `attributeTypes` a
+  `Map<string, string>` of typed array names. `decodeGeometry(buffer,
+  taskConfig)` returns the job's promise; `DRACOTaskConfig` holds the task
+  config as arrays (a Map does not cross to a job), with
+  `attributeNormalized` for glTF's accessors. `setDecoderPath`,
+  `setDecoderConfig`, `setWorkerLimit`, `preload` and `dispose` are kept
+  and do nothing. **Attributes are Float32Arrays** (ThreeAS's
+  BufferAttribute): an integer type converts, and where three.js keeps
+  normalized integers (colours, normalized glTF accessors) they are scaled
+  to [0, 1] (signed: [-1, 1]) and `normalized` stays false. A .drc's
+  colours read as Float32Array (the default) are Draco's values (in [0, 1]
+  only when the file flags them normalized), as three.js; read 8-bit ones as
+  `Uint8Array` (`defaultAttributeTypes`) for [0, 1].
 - **`loadAsync(name)` / `parseAsync(bytes)` return a Rive `Promise<GLTF>`**
-  and decode in a Rive job (`decodeGLTF`: the container, meshopt views and
-  every accessor, handed back as one Float32Array); the scene is built on
+  and decode in a Rive job (`decodeGLTF`: the container, meshopt views,
+  Draco primitives and every accessor, handed back as one Float32Array and
+  the Draco geometries); the scene is built on
   the main lane when the job is done. Images decode asynchronously either
   way. Await it in an `async` method, or use the promise's `andThen`. The
   scene's objects are still created in one main-lane call, and vertex data
@@ -989,15 +1032,50 @@ use. The default repository state bakes nothing.
   multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
   `decompressSync` (no compression).
 - `CompressedTexture(mipmaps, width, height, format)`: `mipmaps` are
-  `CompressedMipmap(data, width, height)`; BC1/BC3/BC7, ETC2 and ASTC
-  (4x4, 6x6, 8x8) when the device has the feature (`bc`, `etc2`, `astc`
-  in `context.features()`); no CPU fallback. Sizes must be block
-  multiples. sRGB variants decode in the shader (`colorSpace`).
+  `CompressedMipmap(data, width, height)`. The GPU samples the blocks
+  directly for BC1/BC3/BC7, ETC2 (RGB8, RGBA8) and ASTC 4x4, 6x6, 8x8 when
+  the device has the feature (`bc`, `etc2`, `astc` in `context.features()`)
+  and the size is a block multiple. sRGB variants decode in the shader
+  (`colorSpace`). Mipmaps in `RGBAFormat` (three.js's KTX2Loader output
+  when Basis transcodes to RGBA32) upload as they are.
+- **CPU decoding fallback (ThreeAS addition; three.js has none for raw
+  formats, it transcodes Basis instead).** Any other compressed texture,
+  a format the device cannot sample, or one with `texture.cpuDecode` set,
+  is decoded on the CPU (`three/textures/decoders/`) and uploaded
+  uncompressed with its whole mip chain, keeping `format`, `colorSpace`
+  and the levels: RGBA8, or RGBA half floats for the signed formats (BC4 /
+  BC5 / EAC SNORM, to keep [-1, 1]). Decoded: BC1 (RGB, and RGBA with its
+  1-bit alpha), BC2, BC3, BC4, BC5, BC7, ETC1, ETC2 RGB8 / RGB8A1 / RGBA8,
+  EAC R11 / RG11, and ASTC LDR 2D in every footprint from 4x4 to 12x12
+  (void extents, weight grids, 1-4 partitions, dual planes, every LDR
+  endpoint mode; HDR modes decode to the error colour, magenta, per
+  partition). Not decoded: BC6H, ASTC HDR and 3D, PVRTC. Results match a
+  GPU's decoder (tools/make_texture_vectors.py checks them against Apple
+  silicon's): exactly for BC7, ETC2/EAC and sRGB ASTC; within one step
+  for linear ASTC (the decoder rounds the 16-bit result to 8 bits, Apple's
+  GPU keeps 12) and within two for BC1-BC5's interpolated values (the
+  decoder rounds the specification's thirds, fifths and sevenths; GPUs
+  differ there). Up to 21846 texels (a 128 x 128 chain) decode on the main
+  lane at the first draw (0.3 ms for the Textures example's 64 x 64 ASTC on
+  the interpreted tier); larger textures decode in a Rive job
+  (`decodeCompressedJob`) and sample nothing until it is done, a frame or
+  a few later (`texture.startDecode()`, which KTX2Loader calls, starts the
+  job at load). A 512 x 512 level takes about 20 ms (BC1), 40 ms (BC7) and
+  50-80 ms (ASTC) interpreted, 1-4 ms compiled (`--aot`). Each CPU decode
+  logs a line. `--arg threeCPUDecode` forces the fallback for every
+  compressed texture (screenshots of it on a machine with the formats).
+  `decodeCompressed(format, data, width, height, srgb)` is exported for
+  other uses. `RGB_ETC2_A1_Format` (ETC2 with punch-through alpha) is a
+  ThreeAS constant; three.js has none.
 - `KTX2Loader(context).detectSupport(renderer).load(name)` reads KTX2
-  BlobAssets holding a GPU format directly (the formats above, RGBA8,
-  RGBA16F). **No Basis Universal transcoding and no Zstandard**: ship
-  files in a format the target devices have (BC for desktop, ASTC/ETC2
-  for mobile). `setTranscoderPath` is accepted and ignored.
+  BlobAssets holding a GPU format directly: BC1-BC5, BC7, ETC2, EAC, ASTC
+  (all 2D footprints), RGBA8, RGBA16F. `detectSupport` fills
+  `workerConfig` (`astcSupported`, `etc2Supported`, `dxtSupported`,
+  `bptcSupported`, as three.js) from the device; a format it rules out
+  comes back as a CompressedTexture with `cpuDecode` set, so `parse`
+  returns a usable texture either way. Clear a `workerConfig` flag to
+  force the fallback for that family. **No Basis Universal transcoding and
+  no Zstandard**. `setTranscoderPath` is accepted and ignored.
 - Note for test suites: `rive --test` names blobs by file stem, so give
   blob files distinct stems (`studio_rgbe.hdr`, `studio_exr.exr`).
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),
@@ -1147,6 +1225,135 @@ use. The default repository state bakes nothing.
   a mix ShaderPass): see the gallery's `examples/effects/effects.as` and
   `examples/effects/bloom_mix.wgsl`.
 
+## Object hooks: onBeforeRender, onAfterRender
+
+three.js calls `object.onBeforeRender(renderer, scene, camera, geometry,
+material, group)` right before an object's draw and `onAfterRender` right
+after it, inside the render. A Rive render pass cannot be interrupted for
+another render, so:
+
+- **They are methods to override** (no closures): `class Mirror extends
+  Mesh { override onBeforeRender(renderer, scene, camera, geometry,
+  material, group): void { ... } }`, with `renderer` a GPURenderer and
+  `group` always null. The renderer calls them for every object it draws
+  in a render (visible, in the camera's layers, not frustum culled), once
+  per render, in scene order (three.js: per draw, in draw order). The base
+  methods mark the object as hookless (`noBeforeRender`,
+  `noAfterRender`) the first time they run, and the renderer skips it from
+  then on, so an override must not call `super.onBeforeRender`.
+- **onBeforeRender runs before the render's pass.** It may render (into
+  other targets: `renderer.render` nests, with the outer render's viewport
+  override and ArrayCamera state set aside) or copy; when it did, the
+  render collects its draws again (without calling the hooks twice), so
+  what it rendered and moved is drawn. Nested renders call the hooks of
+  what they draw too (a mirror seen in the water renders its reflection
+  for the water's camera), except that an object whose hook already
+  rendered for the outermost render is not called again by the nested
+  renders of that render's later hooks: they draw it with what it rendered
+  for the outermost camera. In three.js, where each hook runs just before
+  its object's draw, the last call before a draw is always for the
+  drawing camera; here the hooks run before every draw, and without that
+  rule a later object's nested renders would leave an earlier one showing
+  another camera's reflection. Reflections of reflections are therefore
+  exact only for objects whose hooks run later in the scene order.
+- **onAfterRender runs after the render's pass**, for the same objects in
+  the same order. It may copy the framebuffer (`copyFramebufferToTexture`)
+  and draw over it (`renderBufferDirect`, or a `render` with `autoClear`
+  off): the first time a hook loads the colour or depth of a pass that did
+  not keep them (MSAA samples, depth), that render is drawn again with them
+  kept (the pass keeps them from then on).
+- **`renderer.renderBufferDirect(camera, scene, geometry, material,
+  object, group)`** draws a Mesh (its `matrixWorld`) with the given
+  geometry and material over the current target: no clear, no culling, no
+  lights or background (`scene` and `group` are only accepted). Each call
+  is a pass of its own.
+- Renders nested in hooks do not reset `renderer.info` (only the outermost
+  render does).
+
+## Addon objects (Reflector, Refractor, Water, Water2, Sky, Lensflare, MarchingCubes)
+
+three.js r170's `examples/jsm/objects`, in `three/addons/objects/` (and
+`WaterRefractionShader` in `three/addons/shaders/`), with their GLSL ported
+to WGSL in `three/shaders/objects/` (each carries the chunks it needs
+between `// @chunks-begin` / `// @chunks-end`, refreshed by
+`tools/make_shader_chunks.py`). Their shader objects are
+`ShaderDefinition`s (`Reflector.ReflectorShader`, `Refractor.RefractorShader`,
+`Water2`'s `Water.WaterShader`, `Sky.SkyShader`, `LensflareElement.Shader`,
+`WaterRefractionShader`); their materials are ShaderMaterials, reached
+through `material as ShaderMaterial` or a typed `shaderMaterial` getter
+(Water, Water2, Sky). What differs everywhere:
+
+- **Options are typed classes** with three.js's names and defaults:
+  `ReflectorOptions`, `RefractorOptions`, `WaterOptions` (Water.js),
+  `Water2Options` (Water2.js); colours are hex numbers, `shader` a
+  ShaderDefinition. Water.js and Water2.js both export `Water`: import
+  Water2's as `import { Water as Water2 } from ".../objects/Water2"`
+  (`Addons.as` exports it as `Water2`, as three.js's Addons.js).
+- **The virtual cameras render in `onBeforeRender`**, before the pass (see
+  [Object hooks](#object-hooks-onbeforerender-onafterrender)), with
+  `renderer.shadowMap.autoUpdate` off as three.js (shadow maps are those
+  of the previous render). There is no `renderer.xr`.
+- **Oblique clipping writes WebGPU's [0, 1] depth**, as three.js's
+  ReflectorNode with the WebGPU coordinate system: the clip plane is
+  scaled by `1 / (C . q)` and `clipBias` subtracted from the third row's z
+  (WebGL's form, `2 / (C . q)` and `+ 1 - clipBias`, maps to [-1, 1]).
+  The texture matrices are three.js's; Water2's shader reads the
+  projected depth as `2 z - 1`, which is WebGL's.
+- `Reflector.updateMatrices(camera)` / `Refractor.updateMatrices(camera)`
+  (Rive-only) are the first half of onBeforeRender: virtual camera,
+  texture matrix and oblique projection, without rendering (false when
+  there is nothing to render). `obliqueClip(projection, plane, clipBias)`
+  is the shared Lengyel step.
+- **Render targets hold their rows top first** (see [Render target
+  features](#render-target-features)), so the shaders read them at
+  `(u, 1 - v)`; images (normal, flow and dudv maps, flare textures) too.
+- **One sampler per shader**, the first texture's: textures that repeat
+  (the normal and dudv maps) come first in the uniforms, and render
+  target coordinates are clamped by hand (`clamp(uv, 0, 1)`).
+- **Water** (Water.js): `lights: true` (getShadowMask is the product of
+  the frame's light shadows when the water receives shadows); the mirror
+  target is **HalfFloatType** (three.js renders linear colour into an
+  8-bit target; an 8-bit target here holds tone-mapped sRGB). `time` is
+  advanced by you (`water.shaderMaterial.uniform<f64>("time").value +=
+  seconds`), as three.js's example.
+- **Water2**: without `normalMap0` / `normalMap1` the maps are flat
+  (three.js loads `textures/water/Water_*_M_Normal.jpg` by URL); its flow
+  clock is a Clock fed by **`water.tick(seconds)`** (Rive-only; three.js's
+  Clock reads the wall clock); USE_FLOWMAP selects the fragment entry
+  point (`fs_flowmap`), and `flowDirection` and `tFlowMap` are both always
+  uniforms.
+- **Sky**: as three.js; for environment lighting,
+  `PMREMGenerator.fromScene(skyScene)` renders at the start of the next
+  render, so the scene must still hold a sky then (give it a Sky of its
+  own rather than moving the one in the main scene, as three.js's ocean
+  example does).
+- **Lensflare** does its work in **onAfterRender** (three.js:
+  onBeforeRender at its own draw, last thanks to `renderOrder = Infinity`;
+  here `renderOrder` is 2^30 - 1): it copies the 16 x 16 pixels at the
+  flare (copyFramebufferToTexture, at whole pixels), draws the magenta
+  occlusion quad, copies it, restores the pixels and draws the elements
+  with renderBufferDirect, one pass each, with no pixel read back. The
+  occlusion map is read texel by texel (`textureLoad`); element textures
+  are premultiplied (colour and alpha scaled by the visibility together).
+  `LensflareElement(texture, size, distance, color)` takes a `Color?`
+  (null: white). A flare is drawn in every render that draws it,
+  reflections included, as three.js: put it on a layer only the main
+  camera sees to keep it (and its passes) out of them.
+- **MarchingCubes(resolution, material, enableUvs, enableColors,
+  maxPolyCount)**: three.js's field, `addBall`, `addPlaneX/Y/Z`, `setCell`,
+  `getCell`, `blur`, `reset` and `update` (the geometry rebuilt on the CPU
+  and uploaded each update, drawn up to `drawRange.count`). Its
+  per-instance closures are methods (the polygonization helpers private);
+  `addBall`'s `colors` is a `Color?` (`new Color(0xff0000)` for a hex,
+  `new Color(r, g, b)` for an array; components are not clamped as
+  three.js clamps arrays; the default is the ball's position as linear
+  rgb, as three.js); `maxPolyCount` is a field; `uvArray` / `colorArray`
+  are empty, not undefined, when disabled; there is no
+  `setUsage(DynamicDrawUsage)`; triangles past `maxPolyCount` are counted
+  (and warned about) but not written, where JavaScript drops the
+  out-of-range writes. About 2.5 ms an update at resolution 28 with ten
+  balls (interpreted).
+
 ## Cube maps and CubeCamera
 
 - `CubeTextureLoader(context).load([px, nx, py, ny, pz, nz])` takes six
@@ -1183,6 +1390,142 @@ use. The default repository state bakes nothing.
   CameraHelper, light helpers, VertexNormalsHelper). Helper colour
   arguments are hex numbers; the light helpers take `-1` for "the light's
   colour" (three.js's undefined). Lines are one pixel wide.
+
+## Audio
+
+three.js's audio classes (`src/audio/`, `AudioLoader`, the
+PositionalAudioHelper addon) sit on Web Audio; here they sit on Rive's
+`rive/audio`. The names, signatures and defaults are three.js's and Web
+Audio's; what differs:
+
+- **One mixer per listener, on the audio thread.** Each `AudioListener`
+  owns its `context` (an `AudioContext`, ThreeAS's audio engine, not a Web
+  Audio one), which starts one `AudioMixProcessor` (`Audio.start`) mixing
+  every `Audio` and `PositionalAudio` made with that listener, at most
+  `MIX_MAX_VOICES` (32) playing at once. Buffers are decoded once to
+  interleaved f32 frames in a shared `Blob` (`AudioSource.toBlob`, on a job
+  thread) and read in place by the processor. The main lane publishes each
+  voice's parameters through a `Snapshot` every update (the panning matrix
+  with distance and cone gains, volume, master volume, rate, loop points,
+  filters, interaural delays, head-shadow cutoffs); the processor sends back
+  its clock, each voice's position and which plays ended. `process`
+  allocates nothing but a Blob handle when a new buffer arrives (a
+  processor cannot receive shared objects through a ring, so the main lane
+  sends the blob's id). Parameter changes ramp over each block (a 10 ms
+  one-pole step), stops and pauses fade out over 10 ms, starts from an
+  offset and resumes fade in over 5 ms (a start from 0 keeps its attack), so
+  nothing clicks. The mixer fades out while nothing publishes for 0.5 s (the
+  script stopped advancing or went away) and stops when its context is
+  collected.
+- **When audio updates.** As three.js, in `updateMatrixWorld`: the
+  listener's override calls `listener.update()`, which computes every
+  source from the listener's and the sources' world matrices and publishes
+  the mix, so a render each frame keeps it current. Headless runs advance
+  without rendering, and scripts may not render every frame: call
+  `listener.update()` from `advance` (it updates the world matrices it
+  needs first; the Audio example does). Sources update in the listener's
+  update, not in their own `updateMatrixWorld`.
+- **`context` / `AudioContext`.** `listener.context` (also `audio.context`)
+  is the engine: `currentTime` (the mixer's clock), `sampleRate`, `state`
+  ("suspended" until the mixer runs, on the web until the page's first
+  click, tap or key press; "running"; "closed"), `resume()`, `suspend()`
+  (fades every voice out), `close()`, `createBiquadFilter()`,
+  `createOscillator()`, `createAnalyser()`, `createGain()`,
+  `createPanner()`, `createBuffer(channels, length, rate)` and
+  `decodeAudioData(bytes)` (a `Promise<AudioBuffer>`, WAV only).
+  `AudioContext.getContext()` / `setContext()` do not exist: there is no
+  shared Web Audio context, each listener has its own.
+- **Web Audio nodes are stand-ins** (`three/audio/AudioNodes`): `GainNode`
+  (`audio.gain`, `listener.gain`), `PannerNode` (`positionalAudio.panner`),
+  `BiquadFilterNode`, `OscillatorNode`, `AnalyserNode` and `AudioBuffer`,
+  with Web Audio's fields and defaults. `AudioParam` automation
+  (`setTargetAtTime`, `linearRampToValueAtTime` ...) sets the value at once
+  (the mixer ramps it); `connect` / `disconnect` are no-ops (the routing is
+  fixed: source, filters, panner, gain, listener gain). No other node types
+  (convolver, delay, dynamics compressor, wave shaper, media streams).
+- **Sources.** `setBuffer(audioBuffer)` takes an `AudioBuffer` (from
+  `AudioLoader`, `decodeAudioData` or `createBuffer`; created channel data
+  is taken when the buffer first plays, later writes do not reach the
+  mixer). `setMediaElementSource(source)` takes a Rive `AudioSource` (an
+  audio asset, `context.audio(name)`) and decodes it into a buffer; unlike
+  three.js's media elements it keeps playback control (`play`, `pause` ...).
+  `setNodeSource(oscillator)` takes an `OscillatorNode` (sine, square,
+  sawtooth, triangle; naive waveforms), heard between its `start()` and
+  `stop()`, without playback control as in three.js.
+  `setMediaStreamSource` is not ported (no microphone input).
+- **Transport.** `play(delay)`, `pause()`, `stop(delay)`, `setLoop`,
+  `setLoopStart/End`, `offset`, `setPlaybackRate`, `setDetune` (applied as
+  `playbackRate x 2^(detune / 1200)`, linear interpolation), `setVolume`,
+  `autoplay` behave as three.js. `duration` is 0 for "to the end" (three.js:
+  undefined). `pause()` takes the position from the mixer (three.js
+  estimates it from the clock) and `play()` after it resumes exactly where
+  the mixer held it. Playback rates are clamped at 0 (no reverse play).
+- **`onEnded`.** A play that reaches its end calls `onEnded()` (override it)
+  and dispatches an `"ended"` event (`addEventListener("ended", listener)`),
+  three.js's `source.onended`, about a frame after the end.
+- **Filters.** `setFilter(s)` and `listener.setFilter` take
+  `BiquadFilterNode`s (Web Audio's eight types and coefficients); at most
+  three per voice are applied: two of the Audio's and the listener's (which
+  filters each voice of its listener, the same as filtering their sum).
+- **PositionalAudio's panner.** Web Audio's distance models (`linear`,
+  `inverse`, `exponential`, with `refDistance`, `maxDistance`,
+  `rolloffFactor`), sound cones and azimuth are computed exactly as the Web
+  Audio spec writes them, in the listener's frame (forward -Z of its world
+  matrix, `up` its `up` vector, as three.js passes them). Panning is
+  **equal-power** (`panner.panningModel = "equalpower"`, the spec's mono and
+  stereo laws). three.js sets `"HRTF"`, which keeps that default here, but
+  there is no HRTF convolution: "HRTF" is equal-power panning plus a light
+  interaural delay (Woodworth's spherical head, 0.66 ms at the side, on the
+  far ear) and a head-shadow one-pole low-pass (the far ear down to 3 kHz at
+  the side, both ears down to 9 kHz behind). Equal-power panning cannot tell
+  front from back by level; the behind low-pass is the only cue. Positions
+  are in scene units; no Doppler (Web Audio removed it too).
+  `PositionalAudio` also keeps the last update's `distanceGain`,
+  `coneGain`, `azimuth` and `elevation` (Rive-only, to drive visuals).
+- **AudioAnalyser** / `AnalyserNode`: the audio thread sends the Audio's
+  latest samples every block (a PositionalAudio's after its panner and
+  before its volume, a plain Audio's after its volume, as three.js taps
+  `getOutput()`); the FFT runs on the main lane in `getFrequencyData`, with
+  Web Audio's Blackman window, `smoothingTimeConstant`, `minDecibels` and
+  `maxDecibels`. `fftSize` up to 4096 (Web Audio: 32768); at most four
+  analysers per listener. `getFloatFrequencyData`, `getByteTimeDomainData`
+  and `getFloatTimeDomainData` work too. Data comes back one frame late.
+- **AudioLoader** (`new AudioLoader(context)`): `load(name)` returns an
+  `AudioBuffer` at once for the Rive **audio asset** `name` (an `AudioAsset`
+  in the RML: WAV, MP3 or FLAC, which Rive decodes) and fills it when the
+  decode job ends (`buffer.ready`, `buffer.promise`); an Audio may play it
+  before then and starts once it is ready. No callbacks.
+  `loadAsync(url)` resolves with the decoded buffer: an audio asset's name,
+  or **WAV bytes** from an https: url (where the host allows the network) or
+  a blob asset, decoded by ThreeAS in a job (PCM 8 to 32-bit, float 32 and
+  64-bit, two channels at most). Rive decodes MP3 and FLAC only from its own
+  audio assets, not from bytes, so fetched MP3s cannot play.
+- **PositionalAudioHelper** (`three/addons/helpers/PositionalAudioHelper`):
+  lines take one material here, so the helper is a Line drawing the inner
+  cone with `materialInnerAngle` (three.js's `material[1]`) and holds a
+  child Line, `outer`, drawing the outer cone with `materialOuterAngle`
+  (`material[0]`); `outer.visible` is false when the cones are equal.
+- **Where processors cannot run** (`Audio.processorSampleRate()` is 0: a
+  web build without threads, i.e. a page without cross origin isolation,
+  or `rive --test`), or after the mixer failed `maxRestarts` (3) times,
+  `context.fallback` is true and Audio objects whose buffer came from a
+  Rive audio asset play through Rive's `Audio.play`: volume, distance and
+  cone gains (as one level), loops replayed from `loopStart`, but no
+  panning, rate, detune, filters or analyser data.
+- **Browsers start audio only after a gesture.** In a browser the
+  processor runs in an audio worklet whose AudioContext the Rive runtime
+  makes when the first processor starts, and resumes on the page's first
+  `pointerdown`, `pointerup`, `keydown` or `touchend` (warning "script audio
+  waits for a click, tap or key press on the page" after a second). The
+  mixer starts with the listener's first update, so any later click on the
+  page starts the sound; until then `context.state` is "suspended". A play
+  button (the Audio example's) is that click. Natively audio starts at once.
+- **Checking it.** `rive <dir> --render-audio=out.wav --advance=Ns`
+  renders the mixer's output headless (sounds Rive plays itself are not in
+  it). `tools/check_audio.py` renders the gallery's `AudioCheck` artboard
+  through panning, distance, cone, loop, stop, pause and analyser scenarios
+  and measures the WAVs against the formulas; `tests/audio_test.as` checks
+  the math and drives the mixer core directly, and logs its cost per block.
 
 ## Rive-only additions
 

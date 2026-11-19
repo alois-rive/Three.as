@@ -128,6 +128,10 @@ export { toHalf, fromHalf } from "./textures/DataUpload";
 export * from "./textures/CanvasTexture";
 export * from "./textures/CubeTexture";
 export * from "./textures/CompressedTexture";
+export {
+    decodeCompressed, canDecodeCompressed, decodesToHalfFloat, compressedBlockWidth, compressedBlockHeight,
+    compressedBlockBytes, compressedLevelBytes, DecodedLevels,
+} from "./textures/decoders/TextureDecoders";
 export * from "./loaders/CubeTextureLoader";
 export * from "./loaders/Loader";
 export * from "./loaders/LoadingManager";
@@ -148,6 +152,14 @@ export * from "./animation/AnimationObjectGroup";
 // three.js exports AnimationUtils as a namespace: its functions are static
 // methods of the AnimationUtils class here (or import them by path).
 export { AnimationUtils } from "./animation/AnimationUtils";
+
+export * from "./audio/AudioListener";
+export * from "./audio/Audio";
+export * from "./audio/PositionalAudio";
+export * from "./audio/AudioAnalyser";
+export * from "./audio/AudioContext";
+export * from "./audio/AudioNodes";
+export * from "./loaders/AudioLoader";
 
 export * from "./renderers/GPURenderer";
 export * from "./renderers/RenderTarget";

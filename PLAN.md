@@ -36,7 +36,7 @@ packages/threeas/   the engine, published as the Rive library "threeas"
     Three.as        re-exports everything: import * as THREE from "../three/Three"
     constants.as    three.js's constants
     math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
-    textures/ loaders/ animation/ extras/
+    textures/ loaders/ animation/ extras/ audio/
                     as three.js's src/
     renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
     rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
@@ -203,7 +203,9 @@ three.js lighting setups look the same.
 - **M7e, compressed textures (done; no Basis transcoding).** CompressedTexture with BC, ETC2 and ASTC
   (Rive's `bc` / `etc2` / `astc` features), KTX2Loader for KTX2 files that
   hold those formats directly (Basis transcoding later, if feasible in a
-  job).
+  job). Since: a CPU decoding fallback (BC1-5, BC7, ETC1/2, EAC, ASTC LDR
+  in every footprint, in a job for large textures) for devices without the
+  format, browsers included.
 - Examples `Environments` (cube, .hdr and .exr environments, a roughness
   sweep, CubeCamera reflections) and `Textures` (uv transforms, uv1, KTX2).
 
@@ -455,6 +457,135 @@ The plan this milestone started from:
   the uber-shader's vertex stage: candidates for baked variant flags.
 - WebGPU validation of every example's `--gpu-manifest`, then
   `--publish=web` and publishing the library to the Rive community.
+
+### M15: Draco geometry compression (done)
+
+Done as below. The decoder is in `packages/threeas/three/addons/libs/draco/`
+(Draco 1.5.7's decode paths, Apache 2.0); tests in `tests/draco_test.as`
+against Draco's testdata (OBJ ground truth, bitstreams 1.1 to 2.3),
+three.js's `bunny.drc` (Stanford bunny reference numbers) and Khronos
+glTF-Draco samples beside their glTF variants (Box, Avocado, WaterBottle
+for valence Edgebreaker, RiggedSimple for integer joints). Decode times
+(bunny.drc, 69451 faces): 56 ms interpreted, 5.4 ms AOT. Ported but not
+exercised by any fixture (old encoders wrote them): the deprecated predictive
+Edgebreaker, multi-parallelogram and float tex-coord predictors, the
+non-canonical octahedron transform with geometric normals, kd-tree levels
+below 6. Not ported: kd-tree point clouds before bitstream 2.3.
+
+- **DRACOLoader** (three.js `examples/jsm/loaders/DRACOLoader.js` API:
+  `setDecoderPath` / `setDecoderConfig` / `preload` kept as no-ops or
+  documented, `parse`, `load(name)`, `loadAsync(url)`,
+  `decodeDracoFile`), with the decoder itself **ported to AnimaScript**
+  (`packages/threeas/three/addons/libs/draco/`, from Google's Draco C++
+  decoder or its spec): the `.drc` container, sequential and Edgebreaker
+  (standard and valence) connectivity, the attribute decoders with
+  quantization, the prediction schemes (delta, parallelogram,
+  multi-parallelogram, constrained multi-parallelogram, tex-coords
+  portable, geometric normal) and transforms (octahedron normals,
+  wrap), and the rANS entropy coder. Point clouds too.
+- Decoding runs in a Rive job (the pattern of GLTFLoader's `decodeGLTF`),
+  so big meshes stay off the main lane.
+- **GLTFLoader `KHR_draco_mesh_compression`** through
+  `setDRACOLoader(dracoLoader)`, as three.js, in `load`, `parse` and the
+  async path.
+- Fixtures: real Draco files (Khronos glTF-Sample-Assets' `glTF-Draco`
+  variants, three.js's `bunny.drc`), downloaded as data, licences noted;
+  tests compare decoded attributes with the uncompressed versions.
+- Example: the Models example gains a Draco-compressed glTF and a `.drc`
+  point cloud.
+
+### M16: popular addons (done)
+
+All from three.js r170 `examples/jsm/objects/`, faithful ports in
+`packages/threeas/three/addons/objects/`, each in the gallery:
+- **Reflector**: planar mirror (virtual camera, clip plane, render target,
+  texture matrix), `getRenderTarget`, `dispose`.
+- **Refractor**: planar refraction, same machinery.
+- **Water** (`Water.js`: mirror + normal map scrolling, sun light,
+  distortion) and **Water2** (`Water2.js`: Reflector + Refractor + flow
+  map or flow direction).
+- **Sky** (Preetham model: turbidity, rayleigh, mie, sun position),
+  usable with PMRemGenerator for environment lighting, as three.js's
+  `webgl_shaders_sky` example.
+- **Lensflare** and `LensflareElement` (occlusion through
+  `copyFramebufferToTexture`, no readback needed).
+- **MarchingCubes** (`MarchingCubes.js`: metaballs, planes, the field,
+  `update()`), with its geometry built on the CPU each frame and uploaded.
+- Example `Addons`: a scene with a mirror, refractive glass, an ocean
+  (Water) under a Sky with a lens flare on the sun, and animated
+  metaballs.
+
+Done: all seven, plus WaterRefractionShader (webgl_refraction's rippled
+glass), with tests of the MarchingCubes field and polygonization, the
+Reflector / Refractor matrices and oblique clipping, and the shaders'
+uniform layouts (tests/marching_cubes_test.as, tests/objects_test.as). The
+renderer gained `Object3D.onBeforeRender` / `onAfterRender` (called before
+and after a render's pass: a hook that renders makes the render collect
+again) and `renderBufferDirect`, and now reads the camera's position from
+its `matrixWorld` (it used to recompute `matrixWorld` from `matrix`, which
+put cameras with `matrixAutoUpdate` off, a StereoCamera's eyes and the
+Refractor's camera, at the origin; the Views example's stereo half is lit
+from the right place now); the gallery's `Addons` example (a Water
+ocean under a Sky lighting the scene through a PMREM, a Lensflare on the
+sun, a Reflector, a Refractor with WaterRefractionShader, a Water2 pool on
+a flow map, MarchingCubes metaballs) takes about 4.5 ms advance and 5.8 ms
+render a frame interpreted, 0.3 ms and 2.3 ms ahead of time (800 x 600). The gallery carries copies of
+the new shaders (`packages/gallery/three/shaders/objects/`) until the
+engine library is republished; see docs/DEVIATIONS.md.
+
+### M17: spatial audio (done)
+
+three.js's audio API (`src/audio/`), on Rive's audio API (`rive/audio`)
+instead of Web Audio:
+- **AudioListener** (an Object3D, usually on the camera: `setMasterVolume`,
+  `getMasterVolume`, `context` replaced by the Rive audio engine, filters).
+- **Audio** (non-positional: `setBuffer` / `setMediaElementSource`
+  replaced by Rive audio assets, `play`, `pause`, `stop`, `setLoop`,
+  `setLoopStart/End`, `setVolume`, `setPlaybackRate`, `setDetune`,
+  `offset`, `duration`, `autoplay`, `onEnded` as a listener).
+- **PositionalAudio** (panner and distance model as Web Audio's
+  PannerNode: `setRefDistance`, `setRolloffFactor`, `setDistanceModel`
+  linear / inverse / exponential, `setMaxDistance`,
+  `setDirectionalCone(inner, outer, outerGain)`; equal-power stereo
+  panning, plus a simple interaural delay and head-shadow low-pass for
+  depth; no HRTF).
+- **AudioAnalyser** (`getFrequencyData`, `getAverageFrequency`: an FFT on
+  the mixed signal of an Audio, results back through a snapshot).
+- **AudioLoader** (Rive audio assets by name; `loadAsync`; urls where the
+  host allows fetching and decoding them).
+- **PositionalAudioHelper**.
+- How: each source decodes to PCM in a job (`AudioSource.toBlob`); one
+  `AudioProcessor` mixes every playing voice on the audio thread (looping,
+  playback rate, gain ramps to avoid clicks); the main lane computes each
+  voice's gains, pan, delay and filter from the listener's and the
+  object's world matrices every frame and publishes them through a
+  `Snapshot`. Checked headless with `--render-audio` (levels and panning
+  per channel against expected values).
+- Example `Audio`: a few sound emitters moving around the camera (one
+  with a cone), a non-positional ambience, an analyser bar graph, and
+  the PositionalAudioHelper cones.
+
+Done: `three/audio/` (AudioListener, Audio, PositionalAudio,
+AudioAnalyser, AudioContext, the Web Audio node stand-ins in AudioNodes,
+AudioMath, the mixer in AudioMixer, a WAV decoder), `loaders/AudioLoader`,
+`addons/helpers/PositionalAudioHelper`; the gallery's `Audio` example and
+its `AudioCheck` artboard; `tools/make_audio_samples.py` (the example's
+original sounds) and `tools/check_audio.py` (panning, the three distance
+models, cones, seamless loops, click-free stop and pause, the analyser's
+peak, measured from `--render-audio` WAVs); `tests/audio_test.as`. The
+listener publishes in `updateMatrixWorld` (as three.js) and in an explicit
+`listener.update()` for frames without a render. The mixer costs about
+0.03 ms per 512-frame block for eight panned, delayed and shadowed voices
+compiled (0.3% of the block), 0.47 ms interpreted (4.4%). Left out: HRTF
+convolution (equal-power panning plus an interaural delay and a head-shadow
+low-pass instead), media streams, Web Audio nodes beyond gain, panner,
+biquad, oscillator and analyser, `fftSize` above 4096, MP3 / FLAC from
+fetched bytes (Rive decodes them only from audio assets). Still to do by
+ear: a listening pass on desktop and on the web (a page with cross origin
+isolation, where processors run; elsewhere the fallback plays assets
+through Rive's `Audio.play` without panning). The gallery as it ships
+(`tools/release_build.sh` without `--override`, on `.libraries/`) builds
+once the engine library is republished with `three/audio/`.
 
 ## Deviations from three.js
 

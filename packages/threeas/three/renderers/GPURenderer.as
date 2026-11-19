@@ -44,7 +44,7 @@ import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { clock } from "rive/os";
 
 import { Object3D } from "../core/Object3D";
-import { BufferGeometry, disposedGeometries } from "../core/BufferGeometry";
+import { BufferGeometry, GeometryGroup, disposedGeometries } from "../core/BufferGeometry";
 import { BufferAttribute } from "../core/BufferAttribute";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
@@ -916,6 +916,29 @@ export class GPURenderer {
     private viewProj: Matrix4 = new Matrix4();
     private invViewProj: Matrix4 = new Matrix4();
     private overrideMaterial: Material? = null;
+    // onBeforeRender / onAfterRender: the objects a view draws (collect
+    // fills drawnObjects; a view takes the list, nested renders get one of
+    // their own from hookLists), the renders in progress, a count of passes
+    // (a hook that renders bumps it), and while after-render hooks run, the
+    // targets of their view and whether a hook loaded what that view's
+    // pass did not keep.
+    private drawnObjects: Array<Object3D> = [];
+    private hookLists: Array<Array<Object3D>> = [];
+    private renderDepth: i32 = 0;
+    private passSerial: i32 = 0;
+    private afterHooks: i32 = 0;
+    private hookTargets: PassTargets? = null;
+    // Hooks in progress, the outermost hooked view's number, and the objects
+    // whose hook rendered for it (id -> view).
+    private hookDepth: i32 = 0;
+    private hookView: i32 = 0;
+    private hookedObjects: Map<i32, i32> = new Map<i32, i32>();
+    private framebufferLost: bool = false;
+    // renderBufferDirect: its one-object scene, and while it renders (no
+    // hooks, no culling, no clear).
+    private directScene: Scene? = null;
+    private directing: bool = false;
+    private warnedDirect: bool = false;
 
     constructor(context: Context, parameters: GPURendererParameters? = null) {
         this.context = context;
@@ -1032,7 +1055,28 @@ export class GPURenderer {
         this.captures.push(capture);
     }
 
+    /// Renders `scene` from `camera` into the current render target (or the
+    /// canvas). It can be called from an object's onBeforeRender /
+    /// onAfterRender during another render (Reflector, Lensflare): that
+    /// render's viewport override and ArrayCamera state are set aside.
     render(scene: Object3D, camera: Camera): void {
+        const depth = this.renderDepth++;
+        const ov = this.viewportOverride;
+        const skip = this.skipShadows;
+        const sub = this.arraySubView;
+        if (depth > 0) {
+            this.viewportOverride = null;
+            this.skipShadows = false;
+            this.arraySubView = false;
+        }
+        this.renderTop(scene, camera, depth);
+        this.viewportOverride = ov;
+        this.skipShadows = skip;
+        this.arraySubView = sub;
+        this.renderDepth--;
+    }
+
+    private renderTop(scene: Object3D, camera: Camera, depth: i32): void {
         if (this.captures.length > 0 && !this.capturing) {
             this.capturing = true;
             const captures = this.captures;
@@ -1047,8 +1091,10 @@ export class GPURenderer {
             this.autoClear = autoClear;
             this.capturing = false;
         }
-        if (this.info.autoReset) this.info.reset();
-        this.info.render.frame++;
+        if (depth == 0) {
+            if (this.info.autoReset) this.info.reset();
+            this.info.render.frame++;
+        }
         if (this.broken) return;
         if (camera instanceof ArrayCamera) {
             // One view per sub-camera, into its viewport; the first clears.
@@ -1287,6 +1333,12 @@ export class GPURenderer {
         // A render that is one of several (a viewport, a scissor, a load)
         // keeps its MSAA colour and depth for the next one.
         const partial = !this.vpFull || scissored;
+        this.passSerial++;
+        if (this.afterHooks > 0 && targets === this.hookTargets
+                && ((loadColor && targets.msaaView != null && !targets.keepColor)
+                    || (loadDepth && !targets.keepDepth && !this.destKeepsDepth))) {
+            this.framebufferLost = true;
+        }
         if (loadColor || partial) targets.keepColor = true;
         if (loadDepth || partial) targets.keepDepth = true;
         color.loadOp = loadColor ? LoadOp.load : LoadOp.clear;
@@ -1346,7 +1398,7 @@ export class GPURenderer {
     clearDepth(): void { this.clear(false, true, false); }
     clearStencil(): void { this.clear(false, false, true); }
 
-    private renderView(scene: Object3D, camera: Camera): void {
+    private renderView(scene: Object3D, camera: Camera, beforeHooks: bool = true, retry: bool = true): void {
         const info = this.info.render;
         const timings = this.info.timings;
         const timed = timings.enabled;
@@ -1364,7 +1416,7 @@ export class GPURenderer {
         if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
         else camera.updateWorldMatrix(true, false);
         Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
-        camera.getWorldPosition(this.cameraPos);
+        this.cameraPos.setFromMatrixPosition(camera.matrixWorld);
         this.invViewProj.copy(this.viewProj).invert();
         _frustum.setFromProjectionMatrix(this.viewProj);
         if (timed) { const t = clock(); timings.matrices += t - t0; t0 = t; }
@@ -1374,6 +1426,40 @@ export class GPURenderer {
         this.hasTransmission = false;
         this.collect(scene, camera, frame);
         if (timed) { const t = clock(); timings.collect += t - t0; t0 = t; }
+        // onBeforeRender: before the pass. A hook that rendered (a mirror)
+        // left the renderer's state at its render: collect again, without
+        // calling the hooks twice.
+        const drawn = this.drawnObjects;
+        this.drawnObjects = this.hookLists.length > 0 ? this.hookLists.pop() : [];
+        if (beforeHooks && drawn.length > 0) {
+            // three.js calls a hook right before its object's draw, so an
+            // object draws what its hook rendered for this camera, even when
+            // a later hook's nested renders (a mirror seen in the water)
+            // called it again. Here every hook runs first: an object whose
+            // hook rendered for the outermost view is not called again by
+            // the nested renders of that view's later hooks (they draw it
+            // with what it rendered for the outermost camera).
+            const top = this.hookDepth == 0;
+            if (top) this.hookView++;
+            const view = this.hookView;
+            const serial = this.passSerial;
+            const target = this.renderTarget;
+            for (let i = 0; i < drawn.length; i++) {
+                const o = unchecked(drawn[i]);
+                if (o.noBeforeRender || (!top && this.hookedObjects.has(o.id) && this.hookedObjects.get(o.id) == view)) continue;
+                const before = this.passSerial;
+                this.hookDepth++;
+                o.onBeforeRender(this, scene, camera, geometryOf(o), materialOf(o), null);
+                this.hookDepth--;
+                if (top && this.passSerial != before) this.hookedObjects.set(o.id, view);
+            }
+            this.renderTarget = target;
+            if (this.passSerial != serial) {
+                this.recycleHooks(drawn);
+                this.renderView(scene, camera, false, retry);
+                return;
+            }
+        }
         const background = this.prepareBackground(scene, frame, canvas);
         this.planShadows();
         this.prepareEnvironment(scene, frame, canvas);
@@ -1430,6 +1516,77 @@ export class GPURenderer {
             timings.draw += clock() - t0;
             timings.renders++;
         }
+        if (drawn.length > 0) this.afterRenderHooks(drawn, scene, camera, retry);
+        this.recycleHooks(drawn);
+    }
+
+    /// onAfterRender for the objects a view drew. A hook drawing over the
+    /// view (loading its colour or depth) needs the pass to have kept them:
+    /// a pass keeps them once a later pass loaded them, so the first time,
+    /// the view renders again (once) with them kept.
+    private afterRenderHooks(drawn: Array<Object3D>, scene: Object3D, camera: Camera, retry: bool): void {
+        const targets = this.destTargets;
+        const outerTargets = this.hookTargets;
+        const outerLost = this.framebufferLost;
+        const target = this.renderTarget;
+        this.hookTargets = targets;
+        this.framebufferLost = false;
+        this.afterHooks++;
+        for (let i = 0; i < drawn.length; i++) {
+            const o = unchecked(drawn[i]);
+            if (!o.noAfterRender) o.onAfterRender(this, scene, camera, geometryOf(o), materialOf(o), null);
+        }
+        this.afterHooks--;
+        this.renderTarget = target;
+        const lost = this.framebufferLost;
+        this.hookTargets = outerTargets;
+        this.framebufferLost = outerLost;
+        if (lost && retry) this.renderView(scene, camera, false, false);
+    }
+
+    private recycleHooks(list: Array<Object3D>): void {
+        list.length = 0;
+        this.hookLists.push(list);
+    }
+
+    /// three.js's renderBufferDirect: draws `object` (a Mesh, at its
+    /// matrixWorld) with `geometry` and `material` over the current render
+    /// target, from `camera`, without clearing, culling or lights (`scene`
+    /// and `group` are accepted for the signature). Each call is a pass:
+    /// call it from draw(), e.g. in onAfterRender (Lensflare).
+    renderBufferDirect(camera: Camera, scene: Object3D?, geometry: BufferGeometry, material: Material,
+                       object: Object3D, group: GeometryGroup? = null): void {
+        if (!(object instanceof Mesh)) {
+            if (!this.warnedDirect) {
+                this.context.log("three: renderBufferDirect draws meshes only");
+                this.warnedDirect = true;
+            }
+            return;
+        }
+        const mesh = object as Mesh;
+        let ds = this.directScene;
+        if (ds == null) {
+            ds = new Scene();
+            ds.matrixWorldAutoUpdate = false;
+            this.directScene = ds;
+        }
+        const geometry0 = mesh.geometry, material0 = mesh.material, materials0 = mesh.materials;
+        mesh.geometry = geometry;
+        mesh.material = material;
+        mesh.materials = _noMaterials;
+        ds.children.push(object);
+        const autoClear = this.autoClear, directing = this.directing, noCull = this.noCull;
+        this.autoClear = false;
+        this.directing = true;
+        this.noCull = true;
+        this.render(ds, camera);
+        this.autoClear = autoClear;
+        this.directing = directing;
+        this.noCull = noCull;
+        ds.children.length = 0;
+        mesh.geometry = geometry0;
+        mesh.material = material0;
+        mesh.materials = materials0;
     }
 
     /// Prepares everything `render(scene, camera)` would draw (pipelines,
@@ -1448,7 +1605,7 @@ export class GPURenderer {
         if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
         else camera.updateWorldMatrix(true, false);
         Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
-        camera.getWorldPosition(this.cameraPos);
+        this.cameraPos.setFromMatrixPosition(camera.matrixWorld);
         this.invViewProj.copy(this.viewProj).invert();
         // Everything, not only what the camera sees now.
         this.noCull = true;
@@ -1456,6 +1613,7 @@ export class GPURenderer {
         this.hasTransmission = false;
         this.collect(scene, camera, frame);
         this.noCull = false;
+        this.drawnObjects.length = 0;
         const background = this.prepareBackground(scene, frame, canvas);
         this.planShadows();
         this.prepareEnvironment(scene, frame, canvas);
@@ -1628,6 +1786,7 @@ export class GPURenderer {
             ubo = new GPUBuffer(BufferUsage.uniform, 32);
             this.copyUbo = ubo;
         }
+        this.passSerial++;
         const f = this.copyStaging;
         f[0] = <f32>sx; f[1] = <f32>sy; f[2] = <f32>dx; f[3] = <f32>dy;
         f[4] = flipRows ? 1 : 0; f[5] = <f32>h; f[6] = 0; f[7] = 0;
@@ -2301,8 +2460,10 @@ export class GPURenderer {
         for (let i = 0; i < n; i++) {
             const o = unchecked(renderables[i]);
             const keep = parallel ? out[i] != 0 : !o.frustumCulled || this.noCull || this.inFrustum(o);
-            if (keep) this.collectObject(o, frame);
-            else this.info.render.culled++;
+            if (keep) {
+                this.collectObject(o, frame);
+                if (!this.directing && !(o.noBeforeRender && o.noAfterRender)) this.drawnObjects.push(o);
+            } else this.info.render.culled++;
         }
         renderables.length = 0;
     }
@@ -4697,6 +4858,16 @@ function compareTransparent(a: DrawItem, b: DrawItem): i32 {
     const ro = a.object.renderOrder - b.object.renderOrder;
     if (ro != 0) return ro;
     return a.depth > b.depth ? -1 : a.depth < b.depth ? 1 : a.object.id - b.object.id;
+}
+
+const _noMaterials: Array<Material> = [];
+
+function materialOf(o: Object3D): Material? {
+    if (o instanceof Mesh) return (o as Mesh).material;
+    if (o instanceof Line) return (o as Line).material;
+    if (o instanceof Points) return (o as Points).material;
+    if (o instanceof Sprite) return (o as Sprite).material;
+    return null;
 }
 
 function geometryOf(o: Object3D): BufferGeometry? {

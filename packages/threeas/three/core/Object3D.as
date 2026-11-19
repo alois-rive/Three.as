@@ -12,6 +12,9 @@ import { Layers } from "./Layers";
 import { Raycaster, Intersection } from "./Raycaster";
 import { MathUtils } from "../math/MathUtils";
 import { AnimationClip } from "../animation/AnimationClip";
+import { BufferGeometry, GeometryGroup } from "./BufferGeometry";
+import { Camera } from "../cameras/Camera";
+import { GPURenderer } from "../renderers/GPURenderer";
 import { Dynamic } from "rive/dynamic";
 import {
     JSONMeta, jsonMetadata, setNumber, setString, setBool, setNumbers, isEmptyTable, cloneDynamic,
@@ -108,6 +111,38 @@ export class Object3D extends EventDispatcher {
     /// raycast; empty for objects with nothing to hit). Return false to stop
     /// the raycaster descending into the children.
     raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool { return true; }
+
+    /// three.js's onBeforeRender, as a method to override (no closures).
+    /// The renderer calls it for every object it is about to draw (visible,
+    /// in the camera's layers, not frustum culled) once per render, with its
+    /// geometry and material (`group` null), **before the render's pass**
+    /// rather than right before the object's draw: what it renders (into
+    /// other targets: Reflector, Refractor, Water) is ready for the pass,
+    /// and the render collects its draws again when it did render. It
+    /// cannot draw into the pass itself; see onAfterRender. An override
+    /// must not call this base method: it marks the object as having no
+    /// hook (noBeforeRender), and the renderer stops calling it.
+    onBeforeRender(renderer: GPURenderer, scene: Object3D, camera: Camera, geometry: BufferGeometry?,
+                   material: Material?, group: GeometryGroup?): void {
+        this.noBeforeRender = true;
+    }
+
+    /// three.js's onAfterRender: called for the same objects **after the
+    /// render's pass** (three.js: right after the object's draw), in scene
+    /// order. It may copy the framebuffer (copyFramebufferToTexture) and draw
+    /// over it (renderBufferDirect, or a render with autoClear off): the
+    /// pass keeps its colour and depth for that (Lensflare). As
+    /// onBeforeRender, an override must not call this base method.
+    onAfterRender(renderer: GPURenderer, scene: Object3D, camera: Camera, geometry: BufferGeometry?,
+                  material: Material?, group: GeometryGroup?): void {
+        this.noAfterRender = true;
+    }
+
+    /// Set by the base onBeforeRender / onAfterRender the first time the
+    /// renderer calls them: the object has no hook to call (internal; the
+    /// renderer skips it from then on).
+    noBeforeRender: bool = false;
+    noAfterRender: bool = false;
 
     // ------------------------------------------------------------- hierarchy
 

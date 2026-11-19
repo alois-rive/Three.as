@@ -1,8 +1,10 @@
 // Textures: per-map uv transforms (a map turning about its center while
 // the normal map scrolls), an aoMap read through a second uv set
 // (channel 1), and KTX2 compressed textures (BC1 with mipmaps, ASTC 4x4)
-// from KTX2Loader (a device without ASTC shows that cube magenta, with a log
-// line: KTX2 files here hold one GPU format, no Basis transcoding).
+// from KTX2Loader. KTX2 files here hold one GPU format (no Basis
+// transcoding); a device that cannot sample it (no ASTC on a Mac, neither
+// in a browser) gets the texture decoded on the CPU, with a log line.
+// `rive . --artboard=Textures --arg threeCPUDecode` forces that for both.
 
 import { unzlibSync } from "lib:threeas/three/addons/libs/fflate";
 import * as THREE from "lib:threeas/three/Three";
@@ -93,8 +95,9 @@ export class Textures extends THREE.ThreeLayout {
             const packedAsset = context.blob(names[i]);
             const packed = packedAsset != null ? packedAsset!.toArrayBuffer() : null;
             const t = packed != null ? loader.parse(unzlibSync(Uint8Array.wrap(packed!))) : null;
+            if (t != null) t.name = names[i];
             const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1),
-                new THREE.MeshStandardMaterial({ color: t != null ? 0xffffff : 0xff00ff, map: t, roughness: 0.5 }));
+                new THREE.MeshStandardMaterial({ color: t != null ? 0xffffff : 0xff00ff, map: t, roughness: 0.5 }));   // magenta: no file
             m.position.set(0.9 + <f64>i * 1.5, 0, 0);
             scene.add(m);
             this.cubes.push(m);

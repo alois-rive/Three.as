@@ -22,7 +22,7 @@ export class FixtureTests extends Tests {
                     expect.that(this.blob(name) != null ? name : name + " is missing").is(name);
                     count++;
                 }
-                expect.that(count).is(16);
+                expect.that(count).is(53);
             });
         });
     }

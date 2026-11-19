@@ -51,7 +51,17 @@ engine edit shows in the gallery without publishing:
   and shaders are used all the same.
 - Local engine scripts are all compiled, new ones included. A **new
   shader** (a new `.wgsl`, or baked variants) does not reach the gallery
-  until the library is republished and the gallery updated.
+  until the library is republished and the gallery updated. Until then
+  the gallery carries copies under the engine's asset names: the addon
+  objects' shaders (`three/shaders/objects/`, M16) are copied to
+  `packages/gallery/three/shaders/objects/` by
+  `tools/make_shader_chunks.py` (run it after editing them; delete the
+  gallery's `three/` once the published library has them).
+- Likewise an example importing an engine module the published library
+  lacks (the Addons example and `three/addons/objects/`) only builds with
+  the override: `tools/release_build.sh` without `--override` (and
+  tools/publish.sh's pre-publish release build) fails on it until the
+  engine is republished.
 - The gallery's `rive . --test` runs the engine's suites too (the override
   brings them), without `tests/fixtures/`: a suite skips a fixture it
   cannot find, and `tests/fixtures_test.as` checks, in packages/threeas,
@@ -133,6 +143,9 @@ tools/bake_shaders.sh              # optional "optimized" mode: bake shader vari
 tools/bake_shaders.sh --clean      # back to the uber-shader only (the default)
 python3 tools/validate_manifest.py --all   # every example's --gpu-manifest checked against
                                            # WebGPU rules and the web limits (no GPU)
+python3 tools/check_audio.py       # audio: --render-audio the gallery's AudioCheck scenarios
+                                   # and measure panning, distance, cones, loops, fades
+python3 tools/make_audio_samples.py        # regenerate the Audio example's sounds
 tools/release_build.sh build/release       # release .rivs of the engine and the gallery
 python3 tools/check_glsl.py build/release/gallery/three_as.riv
 tools/publish.sh                   # publish the engine library and the gallery (below)

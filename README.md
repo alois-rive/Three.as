@@ -103,6 +103,7 @@ rive . --artboard=Shapes                          # curves, extrusion, a Rive pa
 rive . --artboard=Interactive                     # orbit, click a Rive switch in 3D, render target
 rive . --artboard=Deform                          # GPU skinning and morph targets
 rive . --artboard=Model                           # a glTF model, animated
+rive . --artboard=Models                          # glTF extensions, meshopt, Draco, SVG, FBX
 rive . --artboard=CustomShader                    # a WGSL ShaderMaterial on a live artboard
 rive . --artboard=Environment                     # image-based lighting
 rive . --artboard=Environments                    # cube map, .hdr, .exr environments; CubeCamera
@@ -114,6 +115,7 @@ rive . --artboard=Editor                          # helpers, controls, scene uti
 rive . --artboard=Batched                         # BatchedMesh: 600 instances, four geometries
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
+rive . --artboard=Addons                          # Water, Sky, Lensflare, Reflector, Refractor, metaballs
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed
 rive . --screenshot=build/s.png --advance=1s      # headless render
 
