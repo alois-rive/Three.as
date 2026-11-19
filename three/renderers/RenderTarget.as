@@ -16,6 +16,7 @@ import { GPUCanvas, GPUTexture, GPUTextureDesc, GPUTextureView } from "rive/gpu"
 import { TextureFormat } from "rive/gpu_enums";
 import { Image } from "rive/image";
 import { Texture } from "../textures/Texture";
+import { Vector4 } from "../math/Vector4";
 import { LinearFilter, SRGBColorSpace, NoColorSpace, UnsignedByteType } from "../constants";
 
 let _rtId: i32 = 0;
@@ -76,11 +77,18 @@ export class RenderTarget {
     texture: RenderTargetTexture = new RenderTargetTexture();
     /// Bumped by setSize; the renderer resizes on the next render.
     version: i32 = 0;
+    /// The viewport and scissor of renders into it, in pixels from the
+    /// bottom left (setSize resets both to the whole target).
+    viewport: Vector4;
+    scissor: Vector4;
+    scissorTest: bool = false;
 
     constructor(width: u32 = 1, height: u32 = 1, options: RenderTargetOptions? = null) {
         this.id = _rtId++;
         this.width = width;
         this.height = height;
+        this.viewport = new Vector4(0, 0, <f64>width, <f64>height);
+        this.scissor = new Vector4(0, 0, <f64>width, <f64>height);
         const o = options != null ? options : new RenderTargetOptions();
         this.depthBuffer = o.depthBuffer;
         this.samples = o.samples;
@@ -105,6 +113,8 @@ export class RenderTarget {
         if (width == this.width && height == this.height) return;
         this.width = width;
         this.height = height;
+        this.viewport.set(0, 0, <f64>width, <f64>height);
+        this.scissor.set(0, 0, <f64>width, <f64>height);
         this.texture.pixelWidth = width;
         this.texture.pixelHeight = height;
         this.version++;

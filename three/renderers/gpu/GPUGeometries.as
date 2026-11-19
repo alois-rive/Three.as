@@ -279,6 +279,9 @@ export class GPUGeometries {
         }
     }
 
+    /// Geometries with GPU buffers (renderer.info.memory.geometries).
+    get count(): i32 { return this.map.size; }
+
     disposeAll(): void {
         const values = this.map.values();
         for (let i = 0; i < values.length; i++) values[i].release();

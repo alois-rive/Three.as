@@ -73,6 +73,7 @@ import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
+import { Vector4 } from "../math/Vector4";
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
 import { Frustum } from "../math/Frustum";
@@ -95,6 +96,7 @@ import { LTC_TABLE } from "../lights/RectAreaLightTables";
 import { CubeTexture } from "../textures/CubeTexture";
 import { CubeCamera } from "../cameras/CubeCamera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
+import { ArrayCamera } from "../cameras/ArrayCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { interleaveNormalTangent } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
@@ -116,6 +118,8 @@ const SHADER_NAMES: Array<string> = ["three/shaders/three", "shaders/three", "th
 const BACKGROUND_SHADER_NAMES: Array<string> = [
     "three/shaders/three_background", "shaders/three_background", "three_background",
 ];
+
+const UTIL_SHADER_NAMES: Array<string> = ["three/shaders/three_util", "shaders/three_util", "three_util"];
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
 
@@ -164,6 +168,10 @@ class PassTargets {
     height: u32 = 0;
     format: u32 = 0xFFFFFFFF;
     samples: u32 = 0;
+    // Store the MSAA colour / the depth at the end of a pass: set once a
+    // pass loads them (autoClear off, a scissor, renderer.clear).
+    keepColor: bool = false;
+    keepDepth: bool = false;
 
     release(): void {
         releaseTex(this.depthTex); this.depthTex = null; this.depthView = null;
@@ -300,8 +308,28 @@ export class RenderInfo {
     culled: i32 = 0;
 }
 
+/// three.js's info.memory: what the renderer holds on the GPU.
+export class MemoryInfo {
+    /// Geometries with vertex buffers.
+    geometries: i32 = 0;
+    /// Textures prepared for sampling and not disposed.
+    textures: i32 = 0;
+}
+
 export class RendererInfo {
+    /// Reset the render counters at each render() (else call reset()).
+    autoReset: bool = true;
     render: RenderInfo = new RenderInfo();
+    memory: MemoryInfo = new MemoryInfo();
+
+    reset(): void {
+        const r = this.render;
+        r.calls = 0;
+        r.triangles = 0;
+        r.lines = 0;
+        r.points = 0;
+        r.culled = 0;
+    }
 }
 
 // One draw's state, kept across frames.
@@ -367,6 +395,10 @@ export class GPURenderer {
     readonly context: Context;
     /// Clear the canvas before each render (else draw over the last one).
     autoClear: bool = true;
+    /// What autoClear clears: colour, depth and stencil (as three.js).
+    autoClearColor: bool = true;
+    autoClearDepth: bool = true;
+    autoClearStencil: bool = true;
     /// Sort draws (opaque front to back, transparent back to front).
     sortObjects: bool = true;
     /// NoToneMapping, LinearToneMapping, ReinhardToneMapping,
@@ -387,7 +419,7 @@ export class GPURenderer {
     private width: f64 = 0;
     private height: f64 = 0;
     private pixelRatio: f64 = 1;
-    private clearColor: Color = new Color(0, 0, 0);
+    private _clearColor: Color = new Color(0, 0, 0);
     private clearAlpha: f64 = 1;
     private antialias: bool;
     private broken: bool = false;
@@ -504,6 +536,35 @@ export class GPURenderer {
     private passWidth: u32 = 0;
     private passHeight: u32 = 0;
     private passRatio: f64 = 1;
+    private destCanvas: GPUCanvas? = null;
+    private destView: GPUTextureView? = null;
+    private destTargets: PassTargets? = null;
+    // Viewport (setViewport, in points from the bottom left), scissor and
+    // the pass's viewport and scissor in pixels from the top left.
+    private _viewport: Vector4 = new Vector4();
+    private _scissor: Vector4 = new Vector4();
+    private _scissorSet: bool = false;
+    private _scissorTest: bool = false;
+    private viewportOverride: Vector4? = null;
+    private vpX: f32 = 0;
+    private vpY: f32 = 0;
+    private vpW: f32 = 0;
+    private vpH: f32 = 0;
+    private vpFull: bool = true;
+    private scissorOn: bool = false;
+    private scX: u32 = 0;
+    private scY: u32 = 0;
+    private scW: u32 = 0;
+    private scH: u32 = 0;
+    // ArrayCamera views after the first reuse its shadow maps.
+    private skipShadows: bool = false;
+    // compile(): collect everything, culled or not.
+    private noCull: bool = false;
+    // Counts renders (views): per-draw state is written once per view.
+    private frameId: i32 = 0;
+    private utilModule: GPUShaderModule? = null;
+    private utilBroken: bool = false;
+    private fillPipelines: Map<i64, GPUPipeline> = new Map<i64, GPUPipeline>();
 
     private geometries: GPUGeometries = new GPUGeometries();
     private textures: GPUTextures;
@@ -542,11 +603,56 @@ export class GPURenderer {
 
     getSize(target: Vector2): Vector2 { return target.set(this.width, this.height); }
 
-    /// The size in points (the layout's size).
+    /// The size in points (the layout's size). Resets the viewport to the
+    /// whole canvas, as three.js.
     setSize(width: f64, height: f64): void {
         this.width = width;
         this.height = height;
+        this._viewport.set(0, 0, width, height);
+        if (!this._scissorSet) this._scissor.set(0, 0, width, height);
     }
+
+    // --------------------------------------------------- viewport and scissor
+
+    /// The viewport (in points, from the bottom left, as three.js):
+    /// `setViewport(x, y, width, height)` or `setViewport(vector4)`.
+    setViewport<T>(x: T, y: f64 = 0, width: f64 = 0, height: f64 = 0): void {
+        if (isReference<T>()) {
+            if (x instanceof Vector4) this._viewport.copy(x as Vector4);
+        } else {
+            this._viewport.set(<f64>x, y, width, height);
+        }
+    }
+
+    getViewport(target: Vector4): Vector4 { return target.copy(this._viewport); }
+
+    /// The viewport in drawing-buffer pixels (the render target's when one
+    /// is set).
+    getCurrentViewport(target: Vector4): Vector4 {
+        const rt = this.renderTarget;
+        if (rt != null) return target.copy(rt.viewport);
+        const r = this.pixelRatio;
+        const v = this._viewport;
+        return target.set(Math.round(v.x * r), Math.round(v.y * r), Math.round(v.z * r), Math.round(v.w * r));
+    }
+
+    /// The scissor rectangle (points, from the bottom left), used while
+    /// `setScissorTest(true)`: `setScissor(x, y, width, height)` or
+    /// `setScissor(vector4)`.
+    setScissor<T>(x: T, y: f64 = 0, width: f64 = 0, height: f64 = 0): void {
+        if (isReference<T>()) {
+            if (x instanceof Vector4) this._scissor.copy(x as Vector4);
+        } else {
+            this._scissor.set(<f64>x, y, width, height);
+        }
+        this._scissorSet = true;
+    }
+
+    getScissor(target: Vector4): Vector4 { return target.copy(this._scissor); }
+
+    /// Restricts drawing and clearing to the scissor rectangle.
+    setScissorTest(value: bool): void { this._scissorTest = value; }
+    getScissorTest(): bool { return this._scissorTest; }
 
     getDrawingBufferSize(target: Vector2): Vector2 {
         return target.set(<f64>this.pixelWidth(), <f64>this.pixelHeight());
@@ -565,7 +671,7 @@ export class GPURenderer {
     /// `color` is an sRGB hex (or a Rive Color, alpha ignored), a CSS string
     /// or a Color.
     setClearColor<T>(color: T, alpha: f64 = 1): void {
-        this.clearColor.set<T>(color);
+        this._clearColor.set<T>(color);
         this.clearAlpha = alpha;
     }
 
@@ -573,7 +679,7 @@ export class GPURenderer {
     setRenderTarget(target: RenderTarget?): void { this.renderTarget = target; }
     getRenderTarget(): RenderTarget? { return this.renderTarget; }
 
-    getClearColor(target: Color): Color { return target.copy(this.clearColor); }
+    getClearColor(target: Color): Color { return target.copy(this._clearColor); }
     getClearAlpha(): f64 { return this.clearAlpha; }
     setClearAlpha(alpha: f64): void { this.clearAlpha = alpha; }
 
@@ -601,45 +707,61 @@ export class GPURenderer {
             this.autoClear = autoClear;
             this.capturing = false;
         }
-        const info = this.info.render;
-        info.frame++;
-        this.arenaUsed = 0;
-        info.calls = 0;
-        info.triangles = 0;
-        info.culled = 0;
-        info.lines = 0;
-        info.points = 0;
+        if (this.info.autoReset) this.info.reset();
+        this.info.render.frame++;
         if (this.broken) return;
-        // The destination: a render target, or the canvas presented.
+        if (camera instanceof ArrayCamera) {
+            // One view per sub-camera, into its viewport; the first clears.
+            const cameras = (camera as ArrayCamera).cameras;
+            const autoClear = this.autoClear;
+            for (let i = 0; i < cameras.length; i++) {
+                const sub = cameras[i];
+                this.viewportOverride = sub.viewport;
+                this.skipShadows = i > 0;
+                this.renderView(scene, sub);
+                this.autoClear = false;
+            }
+            this.autoClear = autoClear;
+            this.viewportOverride = null;
+            this.skipShadows = false;
+            return;
+        }
+        this.renderView(scene, camera);
+    }
+
+    /// Picks the destination of the next pass (the render target, or the
+    /// canvas presented): fills destCanvas, destView, destTargets, the pass
+    /// size and output format. False when there is nothing to render into.
+    private beginDestination(): bool {
         const rt = this.renderTarget;
         let canvas: GPUCanvas?;
         let pw: u32, ph: u32;
         let targets: PassTargets;
         if (rt != null) {
             pw = rt.width; ph = rt.height;
-            if (pw == 0 || ph == 0) return;
+            if (pw == 0 || ph == 0) return false;
             canvas = rt.isHDR ? this.ensureCanvas() : rt.ensureCanvas(this.context);
             if (!this.rtTargets.has(rt.id)) this.rtTargets.set(rt.id, new PassTargets());
             targets = this.rtTargets.get(rt.id);
             this.passRatio = 1;
         } else {
             pw = this.pixelWidth(); ph = this.pixelHeight();
-            if (pw == 0 || ph == 0) return;
+            if (pw == 0 || ph == 0) return false;
             canvas = this.ensureCanvas();
             if (canvas != null && (canvas.width != pw || canvas.height != ph)) {
-                if (!canvas.resize(pw, ph)) return;
+                if (!canvas.resize(pw, ph)) return false;
             }
             targets = this.mainTargets;
             this.passRatio = this.pixelRatio;
         }
-        if (canvas == null) return;
+        if (canvas == null) return false;
         // HDR targets render into their own texture, through the main canvas
         // (any target can host a pass).
         let target: GPUTextureView?;
         this.linearOutput = false;
         if (rt != null && rt.isHDR) {
             const host = this.ensureCanvas();
-            if (host == null) return;
+            if (host == null) return false;
             canvas = host;
             target = rt.ensureHDR();
             this.pipelineFormat = <u32>TextureFormat.rgba16float;
@@ -648,14 +770,219 @@ export class GPURenderer {
             target = canvas.view;
             this.pipelineFormat = canvas.format;
         }
-        if (target == null) return;
-        if (!this.ensureSetup(canvas)) return;
+        if (target == null) return false;
+        if (!this.ensureSetup(canvas)) return false;
         this.passSamples = rt != null ? (rt.samples > 1 ? this.samples : 1) : this.samples;
         this.passWidth = pw;
         this.passHeight = ph;
         this.ensureTargets(targets, this.pipelineFormat, pw, ph, this.passSamples);
-        const depthView = targets.depthView;
-        if (depthView == null) return;
+        if (targets.depthView == null) return false;
+        this.destCanvas = canvas;
+        this.destView = target;
+        this.destTargets = targets;
+        return this.computeViewport();
+    }
+
+    /// The pass's viewport and scissor in pixels (top-left origin, inside
+    /// the target): an ArrayCamera sub-camera's viewport, the render
+    /// target's, or setViewport's times the pixel ratio. False when the
+    /// viewport or scissor is empty.
+    private computeViewport(): bool {
+        const pw = <f64>this.passWidth, ph = <f64>this.passHeight;
+        const rt = this.renderTarget;
+        const ov = this.viewportOverride;
+        const r = this.pixelRatio;
+        let x: f64, y: f64, w: f64, h: f64;
+        if (ov != null) {
+            x = ov.x; y = ov.y; w = ov.z; h = ov.w;
+        } else if (rt != null) {
+            const v = rt.viewport;
+            x = v.x; y = v.y; w = v.z; h = v.w;
+        } else {
+            const v = this._viewport;
+            x = Math.round(v.x * r); y = Math.round(v.y * r); w = Math.round(v.z * r); h = Math.round(v.w * r);
+        }
+        // Bottom-left origin (three.js) to top-left, clamped to the target.
+        let top = ph - (y + h);
+        const x0 = Math.max(0, x), y0 = Math.max(0, top);
+        const x1 = Math.min(pw, x + w), y1 = Math.min(ph, top + h);
+        if (x1 <= x0 || y1 <= y0) return false;
+        this.vpX = <f32>x0; this.vpY = <f32>y0; this.vpW = <f32>(x1 - x0); this.vpH = <f32>(y1 - y0);
+        this.vpFull = x0 == 0 && y0 == 0 && x1 == pw && y1 == ph;
+        const test = rt != null ? rt.scissorTest : this._scissorTest;
+        this.scissorOn = false;
+        if (test) {
+            let sx: f64, sy: f64, sw: f64, sh: f64;
+            if (rt != null) {
+                const s = rt.scissor;
+                sx = s.x; sy = s.y; sw = s.z; sh = s.w;
+            } else {
+                const s = this._scissor;
+                sx = Math.round(s.x * r); sy = Math.round(s.y * r); sw = Math.round(s.z * r); sh = Math.round(s.w * r);
+            }
+            const stop = ph - (sy + sh);
+            const ax = Math.max(0, sx), ay = Math.max(0, stop);
+            const bx = Math.min(pw, sx + sw), by = Math.min(ph, stop + sh);
+            if (bx <= ax || by <= ay) return false;
+            this.scX = <u32>ax; this.scY = <u32>ay; this.scW = <u32>(bx - ax); this.scH = <u32>(by - ay);
+            this.scissorOn = !(ax == 0 && ay == 0 && bx == pw && by == ph);
+        }
+        return true;
+    }
+
+    /// Sets the pass's viewport and scissor when they are not the whole
+    /// target.
+    private applyViewport(pass: GPURenderPass): void {
+        if (!this.vpFull) pass.setViewport(this.vpX, this.vpY, this.vpW, this.vpH, 0, 1);
+        if (this.scissorOn) pass.setScissor(this.scX, this.scY, this.scW, this.scH);
+    }
+
+    /// Fills the scissor rectangle with the clear colour (and depth 1,
+    /// stencil 0) where a load op cannot: three.js clears only inside the
+    /// scissor.
+    private clearScissor(pass: GPURenderPass, color: bool, depth: bool, stencil: bool, r: f32, g: f32, b: f32,
+                         a: f32): void {
+        const p = this.fillPipeline(color, depth, stencil);
+        if (p == null) return;
+        pass.setScissor(this.scX, this.scY, this.scW, this.scH);
+        pass.setPipeline(p!);
+        pass.setBlendColor(r, g, b, a);
+        if (stencil) pass.setStencilReference(0);
+        pass.draw(3);
+    }
+
+    /// The pipeline of scissored clears for the current pass's format and
+    /// samples.
+    private fillPipeline(color: bool, depth: bool, stencil: bool): GPUPipeline? {
+        if (!this.ensureUtil()) return null;
+        const key = (<i64>this.pipelineFormat << 32) | <i64>((color ? 1 : 0) | (depth ? 2 : 0) | (stencil ? 4 : 0)
+            | (<i32>this.passSamples << 4));
+        if (this.fillPipelines.has(key)) return this.fillPipelines.get(key);
+        const target = new GPUColorTargetDesc();
+        target.format = <TextureFormat>this.pipelineFormat;
+        if (color) {
+            const blend = new GPUBlendState();
+            blend.srcColor = BlendFactor.blendColor; blend.dstColor = BlendFactor.zero;
+            blend.srcAlpha = BlendFactor.blendColor; blend.dstAlpha = BlendFactor.zero;
+            target.blend = blend;
+        } else {
+            target.writeMask = <u32>ColorWriteMask.none;
+        }
+        const ds = new GPUDepthStencilDesc();
+        ds.format = DEPTH_FORMAT;
+        ds.compare = CompareFunction.always;
+        ds.write = depth;
+        if (stencil) {
+            ds.stencilFront.passOp = StencilOp.replace;
+            ds.stencilBack.passOp = StencilOp.replace;
+        } else {
+            ds.stencilWriteMask = 0;
+        }
+        const d = new GPUPipelineDesc();
+        d.vertexModule = this.utilModule;
+        d.vertexEntryPoint = "vs_fill";
+        d.fragmentModule = this.utilModule;
+        d.fragmentEntryPoint = "fs_one";
+        d.colorTargets = [target];
+        d.depthStencil = ds;
+        d.sampleCount = this.passSamples;
+        const p = new GPUPipeline(d);
+        this.fillPipelines.set(key, p);
+        return p;
+    }
+
+    private ensureUtil(): bool {
+        if (this.utilModule != null) return true;
+        if (this.utilBroken) return false;
+        let module: GPUShaderModule? = null;
+        for (let i = 0; i < UTIL_SHADER_NAMES.length && module == null; i++) {
+            module = this.context.shader(UTIL_SHADER_NAMES[i]);
+        }
+        if (module == null) {
+            this.context.log("three: shader asset 'three/shaders/three_util.wgsl' not found");
+            this.utilBroken = true;
+            return false;
+        }
+        this.utilModule = module;
+        return true;
+    }
+
+    /// Opens the pass of a render or clear on the destination: clears
+    /// with load ops, or loads (keeping what earlier renders drew) and
+    /// clears inside the scissor.
+    private openPass(clearColor: bool, clearDepth: bool, clearStencil: bool, r: f64, g: f64, b: f64, a: f64,
+                     label: string): GPURenderPass {
+        const targets = this.destTargets!;
+        const target = this.destView!;
+        const canvas = this.destCanvas!;
+        const scissored = this.scissorOn;
+        const color = this.colorAttachment;
+        let cr: f32, cg: f32, cb: f32;
+        if (this.linearOutput) {
+            cr = <f32>(r * a); cg = <f32>(g * a); cb = <f32>(b * a);
+        } else {
+            cr = <f32>(LinearToSRGB(r) * a); cg = <f32>(LinearToSRGB(g) * a); cb = <f32>(LinearToSRGB(b) * a);
+        }
+        color.clearR = cr; color.clearG = cg; color.clearB = cb; color.clearA = <f32>a;
+        // Load ops clear the whole target: only without a scissor.
+        const loadColor = !clearColor || scissored;
+        const loadDepth = !clearDepth || scissored;
+        // A render that is one of several (a viewport, a scissor, a load)
+        // keeps its MSAA colour and depth for the next one.
+        const partial = !this.vpFull || scissored;
+        if (loadColor || partial) targets.keepColor = true;
+        if (loadDepth || partial) targets.keepDepth = true;
+        color.loadOp = loadColor ? LoadOp.load : LoadOp.clear;
+        const msaa = targets.msaaView;
+        if (msaa != null) {
+            // The MSAA texture keeps its samples only once a pass loads it.
+            color.view = msaa;
+            color.resolveTarget = target;
+            color.storeOp = targets.keepColor ? StoreOp.store : StoreOp.discard;
+        } else {
+            color.view = this.linearOutput ? target : null;
+            color.resolveTarget = null;
+            color.storeOp = StoreOp.store;
+        }
+        const pd = this.passDesc;
+        pd.label = label;
+        pd.color = [color];
+        pd.depthView = targets.depthView;
+        pd.depthLoadOp = loadDepth ? LoadOp.load : LoadOp.clear;
+        pd.depthStoreOp = targets.keepDepth ? StoreOp.store : StoreOp.discard;
+        pd.depthClearValue = 1;
+        const pass = canvas.beginRenderPass(pd);
+        if (scissored && (clearColor || clearDepth || clearStencil)) {
+            this.clearScissor(pass, clearColor, clearDepth, clearStencil, cr, cg, cb, <f32>a);
+        }
+        this.applyViewport(pass);
+        return pass;
+    }
+
+    /// Clears the destination (inside the scissor when the scissor test is
+    /// on), as three.js's renderer.clear.
+    clear(color: bool = true, depth: bool = true, stencil: bool = true): void {
+        if (this.broken || !this.beginDestination()) return;
+        // What a clear is for: renders that keep (load) what it cleared.
+        const targets = this.destTargets!;
+        targets.keepColor = true;
+        targets.keepDepth = true;
+        const c = this._clearColor;
+        const pass = this.openPass(color, depth, stencil, c.r, c.g, c.b, this.clearAlpha, "three clear");
+        pass.finish();
+    }
+
+    clearColor(): void { this.clear(true, false, false); }
+    clearDepth(): void { this.clear(false, true, false); }
+    clearStencil(): void { this.clear(false, false, true); }
+
+    private renderView(scene: Object3D, camera: Camera): void {
+        const info = this.info.render;
+        const frame = ++this.frameId;
+        this.arenaUsed = 0;
+        if (!this.beginDestination()) return;
+        const canvas = this.destCanvas!;
+        const pw = this.passWidth, ph = this.passHeight;
         this.drainDisposed();
 
         // Matrices.
@@ -670,29 +997,28 @@ export class GPURenderer {
         // Collect lights and draws (textures draw and upload here).
         this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
         this.hasTransmission = false;
-        this.collect(scene, camera, info.frame);
-        const background = this.prepareBackground(scene, info.frame, canvas);
+        this.collect(scene, camera, frame);
+        const background = this.prepareBackground(scene, frame, canvas);
         this.planShadows();
-        this.prepareEnvironment(scene, info.frame, canvas);
+        this.prepareEnvironment(scene, frame, canvas);
         this.writeFrame(scene, camera);
         if (this.sortObjects) {
             this.opaque.sort(compareOpaque);
             this.transparent.sort(compareTransparent);
         }
         // Per-draw blocks; mip chains render here, before the main pass.
-        this.writeDraws(this.opaque, info.frame, canvas);
-        this.writeDraws(this.transparent, info.frame, canvas);
+        this.writeDraws(this.opaque, frame, canvas);
+        this.writeDraws(this.transparent, frame, canvas);
 
         // Shadow maps: one depth pass per light view, before the main pass.
-        this.renderShadows(canvas, info.frame);
+        if (!this.skipShadows) this.renderShadows(canvas, frame);
 
         // Transmission: the opaque scene into a mipmapped HDR target first.
-        if (this.hasTransmission) this.renderTransmission(canvas, scene, background, pw, ph, info.frame);
+        if (this.hasTransmission) this.renderTransmission(canvas, scene, background, pw, ph, frame);
         this.ensureFrameGroup();
 
         // The pass.
-        const color = this.colorAttachment;
-        let r: f64 = this.clearColor.r, g: f64 = this.clearColor.g, b: f64 = this.clearColor.b;
+        let r: f64 = this._clearColor.r, g: f64 = this._clearColor.g, b: f64 = this._clearColor.b;
         let a = this.clearAlpha;
         if (scene instanceof Scene) {
             const bg = (scene as Scene).background;
@@ -702,35 +1028,9 @@ export class GPURenderer {
                 r = c.r * k; g = c.g * k; b = c.b * k; a = 1;
             }
         }
-        if (this.linearOutput) {
-            color.clearR = <f32>(r * a); color.clearG = <f32>(g * a); color.clearB = <f32>(b * a);
-        } else {
-            color.clearR = <f32>(LinearToSRGB(r) * a);
-            color.clearG = <f32>(LinearToSRGB(g) * a);
-            color.clearB = <f32>(LinearToSRGB(b) * a);
-        }
-        color.clearA = <f32>a;
-        color.loadOp = this.autoClear ? LoadOp.clear : LoadOp.load;
-        const msaa = targets.msaaView;
-        if (msaa != null) {
-            color.view = msaa;
-            color.resolveTarget = target;
-            color.storeOp = StoreOp.discard;
-            // An MSAA texture cannot keep the last frame: always clear it.
-            color.loadOp = LoadOp.clear;
-        } else {
-            color.view = this.linearOutput ? target : null;
-            color.resolveTarget = null;
-            color.storeOp = StoreOp.store;
-        }
-        const pd = this.passDesc;
-        pd.label = "three";
-        pd.color = [color];
-        pd.depthView = depthView;
-        pd.depthLoadOp = LoadOp.clear;
-        pd.depthStoreOp = StoreOp.discard;
-        pd.depthClearValue = 1;
-        const pass = canvas.beginRenderPass(pd);
+        const clear = this.autoClear;
+        const pass = this.openPass(clear && this.autoClearColor, clear && this.autoClearDepth,
+            clear && this.autoClearStencil, r, g, b, a, "three");
         if (background) {
             pass.setPipeline(this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0)));
             pass.setBindGroup(0, this.bgGroup!);
@@ -739,6 +1039,58 @@ export class GPURenderer {
         this.drawList(pass, this.opaque);
         this.drawList(pass, this.transparent);
         pass.finish();
+        const memory = this.info.memory;
+        memory.geometries = this.geometries.count;
+        memory.textures = this.textures.count;
+    }
+
+    /// Prepares everything `render(scene, camera)` would draw (pipelines,
+    /// buffers, bind groups, texture uploads and mip chains) without
+    /// drawing, so the first real render does not stall; returns the
+    /// materials seen. Call it from `draw()`, as render. `targetScene` is
+    /// accepted for three.js's signature (its lights are not merged).
+    compile(scene: Object3D, camera: Camera, targetScene: Object3D? = null): Array<Material> {
+        const materials: Array<Material> = [];
+        if (this.broken || !this.beginDestination()) return materials;
+        const canvas = this.destCanvas!;
+        const frame = ++this.frameId;
+        this.arenaUsed = 0;
+        if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
+        if (camera.parent == null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
+        else camera.updateWorldMatrix(true, false);
+        Mat4.multiply(this.viewProj.mat4, camera.projectionMatrix.mat4, camera.matrixWorldInverse.mat4);
+        camera.getWorldPosition(this.cameraPos);
+        this.invViewProj.copy(this.viewProj).invert();
+        // Everything, not only what the camera sees now.
+        this.noCull = true;
+        this.overrideMaterial = scene instanceof Scene ? (scene as Scene).overrideMaterial : null;
+        this.hasTransmission = false;
+        this.collect(scene, camera, frame);
+        this.noCull = false;
+        const background = this.prepareBackground(scene, frame, canvas);
+        this.planShadows();
+        this.prepareEnvironment(scene, frame, canvas);
+        this.writeFrame(scene, camera);
+        this.writeDraws(this.opaque, frame, canvas);
+        this.writeDraws(this.transparent, frame, canvas);
+        this.ensureFrameGroup();
+        if (background) this.pipeline(KEY_BACKGROUND | (this.passSamples > 1 ? KEY_MSAA : 0));
+        const lists: StaticArray<Array<DrawItem>> = [this.opaque, this.transparent];
+        for (let l = 0; l < 2; l++) {
+            const list = lists[l];
+            for (let i = 0; i < list.length; i++) {
+                const item = list[i];
+                if (item.custom == null) this.pipeline(item.pipelineKey);
+                if (materials.indexOf(item.material) < 0) materials.push(item.material);
+            }
+        }
+        if (this.tileCount > 0) {
+            const casters = this.casterItems;
+            casters.length = 0;
+            for (let i = 0; i < this.casterMeshes.length; i++) this.collectCaster(this.casterMeshes[i], frame, casters);
+            for (let i = 0; i < casters.length; i++) this.shadowPipeline(casters[i].pipelineKey);
+        }
+        return materials;
     }
 
     /// Composites the last render into `renderer` at the origin, sized
@@ -1243,7 +1595,7 @@ export class GPURenderer {
                 if (o instanceof Light) {
                     this.lights.push(o as Light);
                 } else if (o instanceof Mesh || o instanceof Line || o instanceof Points || o instanceof Sprite) {
-                    if (!o.frustumCulled || this.inFrustum(o)) this.collectObject(o, frame);
+                    if (!o.frustumCulled || this.noCull || this.inFrustum(o)) this.collectObject(o, frame);
                     else this.info.render.culled++;
                 }
             }
@@ -2146,7 +2498,7 @@ export class GPURenderer {
         camera.matrixWorldInverse.mat4.writeToBuffer(buf, FRAME_VIEW);
         this.invViewProj.mat4.writeToBuffer(buf, FRAME_INV_VIEW_PROJ);
         camera.projectionMatrix.mat4.writeToBuffer(buf, FRAME_PROJ);
-        put4(f, FRAME_VIEWPORT, <f64>this.passWidth, <f64>this.passHeight, this.passRatio, 0);
+        put4(f, FRAME_VIEWPORT, <f64>this.vpW, <f64>this.vpH, this.passRatio, 0);
         const cw = camera.matrixWorld.elements;
         let o = FRAME_CAMERA_POS >> 2;
         f[o] = cw[12]; f[o + 1] = cw[13]; f[o + 2] = cw[14];
@@ -2629,7 +2981,7 @@ export class GPURenderer {
             put4(f, OBJ_PHYSICAL0, mu.clearcoat, mu.clearcoatRoughness, mu.sheenRoughness, mu.specularIntensity);
             put4(f, OBJ_PHYSICAL1, mu.sheenR * mu.sheen, mu.sheenG * mu.sheen, mu.sheenB * mu.sheen, 0);
             put4(f, OBJ_PHYSICAL2, mu.specularColorR, mu.specularColorG, mu.specularColorB, 0);
-            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.passHeight * 0.5);
+            put4(f, OBJ_POINTS, mu.size, mu.sizeAttenuation ? 1 : 0, mu.rotation, <f64>this.vpH * 0.5);
             put4(f, OBJ_DASH, mu.dashSize, mu.gapSize, mu.dashScale, mu.dashOffset);
             put4(f, OBJ_PHYSICAL3, mu.transmission, mu.thickness,
                 isFinite(mu.attenuationDistance) ? mu.attenuationDistance : 0, mu.dispersion);

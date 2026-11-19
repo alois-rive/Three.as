@@ -57,6 +57,8 @@ export * from "./scenes/Fog";
 export * from "./cameras/Camera";
 export * from "./cameras/PerspectiveCamera";
 export * from "./cameras/OrthographicCamera";
+export * from "./cameras/ArrayCamera";
+export * from "./cameras/StereoCamera";
 
 export * from "./lights/Light";
 export * from "./lights/AmbientLight";

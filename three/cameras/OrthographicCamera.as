@@ -44,7 +44,20 @@ export class OrthographicCamera extends Camera {
         const dy = (this.top - this.bottom) / (2 * this.zoom);
         const cx = (this.right + this.left) / 2;
         const cy = (this.top + this.bottom) / 2;
-        this.projectionMatrix.makeOrthographic(cx - dx, cx + dx, cy + dy, cy - dy, this.near, this.far);
+        let left = cx - dx;
+        let right = cx + dx;
+        let top = cy + dy;
+        let bottom = cy - dy;
+        const view = this.view;
+        if (view != null && view.enabled) {
+            const scaleW = (this.right - this.left) / view.fullWidth / this.zoom;
+            const scaleH = (this.top - this.bottom) / view.fullHeight / this.zoom;
+            left += scaleW * view.offsetX;
+            right = left + scaleW * view.width;
+            top -= scaleH * view.offsetY;
+            bottom = top - scaleH * view.height;
+        }
+        this.projectionMatrix.makeOrthographic(left, right, top, bottom, this.near, this.far);
         this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
     }
 

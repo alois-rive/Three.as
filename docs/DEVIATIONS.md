@@ -70,7 +70,7 @@ export class Demo extends Layout {
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
 | custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
-| `info.render.calls/triangles/lines/points` | same, plus `info.render.culled` (objects frustum culled); `info.memory` is missing |
+| `info.render.calls/triangles/lines/points`, `info.memory`, `info.autoReset` / `reset()` | same, plus `info.render.culled` (objects frustum culled); `info.memory` counts `geometries` and `textures` (no `info.programs`) |
 
 ## Language (AnimaScript is typed and compiled)
 
@@ -410,6 +410,39 @@ export class Demo extends Layout {
   `readRenderTargetPixels`, depth textures and multiple render targets are
   not ported.
 
+## Views: viewports, scissors, several renders a frame
+
+- `setViewport`, `setScissor` (both `(x, y, width, height)` or a
+  `Vector4`, in points from the bottom left), `setScissorTest`,
+  `getViewport`, `getScissor`, `getCurrentViewport` (pixels), and a render
+  target's `viewport`, `scissor`, `scissorTest` (pixels) work as three.js;
+  `setSize` resets the viewport. With the scissor test on, `autoClear` and
+  `clear()` clear only inside the scissor (a fullscreen draw, since a pass's
+  load op clears the whole target). `clear(color, depth, stencil)`,
+  `clearColor()`, `clearDepth()`, `clearStencil()`, `autoClearColor`,
+  `autoClearDepth` and `autoClearStencil` are three.js's. Viewports are
+  clamped to the target (WebGPU rejects one that overflows it).
+- Several renders into one target in a frame (split screens, insets,
+  overlays with `autoClear = false`) keep the earlier ones' colour and depth
+  (stencil does not survive, see above). With `antialias`, the MSAA samples
+  and depth are stored at the end of a pass only once a render of that
+  target was partial (a viewport or scissor), loaded (`autoClear` off) or
+  followed `clear()`: an overlay after a full render, without `clear()`,
+  starts from an undefined MSAA buffer in its first frame only.
+- **`ArrayCamera`**: each sub-camera's `viewport` (a `Vector4`, drawing-buffer
+  pixels from the bottom left, as three.js) gets a full render of its own:
+  culled by that sub-camera, the first one clearing (three.js culls with
+  the array camera and draws the lists once per sub-camera). Shadow maps
+  render once. **`StereoCamera`** as three.js (`update(camera)`, then render
+  `cameraL` / `cameraR` into the halves).
+- `setViewOffset` / `clearViewOffset` (and `view`) on PerspectiveCamera and
+  OrthographicCamera as three.js (they live on the Camera base class).
+- **`renderer.compile(scene, camera, targetScene)`** builds every
+  pipeline, bind group, upload and mip chain the render would need (culling
+  off) without drawing, and returns the materials as an `Array<Material>`
+  (three.js: a Set). Call it from `draw()`, as `render`; `targetScene`'s
+  lights are not merged in, and there is no `compileAsync`.
+
 ## Rive app structure (Rive-only)
 
 - `ThreeLayout`: a Layout subclass that owns `renderer`, `scene`, `camera`
@@ -591,7 +624,7 @@ export class Demo extends Layout {
     three.js); here the flag means "the source is premultiplied", so
     ObjectLoader sets it for images Rive decodes.
   - Not written: BatchedMesh's batches (it loads as an Object3D), camera
-    `view` offsets (not ported), `blendSrc` & co. and the other material
+    `view` offsets (setViewOffset is ported, not written), `blendSrc` & co. and the other material
     members this port does not have, `clippingPlanes` (as three.js).
 - **`ObjectLoader(context, manager)`**: `load(name)` reads the BlobAsset
   `name` at once; `parse(json)` takes the text (a string) or a parsed

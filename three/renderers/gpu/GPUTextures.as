@@ -155,6 +155,10 @@ export class GPUTextures {
         return this.chains.get(t.id).texture.numMipmaps;
     }
 
+    /// Textures the renderer has prepared and not disposed
+    /// (renderer.info.memory.textures).
+    get count(): i32 { return this.frames.size; }
+
     dispose(id: i32): void {
         this.frames.delete(id);
         if (this.cubes.has(id)) {

@@ -538,6 +538,23 @@
         </StateMachine>
     </Artboard>
 
+    <!-- Views: viewports, scissors, ArrayCamera, StereoCamera and two scenes
+         in one canvas (examples/views.as). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:3007" clip="true" x="900" y="5600" width="800" height="600" styleId="0:3001" name="Views" id="0:3000">
+        <LayoutComponentStyle name="Artboard Style" id="0:3001"/>
+        <LayoutComponent width="800" height="600" styleId="0:3003" name="Root" id="0:3002">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:3003"/>
+            <ScriptedLayout scriptAssetId="0:3090" name="Scene" id="0:3004"/>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:3007">
+            <StateMachineLayer name="Layer 1" id="0:3008">
+                <AnyState x="0" y="-120" id="0:3009"/>
+                <ExitState x="120" y="-120" id="0:3010"/>
+                <EntryState id="0:3011"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
 
     <ScriptAsset file="examples/first_scene.as" name="first_scene" id="0:190" codeFileId="0:4057"/>
     <ScriptAsset file="examples/hello_cube.as" name="hello_cube" id="0:191" codeFileId="0:8839"/>
@@ -570,6 +587,7 @@
     <ScriptAsset file="examples/editor.as" name="editor" id="0:2190" codeFileId="0:103014"/>
     <ScriptAsset file="examples/batched.as" name="batched" id="0:2290" codeFileId="0:111653"/>
     <ScriptAsset file="examples/models.as" name="models" id="0:2390" codeFileId="0:115080"/>
+    <ScriptAsset file="examples/views.as" name="views" id="0:3090" codeFileId="0:130001"/>
     <BlobAsset file="examples/assets/checker_bc1.ktx2.zlib" name="checker_bc1" id="0:1791"/>
     <BlobAsset file="examples/assets/checker_astc.ktx2.zlib" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>

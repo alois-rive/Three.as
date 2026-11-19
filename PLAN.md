@@ -306,7 +306,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 
 ### M12: rendering features and post-processing breadth
 
-- **M12a, views.** `setViewport`, `setScissor`, `setScissorTest` (split
+- **M12a, views (done; example `Views`).** `setViewport`, `setScissor`, `setScissorTest` (split
   screens, insets), ArrayCamera, StereoCamera, multiple scenes in one
   canvas, `renderer.compile`, `info.memory`.
 - **M12b, render target features.** Multiple render targets (`count`,

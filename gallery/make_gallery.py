@@ -84,6 +84,7 @@ EXAMPLES = [
     ("Editor", "0:2100", "0:2107", "Helpers for grids, axes, lights, cameras, boxes, planes and normals.", True),
     ("Batched", "0:2200", "0:2207", "A BatchedMesh: four geometries, 600 instances, one draw each.", True),
     ("Models", "0:2300", "0:2307", "glTF extensions and meshopt, loaded in a job; a duck over the network.", True),
+    ("Views", "0:3000", "0:3007", "Viewports and scissors: an ArrayCamera, a StereoCamera and two scenes in one canvas.", False),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
 ]
 DEFAULT = 0  # FirstScene plays on load
