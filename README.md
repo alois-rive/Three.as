@@ -114,6 +114,7 @@ rive . --artboard=Editor                          # helpers, controls, scene uti
 rive . --artboard=Batched                         # BatchedMesh: 600 instances, four geometries
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
+rive . --artboard=Addons                          # Water, Sky, Lensflare, Reflector, Refractor, metaballs
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed
 rive . --screenshot=build/s.png --advance=1s      # headless render
 

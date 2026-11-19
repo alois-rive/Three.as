@@ -482,7 +482,7 @@ The plan this milestone started from:
 - Example: the Models example gains a Draco-compressed glTF and a `.drc`
   point cloud.
 
-### M16: popular addons
+### M16: popular addons (done)
 
 All from three.js r170 `examples/jsm/objects/`, faithful ports in
 `packages/threeas/three/addons/objects/`, each in the gallery:
@@ -502,6 +502,24 @@ All from three.js r170 `examples/jsm/objects/`, faithful ports in
 - Example `Addons`: a scene with a mirror, refractive glass, an ocean
   (Water) under a Sky with a lens flare on the sun, and animated
   metaballs.
+
+Done: all seven, plus WaterRefractionShader (webgl_refraction's rippled
+glass), with tests of the MarchingCubes field and polygonization, the
+Reflector / Refractor matrices and oblique clipping, and the shaders'
+uniform layouts (tests/marching_cubes_test.as, tests/objects_test.as). The
+renderer gained `Object3D.onBeforeRender` / `onAfterRender` (called before
+and after a render's pass: a hook that renders makes the render collect
+again) and `renderBufferDirect`, and now reads the camera's position from
+its `matrixWorld` (it used to recompute `matrixWorld` from `matrix`, which
+put cameras with `matrixAutoUpdate` off, a StereoCamera's eyes and the
+Refractor's camera, at the origin; the Views example's stereo half is lit
+from the right place now); the gallery's `Addons` example (a Water
+ocean under a Sky lighting the scene through a PMREM, a Lensflare on the
+sun, a Reflector, a Refractor with WaterRefractionShader, a Water2 pool on
+a flow map, MarchingCubes metaballs) takes about 4.5 ms advance and 5.8 ms
+render a frame interpreted, 0.3 ms and 2.3 ms ahead of time (800 x 600). The gallery carries copies of
+the new shaders (`packages/gallery/three/shaders/objects/`) until the
+engine library is republished; see docs/DEVIATIONS.md.
 
 ### M17: spatial audio (done)
 

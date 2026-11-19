@@ -45,3 +45,12 @@ export * from "./controls/TransformControls";
 export { FBXLoader } from "./loaders/FBXLoader";
 export * from "./curves/NURBSCurve";
 export * from "./exporters/GLTFExporter";
+// examples/jsm/objects (M16); Water2's Water is Water2 here, as in three.js's Addons.js.
+export * from "./objects/Reflector";
+export * from "./objects/Refractor";
+export * from "./objects/Water";
+export { Water as Water2, Water2Options } from "./objects/Water2";
+export * from "./objects/Sky";
+export * from "./objects/Lensflare";
+export * from "./objects/MarchingCubes";
+export * from "./shaders/WaterRefractionShader";

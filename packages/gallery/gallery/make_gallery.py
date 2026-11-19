@@ -86,6 +86,7 @@ EXAMPLES = [
     ("Animation", "0:3600", "0:3607", "Additive clips and subclips, 48 GPU morph targets, instanced morphs, a 320-bone serpent.", True),
     ("RiveDriven", "0:3700", "0:3707", "Rive drives three.js: labels over 3D, a state machine through data binding, Rive bones posing a skeleton.", True),
     ("Models", "0:2300", "0:2307", "glTF extensions and meshopt, loaded in a job; a duck over the network.", True),
+    ("Addons", "0:4100", "0:4107", "three.js's objects addons: an ocean under a Preetham sky with a lens flare, a mirror, rippled glass, a flowing pool and metaballs.", True),
     ("Effects", "0:3100", "0:3107", "Every post-processing pass: AA, AO, outlines, bokeh, LUTs, masks and more, picked from a Rive panel.", True),
     ("Views", "0:3000", "0:3007", "Viewports and scissors: an ArrayCamera, a StereoCamera and two scenes in one canvas.", False),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),

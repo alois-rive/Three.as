@@ -51,7 +51,17 @@ engine edit shows in the gallery without publishing:
   and shaders are used all the same.
 - Local engine scripts are all compiled, new ones included. A **new
   shader** (a new `.wgsl`, or baked variants) does not reach the gallery
-  until the library is republished and the gallery updated.
+  until the library is republished and the gallery updated. Until then
+  the gallery carries copies under the engine's asset names: the addon
+  objects' shaders (`three/shaders/objects/`, M16) are copied to
+  `packages/gallery/three/shaders/objects/` by
+  `tools/make_shader_chunks.py` (run it after editing them; delete the
+  gallery's `three/` once the published library has them).
+- Likewise an example importing an engine module the published library
+  lacks (the Addons example and `three/addons/objects/`) only builds with
+  the override: `tools/release_build.sh` without `--override` (and
+  tools/publish.sh's pre-publish release build) fails on it until the
+  engine is republished.
 - The gallery's `rive . --test` runs the engine's suites too (the override
   brings them), without `tests/fixtures/`: a suite skips a fixture it
   cannot find, and `tests/fixtures_test.as` checks, in packages/threeas,
