@@ -299,7 +299,7 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   FontLoader, ObjectLoader and `toJSON` (round trips of scenes, geometries,
   materials; **done**: toJSON returns a Dynamic, `THREE.JSON.stringify`
   writes it; ObjectLoader, MaterialLoader, BufferGeometryLoader; BatchedMesh
-  and addon geometries' parameters left out), FBXLoader (binary and ASCII),
+  and addon geometries' parameters left out), FBXLoader (binary and ASCII; done),
   GLTFExporter (to a Blob).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
