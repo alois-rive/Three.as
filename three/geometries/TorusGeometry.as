@@ -1,6 +1,8 @@
 // three.js TorusGeometry: around the Z axis, in the XY plane.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class TorusGeometryParameters {
@@ -13,6 +15,21 @@ export class TorusGeometryParameters {
 
 export class TorusGeometry extends BufferGeometry {
     parameters: TorusGeometryParameters = new TorusGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "tube", p.tube);
+        setNumber(data, "radialSegments", <f64>p.radialSegments);
+        setNumber(data, "tubularSegments", <f64>p.tubularSegments);
+        setNumber(data, "arc", p.arc);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): TorusGeometry {
+        return new TorusGeometry(jnum(data, "radius", 1), jnum(data, "tube", 0.4), jint(data, "radialSegments", 12),
+            jint(data, "tubularSegments", 48), jnum(data, "arc", Math.PI * 2));
+    }
 
     constructor(radius: f64 = 1, tube: f64 = 0.4, radialSegments: i32 = 12, tubularSegments: i32 = 48,
                 arc: f64 = Math.PI * 2) {

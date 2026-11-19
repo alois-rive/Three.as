@@ -5,6 +5,8 @@
 import { Texture } from "../textures/Texture";
 import { Vector2 } from "../math/Vector2";
 import { MeshStandardMaterial, MeshStandardMaterialParameters } from "./MeshStandardMaterial";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, setNumbers } from "../core/JSON";
 import {
     MaterialUniforms, KIND_PHYSICAL, ROLE_CLEARCOAT, ROLE_CLEARCOAT_NORMAL, ROLE_CLEARCOAT_ROUGHNESS, ROLE_SHEEN_COLOR, ROLE_SHEEN_ROUGHNESS, ROLE_SPECULAR_COLOR, ROLE_SPECULAR_INTENSITY, ROLE_TRANSMISSION, ROLE_THICKNESS, ROLE_IRIDESCENCE, ROLE_IRIDESCENCE_THICKNESS, ROLE_ANISOTROPY,
 } from "./MaterialUniforms";
@@ -46,6 +48,42 @@ export class MeshPhysicalMaterialParameters extends MeshStandardMaterialParamete
 
 export class MeshPhysicalMaterial extends MeshStandardMaterial {
     readonly isMeshPhysicalMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        setNumber(data, "sheen", this.sheen);
+        this.colorToJSON(data, "sheenColor", this.sheenColor);
+        setNumber(data, "sheenRoughness", this.sheenRoughness);
+        this.mapToJSON(data, "sheenColorMap", this.sheenColorMap, meta);
+        this.mapToJSON(data, "sheenRoughnessMap", this.sheenRoughnessMap, meta);
+        setNumber(data, "specularIntensity", this.specularIntensity);
+        this.colorToJSON(data, "specularColor", this.specularColor);
+        this.mapToJSON(data, "specularIntensityMap", this.specularIntensityMap, meta);
+        this.mapToJSON(data, "specularColorMap", this.specularColorMap, meta);
+        setNumber(data, "ior", this.ior);
+        setNumber(data, "clearcoat", this.clearcoat);
+        setNumber(data, "clearcoatRoughness", this.clearcoatRoughness);
+        this.mapToJSON(data, "clearcoatMap", this.clearcoatMap, meta);
+        this.mapToJSON(data, "clearcoatRoughnessMap", this.clearcoatRoughnessMap, meta);
+        if (this.mapToJSON(data, "clearcoatNormalMap", this.clearcoatNormalMap, meta)) {
+            setNumbers(data, "clearcoatNormalScale", [this.clearcoatNormalScale.x, this.clearcoatNormalScale.y]);
+        }
+        setNumber(data, "dispersion", this.dispersion);
+        setNumber(data, "iridescence", this.iridescence);
+        setNumber(data, "iridescenceIOR", this.iridescenceIOR);
+        setNumbers(data, "iridescenceThicknessRange", this.iridescenceThicknessRange);
+        this.mapToJSON(data, "iridescenceMap", this.iridescenceMap, meta);
+        this.mapToJSON(data, "iridescenceThicknessMap", this.iridescenceThicknessMap, meta);
+        setNumber(data, "anisotropy", this.anisotropy);
+        setNumber(data, "anisotropyRotation", this.anisotropyRotation);
+        this.mapToJSON(data, "anisotropyMap", this.anisotropyMap, meta);
+        setNumber(data, "transmission", this.transmission);
+        this.mapToJSON(data, "transmissionMap", this.transmissionMap, meta);
+        setNumber(data, "thickness", this.thickness);
+        this.mapToJSON(data, "thicknessMap", this.thicknessMap, meta);
+        if (this.attenuationDistance != Infinity) setNumber(data, "attenuationDistance", this.attenuationDistance);
+        this.colorToJSON(data, "attenuationColor", this.attenuationColor);
+    }
     clearcoat: f64 = 0;
     clearcoatRoughness: f64 = 0;
     sheen: f64 = 0;

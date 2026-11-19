@@ -6,6 +6,9 @@ import { Euler } from "../math/Euler";
 import { FogBase } from "./Fog";
 import { Texture } from "../textures/Texture";
 import { Material } from "../materials/Material";
+import { Color } from "../math/Color";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, eulerToJSON } from "../core/JSON";
 
 export class Scene extends Object3D {
     readonly isScene: bool = true;
@@ -27,6 +30,35 @@ export class Scene extends Object3D {
     constructor() {
         super();
         this.type = "Scene";
+    }
+
+    /// background (a hex number for a Color, a texture uuid), environment
+    /// (uuid), fog, and the background and environment settings, as
+    /// three.js (Object3D.toJSON and Scene.toJSON).
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        const background = this.background;
+        if (background != null) {
+            if (background instanceof Color) {
+                object.set("background", Dynamic.fromNumber(<f64>(background as Color).getHex()));
+            } else if (background instanceof Texture) {
+                const t = background as Texture;
+                t.toJSON(meta);
+                object.set("background", Dynamic.fromString(t.uuid));
+            }
+        }
+        const environment = this.environment;
+        if (environment != null) {
+            environment.toJSON(meta);
+            object.set("environment", Dynamic.fromString(environment.uuid));
+        }
+        const fog = this.fog;
+        if (fog != null) object.set("fog", fog.toJSON());
+        if (this.backgroundBlurriness > 0) object.set("backgroundBlurriness", Dynamic.fromNumber(this.backgroundBlurriness));
+        if (this.backgroundIntensity != 1) object.set("backgroundIntensity", Dynamic.fromNumber(this.backgroundIntensity));
+        object.set("backgroundRotation", eulerToJSON(this.backgroundRotation));
+        if (this.environmentIntensity != 1) object.set("environmentIntensity", Dynamic.fromNumber(this.environmentIntensity));
+        object.set("environmentRotation", eulerToJSON(this.environmentRotation));
     }
 
     override copy(source: Object3D, recursive: bool = true): Object3D {

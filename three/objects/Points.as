@@ -8,6 +8,9 @@ import { Material } from "../materials/Material";
 import { PointsMaterial } from "../materials/PointsMaterial";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastPoints } from "./raycasting";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
+import { geometryToLibrary, materialToLibrary } from "./serialize";
 
 export class Points extends Object3D {
     readonly isPoints: bool = true;
@@ -19,6 +22,12 @@ export class Points extends Object3D {
         this.type = "Points";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("geometry", Dynamic.fromString(geometryToLibrary(this.geometry, meta)));
+        object.set("material", Dynamic.fromString(materialToLibrary(this.material, meta)));
     }
 
     /// Hits within raycaster.params.Points.threshold of a point.

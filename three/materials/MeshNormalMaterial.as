@@ -2,6 +2,8 @@
 
 import { TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import {
     MaterialUniforms, KIND_NORMAL, SLOT_NORMAL, ROLE_BUMP, ROLE_DISPLACEMENT,
 } from "./MaterialUniforms";
@@ -21,6 +23,12 @@ export class MeshNormalMaterialParameters extends MaterialParameters {
 
 export class MeshNormalMaterial extends Material {
     readonly isMeshNormalMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.surfaceMapsToJSON(data, meta, this.normalMap, this.normalMapType, this.normalScale, this.bumpMap,
+            this.bumpScale, this.displacementMap, this.displacementScale, this.displacementBias);
+    }
     normalMap: Texture? = null;
     normalScale: Vector2 = new Vector2(1, 1);
 

@@ -3,6 +3,8 @@
 
 import { TangentSpaceNormalMap } from "../constants";
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import {
     MaterialUniforms, KIND_MATCAP, SLOT_MAP, SLOT_NORMAL, SLOT_AUX, SLOT_ALPHA, ROLE_BUMP, ROLE_DISPLACEMENT,
 } from "./MaterialUniforms";
@@ -27,6 +29,16 @@ export class MeshMatcapMaterialParameters extends MaterialParameters {
 
 export class MeshMatcapMaterial extends Material {
     readonly isMeshMatcapMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        this.mapToJSON(data, "matcap", this.matcap, meta);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        this.surfaceMapsToJSON(data, meta, this.normalMap, this.normalMapType, this.normalScale, this.bumpMap,
+            this.bumpScale, this.displacementMap, this.displacementScale, this.displacementBias);
+    }
     color: Color = new Color();
     matcap: Texture? = null;
     map: Texture? = null;

@@ -4,6 +4,8 @@
 // Tetrahedron and Dodecahedron are presets.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint, jnumbers } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
@@ -17,6 +19,28 @@ export class PolyhedronGeometryParameters {
 
 export class PolyhedronGeometry extends BufferGeometry {
     parameters: PolyhedronGeometryParameters = new PolyhedronGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        if (this.type == "PolyhedronGeometry") {
+            data.set("vertices", Dynamic.fromNumbers(p.vertices));
+            const indices = new Array<f64>(p.indices.length);
+            for (let i = 0; i < p.indices.length; i++) indices[i] = <f64>p.indices[i];
+            data.set("indices", Dynamic.fromNumbers(indices));
+        }
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "detail", <f64>p.detail);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): PolyhedronGeometry {
+        const vertices = jnumbers(data, "vertices");
+        const indexValues = jnumbers(data, "indices");
+        const indices: Array<i32> = [];
+        if (indexValues != null) for (let i = 0; i < indexValues.length; i++) indices.push(<i32>indexValues[i]);
+        return new PolyhedronGeometry(vertices != null ? vertices! : [], indices, jnum(data, "radius", 1),
+            jint(data, "detail", 0));
+    }
 
     private vertexBuffer: Array<f64> = [];
     private uvBuffer: Array<f64> = [];
@@ -167,6 +191,10 @@ export class IcosahedronGeometry extends PolyhedronGeometry {
         ], radius, detail);
         this.type = "IcosahedronGeometry";
     }
+
+    static fromJSON(data: Dynamic?): IcosahedronGeometry {
+        return new IcosahedronGeometry(jnum(data, "radius", 1), jint(data, "detail", 0));
+    }
 }
 
 export class OctahedronGeometry extends PolyhedronGeometry {
@@ -175,12 +203,20 @@ export class OctahedronGeometry extends PolyhedronGeometry {
             [0, 2, 4, 0, 4, 3, 0, 3, 5, 0, 5, 2, 1, 2, 5, 1, 5, 3, 1, 3, 4, 1, 4, 2], radius, detail);
         this.type = "OctahedronGeometry";
     }
+
+    static fromJSON(data: Dynamic?): OctahedronGeometry {
+        return new OctahedronGeometry(jnum(data, "radius", 1), jint(data, "detail", 0));
+    }
 }
 
 export class TetrahedronGeometry extends PolyhedronGeometry {
     constructor(radius: f64 = 1, detail: i32 = 0) {
         super([1, 1, 1, -1, -1, 1, -1, 1, -1, 1, -1, -1], [2, 1, 0, 0, 3, 2, 1, 3, 0, 2, 3, 1], radius, detail);
         this.type = "TetrahedronGeometry";
+    }
+
+    static fromJSON(data: Dynamic?): TetrahedronGeometry {
+        return new TetrahedronGeometry(jnum(data, "radius", 1), jint(data, "detail", 0));
     }
 }
 
@@ -201,5 +237,9 @@ export class DodecahedronGeometry extends PolyhedronGeometry {
             19, 5, 14, 19, 14, 4, 19, 4, 17, 1, 12, 14, 1, 14, 5, 1, 5, 9,
         ], radius, detail);
         this.type = "DodecahedronGeometry";
+    }
+
+    static fromJSON(data: Dynamic?): DodecahedronGeometry {
+        return new DodecahedronGeometry(jnum(data, "radius", 1), jint(data, "detail", 0));
     }
 }

@@ -1,6 +1,8 @@
 // three.js CurvePath: curves joined end to end, parameterized by length.
 
 import { Curve } from "./Curve";
+import { Dynamic } from "rive/dynamic";
+import { jbool, jstr, jarr } from "../../core/JSON";
 
 export class CurvePath<V> extends Curve<V> {
     curves: Array<Curve<V>> = [];
@@ -16,6 +18,31 @@ export class CurvePath<V> extends Curve<V> {
     add(curve: Curve<V>): void {
         this.curves.push(curve);
     }
+
+    override toJSON(): Dynamic {
+        const data = super.toJSON();
+        data.set("autoClose", Dynamic.fromBool(this.autoClose));
+        const curves = Dynamic.newTable();
+        for (let i = 0; i < this.curves.length; i++) curves.push(this.curves[i].toJSON());
+        data.set("curves", curves);
+        return data;
+    }
+
+    override fromJSON(json: Dynamic?): Curve<V> {
+        super.fromJSON(json);
+        this.autoClose = jbool(json, "autoClose", false);
+        this.curves = [];
+        const items = jarr(json, "curves");
+        for (let i = 0; i < items.length; i++) {
+            const curve = this.createCurve(jstr(items[i], "type", ""));
+            if (curve != null) this.curves.push(curve.fromJSON(items[i]));
+        }
+        return this;
+    }
+
+    /// A new curve of three.js's class `type` for fromJSON (Path makes the
+    /// 2D curves; null skips the curve).
+    protected createCurve(type: string): Curve<V>? { return null; }
 
     override getPoint(t: f64, target: V): V {
         const d = t * this.getLength();

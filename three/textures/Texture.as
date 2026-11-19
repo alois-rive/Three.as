@@ -14,6 +14,12 @@ import { Vector2 } from "../math/Vector2";
 import { Matrix3 } from "../math/Matrix3";
 import { ColorOrTexture } from "../core/ColorOrTexture";
 import { Event } from "../core/EventDispatcher";
+import { MathUtils } from "../math/MathUtils";
+import { Source } from "./Source";
+import { Dynamic } from "rive/dynamic";
+import {
+    JSONMeta, jsonMetadata, setNumber, setString, setBool, setNumbers, isEmptyTable,
+} from "../core/JSON";
 import {
     ClampToEdgeWrapping, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, SRGBColorSpace,
     RGBAFormat, UnsignedByteType, UVMapping,
@@ -62,6 +68,10 @@ export class Texture extends ColorOrTexture {
     colorSpace: string = NoColorSpace;
     /// Bumped by `needsUpdate = true`.
     version: i32 = 0;
+    /// Where the image came from (see Source), for toJSON.
+    source: Source = new Source();
+    private _uuid: string = "";
+    private _userData: Dynamic? = null;
 
     private cachedView: GPUTextureView? = null;
     private cachedFor: Image? = null;
@@ -76,6 +86,76 @@ export class Texture extends ColorOrTexture {
             this.premultiplyAlpha = true;
             this.colorSpace = SRGBColorSpace;
         }
+    }
+
+    /// A random uuid, made on first use.
+    get uuid(): string {
+        if (this._uuid.length == 0) this._uuid = MathUtils.generateUUID();
+        return this._uuid;
+    }
+    set uuid(value: string) { this._uuid = value; }
+
+    /// A `Dynamic` table, as three.js's userData (see Object3D.userData).
+    get userData(): Dynamic {
+        let d = this._userData;
+        if (d == null) {
+            d = Dynamic.newTable();
+            this._userData = d;
+        }
+        return d!;
+    }
+    set userData(value: Dynamic) { this._userData = value; }
+
+    /// three.js's JSON: { metadata, uuid, name, image (the source's uuid),
+    /// mapping, channel, repeat, offset, center, rotation, wrap, format,
+    /// type, colorSpace, minFilter, magFilter, anisotropy, flipY,
+    /// generateMipmaps, premultiplyAlpha, unpackAlignment, userData }. The
+    /// image goes to `meta.images` (see imageToJSON); with a `meta`, the
+    /// texture goes to `meta.textures` and is written once.
+    toJSON(meta: JSONMeta? = null): Dynamic {
+        const isRootObject = meta == null;
+        if (meta != null && meta.textures.has(this.uuid)) return meta.textures.get(this.uuid);
+        const output = Dynamic.newTable();
+        output.set("metadata", jsonMetadata("Texture", "Texture.toJSON"));
+        setString(output, "uuid", this.uuid);
+        setString(output, "name", this.name);
+        const image = this.imageToJSON();
+        if (image != null) {
+            const uuid = Dynamic.asString(image.get("uuid"));
+            if (meta != null && !meta.images.has(uuid)) meta.images.set(uuid, image);
+            setString(output, "image", uuid);
+        }
+        setNumber(output, "mapping", <f64>this.mapping);
+        setNumber(output, "channel", <f64>this.channel);
+        setNumbers(output, "repeat", [this.repeat.x, this.repeat.y]);
+        setNumbers(output, "offset", [this.offset.x, this.offset.y]);
+        setNumbers(output, "center", [this.center.x, this.center.y]);
+        setNumber(output, "rotation", this.rotation);
+        setNumbers(output, "wrap", [<f64>this.wrapS, <f64>this.wrapT]);
+        setNumber(output, "format", <f64>this.format);
+        setNumber(output, "type", <f64>this.type);
+        setString(output, "colorSpace", this.colorSpace);
+        setNumber(output, "minFilter", <f64>this.minFilter);
+        setNumber(output, "magFilter", <f64>this.magFilter);
+        setNumber(output, "anisotropy", <f64>this.anisotropy);
+        setBool(output, "flipY", this.flipY);
+        setBool(output, "generateMipmaps", this.generateMipmaps);
+        // Images (decoded by Rive, premultiplied) are straight-alpha files
+        // to three.js, whose premultiplyAlpha asks the upload to premultiply.
+        setBool(output, "premultiplyAlpha", this.source.url.length > 0 || this.source.urls.length > 0
+            ? false : this.premultiplyAlpha);
+        setNumber(output, "unpackAlignment", 4);
+        if (!isEmptyTable(this._userData)) output.set("userData", this._userData);
+        if (!isRootObject) meta!.textures.set(this.uuid, output);
+        return output;
+    }
+
+    /// The JSON of the image: the source's { uuid, url } (DataTexture
+    /// writes its texels when it has no url), or null when there is
+    /// nothing to write (a canvas, an artboard, an image without a known
+    /// url).
+    imageToJSON(): Dynamic? {
+        return this.source.toJSON();
     }
 
     /// Whether getView() is a float (rgba16float) texture (internal: mip

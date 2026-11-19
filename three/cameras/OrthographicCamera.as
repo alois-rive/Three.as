@@ -3,6 +3,8 @@
 
 import { Object3D } from "../core/Object3D";
 import { Camera } from "./Camera";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 
 export class OrthographicCamera extends Camera {
     readonly isOrthographicCamera: bool = true;
@@ -24,6 +26,17 @@ export class OrthographicCamera extends Camera {
         this.near = near;
         this.far = far;
         this.updateProjectionMatrix();
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        setNumber(object, "zoom", this.zoom);
+        setNumber(object, "left", this.left);
+        setNumber(object, "right", this.right);
+        setNumber(object, "top", this.top);
+        setNumber(object, "bottom", this.bottom);
+        setNumber(object, "near", this.near);
+        setNumber(object, "far", this.far);
     }
 
     override updateProjectionMatrix(): void {

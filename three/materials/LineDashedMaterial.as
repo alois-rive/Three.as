@@ -2,6 +2,8 @@
 // computeLineDistances() on the line first).
 
 import { LineBasicMaterial, LineBasicMaterialParameters } from "./LineBasicMaterial";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 import { MaterialUniforms, KIND_LINE_DASHED } from "./MaterialUniforms";
 
 export class LineDashedMaterialParameters extends LineBasicMaterialParameters {
@@ -12,6 +14,13 @@ export class LineDashedMaterialParameters extends LineBasicMaterialParameters {
 
 export class LineDashedMaterial extends LineBasicMaterial {
     readonly isLineDashedMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        setNumber(data, "dashSize", this.dashSize);
+        setNumber(data, "gapSize", this.gapSize);
+        setNumber(data, "scale", this.scale);
+    }
     scale: f64 = 1;
     dashSize: f64 = 3;
     gapSize: f64 = 1;

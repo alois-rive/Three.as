@@ -5,6 +5,8 @@ import { Object3D } from "../core/Object3D";
 import { Camera } from "./Camera";
 import { Mat4 } from "rive/mat4";
 import { DEG2RAD, RAD2DEG } from "../math/MathUtils";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 
 export class PerspectiveCamera extends Camera {
     readonly isPerspectiveCamera: bool = true;
@@ -28,6 +30,18 @@ export class PerspectiveCamera extends Camera {
         this.near = near;
         this.far = far;
         this.updateProjectionMatrix();
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        setNumber(object, "fov", this.fov);
+        setNumber(object, "zoom", this.zoom);
+        setNumber(object, "near", this.near);
+        setNumber(object, "far", this.far);
+        setNumber(object, "focus", this.focus);
+        setNumber(object, "aspect", this.aspect);
+        setNumber(object, "filmGauge", this.filmGauge);
+        setNumber(object, "filmOffset", this.filmOffset);
     }
 
     /// Sets fov from a focal length in millimetres (35mm film by default).

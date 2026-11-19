@@ -526,4 +526,5 @@
     <BlobAsset file="examples/assets/checker_astc.ktx2" name="checker_astc" id="0:1792"/>
     <BlobAsset file="examples/assets/features.glb" name="features" id="0:2301"/>
     <BlobAsset file="examples/assets/features_embedded.gltf" name="features_embedded" id="0:2302"/>
+    <BlobAsset file="examples/assets/threejs_scene.json" name="threejs_scene" id="0:2471"/>
 </Rive>

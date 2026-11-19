@@ -5,9 +5,17 @@
 
 import { Object3D } from "../core/Object3D";
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export class RectAreaLight extends Light {
     readonly isRectAreaLight: bool = true;
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("width", Dynamic.fromNumber(this.width));
+        object.set("height", Dynamic.fromNumber(this.height));
+    }
     width: f64;
     height: f64;
 

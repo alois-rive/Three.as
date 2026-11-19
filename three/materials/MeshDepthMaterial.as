@@ -2,6 +2,8 @@
 // (BasicDepthPacking only).
 
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 import {
     MaterialUniforms, KIND_DEPTH, SLOT_MAP, SLOT_ALPHA, ROLE_DISPLACEMENT,
 } from "./MaterialUniforms";
@@ -19,6 +21,17 @@ export class MeshDepthMaterialParameters extends MaterialParameters {
 
 export class MeshDepthMaterial extends Material {
     readonly isMeshDepthMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        setNumber(data, "depthPacking", <f64>this.depthPacking);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.mapToJSON(data, "displacementMap", this.displacementMap, meta)) {
+            setNumber(data, "displacementScale", this.displacementScale);
+            setNumber(data, "displacementBias", this.displacementBias);
+        }
+    }
     depthPacking: i32 = BasicDepthPacking;
     map: Texture? = null;
     alphaMap: Texture? = null;

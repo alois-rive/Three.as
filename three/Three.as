@@ -38,6 +38,7 @@ export * from "./core/BufferAttribute";
 export * from "./core/InstancedBufferAttribute";
 export * from "./core/InterleavedBuffer";
 export * from "./core/BufferGeometry";
+export { JSON, JSONMeta } from "./core/JSON";
 
 export * from "./objects/Group";
 export * from "./objects/Mesh";
@@ -115,6 +116,7 @@ export * from "./extras/PMREMGenerator";
 export * from "./extras/Controls";
 
 export * from "./textures/Texture";
+export * from "./textures/Source";
 export * from "./textures/DataTexture";
 export * from "./textures/DataArrayTexture";
 export { toHalf, fromHalf } from "./textures/DataUpload";
@@ -129,6 +131,9 @@ export * from "./loaders/FileLoader";
 export * from "./renderers/WebGLCubeRenderTarget";
 export * from "./cameras/CubeCamera";
 export * from "./loaders/TextureLoader";
+export * from "./loaders/BufferGeometryLoader";
+export * from "./loaders/MaterialLoader";
+export * from "./loaders/ObjectLoader";
 
 export * from "./animation/KeyframeTrack";
 export * from "./animation/AnimationClip";

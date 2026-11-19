@@ -8,6 +8,9 @@ import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastMesh } from "./raycasting";
 import { Vector3 } from "../math/Vector3";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
+import { geometryToLibrary, writeMaterials } from "./serialize";
 
 export class Mesh extends Object3D {
     readonly isMesh: bool = true;
@@ -28,6 +31,12 @@ export class Mesh extends Object3D {
         this.type = "Mesh";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("geometry", Dynamic.fromString(geometryToLibrary(this.geometry, meta)));
+        writeMaterials(object, this.material, this.materials, meta);
     }
 
     /// Sizes morphTargetInfluences and fills morphTargetDictionary from the

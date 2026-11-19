@@ -1,6 +1,8 @@
 // three.js RingGeometry: an annulus in the XY plane, facing +Z.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 
 export class RingGeometryParameters {
@@ -14,6 +16,23 @@ export class RingGeometryParameters {
 
 export class RingGeometry extends BufferGeometry {
     parameters: RingGeometryParameters = new RingGeometryParameters();
+
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "innerRadius", p.innerRadius);
+        setNumber(data, "outerRadius", p.outerRadius);
+        setNumber(data, "thetaSegments", <f64>p.thetaSegments);
+        setNumber(data, "phiSegments", <f64>p.phiSegments);
+        setNumber(data, "thetaStart", p.thetaStart);
+        setNumber(data, "thetaLength", p.thetaLength);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): RingGeometry {
+        return new RingGeometry(jnum(data, "innerRadius", 0.5), jnum(data, "outerRadius", 1),
+            jint(data, "thetaSegments", 32), jint(data, "phiSegments", 1), jnum(data, "thetaStart", 0),
+            jnum(data, "thetaLength", Math.PI * 2));
+    }
 
     constructor(innerRadius: f64 = 0.5, outerRadius: f64 = 1, thetaSegments: i32 = 32, phiSegments: i32 = 1,
                 thetaStart: f64 = 0, thetaLength: f64 = Math.PI * 2) {

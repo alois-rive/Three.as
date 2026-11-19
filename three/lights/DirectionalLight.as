@@ -3,11 +3,21 @@
 // three.js's physically based lighting (no PI scaling).
 
 import { Light } from "./Light";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 import { Object3D } from "../core/Object3D";
 import { DirectionalLightShadow } from "./LightShadow";
 
 export class DirectionalLight extends Light {
     readonly isDirectionalLight: bool = true;
+
+    /// The target is written as its uuid, as three.js (ObjectLoader binds
+    /// it when the target is in the scene, else makes a new one).
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("shadow", this.shadow.toJSON());
+        object.set("target", Dynamic.fromString(this.target.uuid));
+    }
     /// The light points at this object's world position. Add it to the
     /// scene to move it with a parent.
     target: Object3D = new Object3D();

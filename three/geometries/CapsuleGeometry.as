@@ -2,6 +2,8 @@
 // hemispheres of `radius`, along Y.
 
 import { BufferGeometry } from "../core/BufferGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, jnum, jint } from "../core/JSON";
 import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { Vector3 } from "../math/Vector3";
 
@@ -15,6 +17,24 @@ export class CapsuleGeometryParameters {
 
 export class CapsuleGeometry extends BufferGeometry {
     parameters: CapsuleGeometryParameters = new CapsuleGeometryParameters();
+
+    /// Writes `length` (three.js r170's name) and `height` (r174+'s), so
+    /// either reads it.
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        const p = this.parameters;
+        setNumber(data, "radius", p.radius);
+        setNumber(data, "length", p.height);
+        setNumber(data, "height", p.height);
+        setNumber(data, "capSegments", <f64>p.capSegments);
+        setNumber(data, "radialSegments", <f64>p.radialSegments);
+        setNumber(data, "heightSegments", <f64>p.heightSegments);
+        return true;
+    }
+
+    static fromJSON(data: Dynamic?): CapsuleGeometry {
+        return new CapsuleGeometry(jnum(data, "radius", 1), jnum(data, "height", jnum(data, "length", 1)),
+            jint(data, "capSegments", 4), jint(data, "radialSegments", 8), jint(data, "heightSegments", 1));
+    }
 
     constructor(radius: f64 = 1, height: f64 = 1, capSegments: i32 = 4, radialSegments: i32 = 8,
                 heightSegments: i32 = 1) {

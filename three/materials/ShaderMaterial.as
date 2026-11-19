@@ -35,6 +35,8 @@ import { Vector4 } from "../math/Vector4";
 import { Color } from "../math/Color";
 import { Matrix4 } from "../math/Matrix4";
 import { Texture } from "../textures/Texture";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, setString, setBool, setNumbers } from "../core/JSON";
 
 /// A uniform of any type (three.js's IUniform).
 export abstract class UniformBase {
@@ -47,6 +49,10 @@ export abstract class UniformBase {
     /// A copy (vectors, colours and matrices copied; textures shared), as
     /// three.js's UniformsUtils.clone.
     abstract clone(): UniformBase;
+    /// three.js's uniform JSON: { type, value } ("t" texture uuid, "c"
+    /// hex colour, "v2" / "v3" / "v4" / "m4" arrays) or { value } for a
+    /// number.
+    abstract toJSON(meta: JSONMeta): Dynamic;
 }
 
 /// A uniform holding `value`: f64 (f32 in WGSL), Vector2, Vector3,
@@ -124,6 +130,38 @@ export class Uniform<T> extends UniformBase {
         }
         return new Uniform<T>(this.value);
     }
+
+    override toJSON(meta: JSONMeta): Dynamic {
+        const data = Dynamic.newTable();
+        if (isReference<T>()) {
+            const v = this.value;
+            if (v instanceof Texture) {
+                const t = v as Texture;
+                t.toJSON(meta);
+                setString(data, "type", "t");
+                setString(data, "value", t.uuid);
+            } else if (v instanceof Color) {
+                setString(data, "type", "c");
+                setNumber(data, "value", <f64>(v as Color).getHex());
+            } else if (v instanceof Vector2) {
+                setString(data, "type", "v2");
+                setNumbers(data, "value", (v as Vector2).toArray());
+            } else if (v instanceof Vector3) {
+                setString(data, "type", "v3");
+                setNumbers(data, "value", (v as Vector3).toArray());
+            } else if (v instanceof Vector4) {
+                const w = v as Vector4;
+                setString(data, "type", "v4");
+                setNumbers(data, "value", [w.x, w.y, w.z, w.w]);
+            } else if (v instanceof Matrix4) {
+                setString(data, "type", "m4");
+                setNumbers(data, "value", (v as Matrix4).toArray());
+            }
+        } else {
+            setNumber(data, "value", <f64>this.value);
+        }
+        return data;
+    }
 }
 
 export class ShaderMaterialParameters extends MaterialParameters {
@@ -171,6 +209,20 @@ export class ShaderMaterial extends Material {
     /// The uniform `name`, typed (three.js: material.uniforms.name).
     uniform<T>(name: string): Uniform<T> {
         return this.uniforms.get(name) as Uniform<T>;
+    }
+
+    /// three.js's uniforms and `lights`, plus the WGSL asset (`shader`,
+    /// `vertexEntryPoint`, `fragmentEntryPoint`) in place of GLSL strings.
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        const uniforms = Dynamic.newTable();
+        const names = this.uniforms.keys();
+        for (let i = 0; i < names.length; i++) uniforms.set(names[i], this.uniforms.get(names[i]).toJSON(meta));
+        data.set("uniforms", uniforms);
+        setString(data, "shader", this.shader);
+        if (this.vertexEntryPoint != "") setString(data, "vertexEntryPoint", this.vertexEntryPoint);
+        if (this.fragmentEntryPoint != "") setString(data, "fragmentEntryPoint", this.fragmentEntryPoint);
+        setBool(data, "lights", this.lights);
     }
 
     override fillUniforms(u: MaterialUniforms): void {

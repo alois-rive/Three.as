@@ -1,6 +1,8 @@
 // three.js SpriteMaterial: transparent by default, as three.js.
 
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, setBool } from "../core/JSON";
 import { MaterialUniforms, KIND_BASIC, SLOT_MAP, SLOT_ALPHA } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Texture } from "../textures/Texture";
@@ -20,6 +22,15 @@ export class SpriteMaterialParameters extends MaterialParameters {
 
 export class SpriteMaterial extends Material {
     readonly isSpriteMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.rotation != 0) setNumber(data, "rotation", this.rotation);
+        setBool(data, "sizeAttenuation", this.sizeAttenuation);
+    }
     color: Color = new Color();
     map: Texture? = null;
     alphaMap: Texture? = null;

@@ -6,6 +6,8 @@ import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Vector2 } from "../math/Vector2";
 import { Matrix4 } from "../math/Matrix4";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export class LightShadow {
     camera: Camera;
@@ -26,6 +28,23 @@ export class LightShadow {
 
     constructor(camera: Camera = new OrthographicCamera(-5, 5, 5, -5, 0.5, 500)) {
         this.camera = camera;
+    }
+
+    /// three.js's JSON: intensity, bias, normalBias, radius and mapSize
+    /// when not the defaults, and the camera's object (without matrix).
+    toJSON(): Dynamic {
+        const object = Dynamic.newTable();
+        if (this.intensity != 1) object.set("intensity", Dynamic.fromNumber(this.intensity));
+        if (this.bias != 0) object.set("bias", Dynamic.fromNumber(this.bias));
+        if (this.normalBias != 0) object.set("normalBias", Dynamic.fromNumber(this.normalBias));
+        if (this.radius != 1) object.set("radius", Dynamic.fromNumber(this.radius));
+        if (this.mapSize.x != 512 || this.mapSize.y != 512) {
+            object.set("mapSize", Dynamic.fromNumbers(this.mapSize.toArray()));
+        }
+        const camera = this.camera.toJSON(new JSONMeta()).get("object");
+        if (camera != null) camera.set("matrix", null);
+        object.set("camera", camera);
+        return object;
     }
 
     copy(source: LightShadow): LightShadow {

@@ -9,6 +9,9 @@ import { LineBasicMaterial } from "../materials/LineBasicMaterial";
 import { Vector3 } from "../math/Vector3";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastLine } from "./raycasting";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
+import { geometryToLibrary, materialToLibrary } from "./serialize";
 
 /// A continuous line through the vertices (a line strip).
 export class Line extends Object3D {
@@ -21,6 +24,12 @@ export class Line extends Object3D {
         this.type = "Line";
         this.geometry = geometry;
         this.material = material;
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("geometry", Dynamic.fromString(geometryToLibrary(this.geometry, meta)));
+        object.set("material", Dynamic.fromString(materialToLibrary(this.material, meta)));
     }
 
     /// Hits within raycaster.params.Line.threshold of the line.

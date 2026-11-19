@@ -8,6 +8,7 @@ import { Context } from "rive/host";
 import { GPUTexture, GPUTextureDesc, GPUTextureView } from "rive/gpu";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { Texture } from "./Texture";
+import { Dynamic } from "rive/dynamic";
 import { gpuFormat, isFloatType, uploadBytes } from "./DataUpload";
 import { NearestFilter, RGBAFormat, UnsignedByteType } from "../constants";
 
@@ -36,6 +37,40 @@ export class DataTexture extends Texture {
         this.generateMipmaps = false;
         this.flipY = false;
         this.version = 1;
+    }
+
+    /// The source's url when it has one (a decoded image), else three.js's
+    /// data image: { uuid, url: { data, width, height, type } } (the texels
+    /// as numbers; type "Uint8Array", "Uint16Array" or "Float32Array").
+    override imageToJSON(): Dynamic? {
+        if (this.source.url.length > 0) return super.imageToJSON();
+        const image = Dynamic.newTable();
+        image.set("uuid", Dynamic.fromString(this.source.uuid));
+        const json = Dynamic.newTable();
+        image.set("url", json);
+        const d = this.data;
+        let values: Array<f64> = [];
+        let type = "Uint8Array";
+        if (d instanceof Float32Array) {
+            const a = d as Float32Array;
+            values = new Array<f64>(a.length);
+            for (let i = 0; i < a.length; i++) values[i] = <f64>a[i];
+            type = "Float32Array";
+        } else if (d instanceof Uint16Array) {
+            const a = d as Uint16Array;
+            values = new Array<f64>(a.length);
+            for (let i = 0; i < a.length; i++) values[i] = <f64>a[i];
+            type = "Uint16Array";
+        } else if (d instanceof Uint8Array) {
+            const a = d as Uint8Array;
+            values = new Array<f64>(a.length);
+            for (let i = 0; i < a.length; i++) values[i] = <f64>a[i];
+        }
+        json.set("data", Dynamic.fromNumbers(values));
+        json.set("width", Dynamic.fromNumber(<f64>this.dataWidth));
+        json.set("height", Dynamic.fromNumber(<f64>this.dataHeight));
+        json.set("type", Dynamic.fromString(type));
+        return image;
     }
 
     override get width(): u32 { return this.dataWidth; }

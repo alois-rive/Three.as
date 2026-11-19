@@ -4,6 +4,8 @@
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
 import { Vector3 } from "../math/Vector3";
+import { Dynamic } from "rive/dynamic";
+import { numbersOf } from "./JSON";
 
 export class BufferAttribute {
     readonly isBufferAttribute: bool = true;
@@ -73,6 +75,19 @@ export class BufferAttribute {
 
     clone(): BufferAttribute { return new BufferAttribute(this.array.slice(), this.itemSize, this.normalized); }
 
+    /// three.js's JSON: { itemSize, type, array, normalized, name }. The
+    /// array is always a "Float32Array" here (interleaved attributes are
+    /// written de-interleaved).
+    toJSON(): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("itemSize", Dynamic.fromNumber(<f64>this.itemSize));
+        data.set("type", Dynamic.fromString("Float32Array"));
+        data.set("array", numbersOf(this.array));
+        data.set("normalized", Dynamic.fromBool(this.normalized));
+        if (this.name != "") data.set("name", Dynamic.fromString(this.name));
+        return data;
+    }
+
     applyMatrix3(m: Matrix3): BufferAttribute {
         for (let i = 0, l = this.count; i < l; i++) {
             _v.set(this.getX(i), this.getY(i), this.getZ(i)).applyMatrix3(m);
@@ -133,6 +148,22 @@ export class Uint32BufferAttribute {
     set needsUpdate(value: bool) { if (value) this.version++; }
     getX(index: i32): i32 { return <i32>this.array[index]; }
     setX(index: i32, value: i32): Uint32BufferAttribute { this.array[index] = <u32>value; return this; }
+
+    /// three.js's index JSON: { type, array }, "Uint16Array" when every
+    /// index fits 16 bits, else "Uint32Array".
+    toJSON(): Dynamic {
+        const a = this.array;
+        const values = new Array<f64>(a.length);
+        let max: u32 = 0;
+        for (let i = 0; i < a.length; i++) {
+            values[i] = <f64>a[i];
+            if (a[i] > max) max = a[i];
+        }
+        const data = Dynamic.newTable();
+        data.set("type", Dynamic.fromString(max < 65535 ? "Uint16Array" : "Uint32Array"));
+        data.set("array", Dynamic.fromNumbers(values));
+        return data;
+    }
 }
 
 /// Same storage as Uint32BufferAttribute (kept for three.js signatures).

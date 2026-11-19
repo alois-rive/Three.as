@@ -2,6 +2,9 @@
 
 import { Object3D } from "../core/Object3D";
 import { Matrix4 } from "../math/Matrix4";
+import { MathUtils } from "../math/MathUtils";
+import { Dynamic } from "rive/dynamic";
+import { jsonMetadata, jhas, jstr, jarr, asStr, asNumbers } from "../core/JSON";
 
 /// A joint: an Object3D like any other (animate or move it).
 export class Bone extends Object3D {
@@ -31,6 +34,7 @@ export class Skeleton {
     boneMatrices: Float32Array;
     /// The renderer's frame of the last update (one a frame).
     frame: i32 = -1;
+    private _uuid: string = "";
 
     constructor(bones: Array<Bone> = [], boneInverses: Array<Matrix4> = []) {
         this.bones = bones;
@@ -41,6 +45,49 @@ export class Skeleton {
             this.boneInverses = [];
             for (let i = 0; i < bones.length; i++) this.boneInverses.push(new Matrix4());
         }
+    }
+
+    /// A random uuid, made on first use.
+    get uuid(): string {
+        if (this._uuid.length == 0) this._uuid = MathUtils.generateUUID();
+        return this._uuid;
+    }
+    set uuid(value: string) { this._uuid = value; }
+
+    /// three.js's JSON: { metadata, uuid, bones (uuids), boneInverses }.
+    toJSON(): Dynamic {
+        const data = Dynamic.newTable();
+        data.set("metadata", jsonMetadata("Skeleton", "Skeleton.toJSON"));
+        const bones = Dynamic.newTable();
+        const inverses = Dynamic.newTable();
+        for (let i = 0; i < this.bones.length; i++) {
+            bones.push(Dynamic.fromString(this.bones[i].uuid));
+            inverses.push(Dynamic.fromNumbers(this.boneInverses[i].toArray()));
+        }
+        data.set("bones", bones);
+        data.set("boneInverses", inverses);
+        data.set("uuid", Dynamic.fromString(this.uuid));
+        return data;
+    }
+
+    /// Reads toJSON's output; `bones` are the scene's bones by uuid (a
+    /// missing one becomes a new Bone, as three.js).
+    fromJSON(json: Dynamic?, bones: Map<string, Bone>): Skeleton {
+        if (jhas(json, "uuid")) this.uuid = jstr(json, "uuid", "");
+        this.bones = [];
+        this.boneInverses = [];
+        const uuids = jarr(json, "bones");
+        const inverses = jarr(json, "boneInverses");
+        for (let i = 0; i < uuids.length; i++) {
+            const uuid = asStr(uuids[i]);
+            this.bones.push(bones.has(uuid) ? bones.get(uuid) : new Bone());
+            const inverse = new Matrix4();
+            const values = i < inverses.length ? asNumbers(inverses[i]) : null;
+            if (values != null && values.length >= 16) inverse.fromArray(values!);
+            this.boneInverses.push(inverse);
+        }
+        this.boneMatrices = new Float32Array(this.bones.length * 16);
+        return this;
     }
 
     /// Takes the bones' current world transforms as the bind pose.

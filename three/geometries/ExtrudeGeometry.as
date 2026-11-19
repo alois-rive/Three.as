@@ -9,6 +9,10 @@ import { Curve, computeFrenetFrames, FrenetFrames } from "../extras/core/Curve";
 import { ShapeUtils } from "../extras/ShapeUtils";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
+import { createCurve3 } from "../extras/curves/Curves";
+import { shapeUuids, shapesByUuid } from "./ShapeGeometry";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber, setBool, jget, jnum, jint, jbool, jstr } from "../core/JSON";
 
 const EPSILON: f64 = 2.220446049250313e-16;
 
@@ -28,6 +32,46 @@ export class ExtrudeGeometryOptions {
 export class ExtrudeGeometry extends BufferGeometry {
     shapes: Array<Shape>;
     options: ExtrudeGeometryOptions;
+
+    /// { shapes: [uuids], options } (the shapes go to `meta.shapes`;
+    /// `extrudePath` as its curve JSON).
+    override toJSONParameters(data: Dynamic, meta: JSONMeta?): bool {
+        data.set("shapes", shapeUuids(this.shapes, meta));
+        const o = this.options;
+        const options = Dynamic.newTable();
+        setNumber(options, "curveSegments", <f64>o.curveSegments);
+        setNumber(options, "steps", <f64>o.steps);
+        setNumber(options, "depth", o.depth);
+        setBool(options, "bevelEnabled", o.bevelEnabled);
+        setNumber(options, "bevelThickness", o.bevelThickness);
+        if (!isNaN(o.bevelSize)) setNumber(options, "bevelSize", o.bevelSize);
+        setNumber(options, "bevelOffset", o.bevelOffset);
+        setNumber(options, "bevelSegments", <f64>o.bevelSegments);
+        const path = o.extrudePath;
+        if (path != null) options.set("extrudePath", path.toJSON());
+        data.set("options", options);
+        return true;
+    }
+
+    /// `shapes`: the document's shapes by uuid (ObjectLoader.parseShapes).
+    static fromJSON(data: Dynamic?, shapes: Map<string, Shape>): ExtrudeGeometry {
+        const json = jget(data, "options");
+        const o = new ExtrudeGeometryOptions();
+        o.curveSegments = jint(json, "curveSegments", o.curveSegments);
+        o.steps = jint(json, "steps", o.steps);
+        o.depth = jnum(json, "depth", jnum(json, "amount", o.depth));
+        o.bevelEnabled = jbool(json, "bevelEnabled", o.bevelEnabled);
+        o.bevelThickness = jnum(json, "bevelThickness", o.bevelThickness);
+        o.bevelSize = jnum(json, "bevelSize", o.bevelSize);
+        o.bevelOffset = jnum(json, "bevelOffset", o.bevelOffset);
+        o.bevelSegments = jint(json, "bevelSegments", o.bevelSegments);
+        const path = jget(json, "extrudePath");
+        if (path != null) {
+            const curve = createCurve3(jstr(path, "type", ""));
+            if (curve != null) o.extrudePath = curve.fromJSON(path);
+        }
+        return new ExtrudeGeometry(shapesByUuid(data, shapes), o);
+    }
 
     private verticesArray: Array<f64> = [];
     private uvArray: Array<f64> = [];

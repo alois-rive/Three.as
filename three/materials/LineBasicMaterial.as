@@ -2,6 +2,8 @@
 // for compatibility and ignored (one pixel), as on most three.js platforms.
 
 import { Material, MaterialParameters } from "./Material";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta, setNumber } from "../core/JSON";
 import { MaterialUniforms, KIND_BASIC, SLOT_MAP, SLOT_ALPHA } from "./MaterialUniforms";
 import { Color } from "../math/Color";
 import { Texture } from "../textures/Texture";
@@ -17,6 +19,14 @@ export class LineBasicMaterialParameters extends MaterialParameters {
 
 export class LineBasicMaterial extends Material {
     readonly isLineBasicMaterial: bool = true;
+
+    override toJSONProperties(data: Dynamic, meta: JSONMeta): void {
+        super.toJSONProperties(data, meta);
+        this.colorToJSON(data, "color", this.color);
+        this.mapToJSON(data, "map", this.map, meta);
+        this.mapToJSON(data, "alphaMap", this.alphaMap, meta);
+        if (this.linewidth != 1) setNumber(data, "linewidth", this.linewidth);
+    }
     color: Color = new Color();
     linewidth: f64 = 1;
     linecap: string = "round";

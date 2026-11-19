@@ -14,6 +14,8 @@ import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastInstancedMesh } from "./raycasting";
+import { Dynamic } from "rive/dynamic";
+import { JSONMeta } from "../core/JSON";
 
 export class InstancedMesh extends Mesh {
     readonly isInstancedMesh: bool = true;
@@ -35,6 +37,14 @@ export class InstancedMesh extends Mesh {
         }
         this.instanceMatrix = new InstancedBufferAttribute(m, 16);
         this.frustumCulled = true;
+    }
+
+    override toJSONObject(object: Dynamic, meta: JSONMeta): void {
+        super.toJSONObject(object, meta);
+        object.set("count", Dynamic.fromNumber(<f64>this.count));
+        object.set("instanceMatrix", this.instanceMatrix.toJSON());
+        const color = this.instanceColor;
+        if (color != null) object.set("instanceColor", color.toJSON());
     }
 
     getMatrixAt(index: i32, matrix: Matrix4): void {

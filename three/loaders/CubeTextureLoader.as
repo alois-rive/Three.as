@@ -30,6 +30,7 @@ export class CubeTextureLoader {
         }
         const texture = new CubeTexture(images);
         texture.name = names.length > 0 ? names[0] : "";
+        for (let i = 0; i < 6; i++) texture.source.urls.push(i < names.length ? this.path + names[i] : "");
         return texture;
     }
 }
