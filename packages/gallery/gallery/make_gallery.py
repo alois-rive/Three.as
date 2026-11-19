@@ -89,6 +89,7 @@ EXAMPLES = [
     ("Effects", "0:3100", "0:3107", "Every post-processing pass: AA, AO, outlines, bokeh, LUTs, masks and more, picked from a Rive panel.", True),
     ("Views", "0:3000", "0:3007", "Viewports and scissors: an ArrayCamera, a StereoCamera and two scenes in one canvas.", False),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
+    ("Audio", "0:4200", "0:4207", "Spatial audio: emitters orbiting you, a sound cone, ambience and a live spectrum, mixed on Rive's audio thread.", True),
 ]
 DEFAULT = 0  # FirstScene plays on load
 
@@ -98,6 +99,8 @@ def hint(name, interactive):
         return "DRAG TO ORBIT · CLICK THE SWITCH"
     if name == "Effects":
         return "PICK A PASS · DRAG TO ORBIT"
+    if name == "Audio":
+        return "CLICK ▶ TO PLAY · DRAG TO LOOK AROUND"
     if name == "RiveDriven":
         return "CLICK A LABEL · DAY / NIGHT · DRAG TO ORBIT"
     return "DRAG TO ORBIT · SCROLL TO ZOOM" if interactive else "AUTOPLAY"

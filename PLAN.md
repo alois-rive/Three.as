@@ -36,7 +36,7 @@ packages/threeas/   the engine, published as the Rive library "threeas"
     Three.as        re-exports everything: import * as THREE from "../three/Three"
     constants.as    three.js's constants
     math/ core/ objects/ scenes/ cameras/ lights/ materials/ geometries/
-    textures/ loaders/ animation/ extras/
+    textures/ loaders/ animation/ extras/ audio/
                     as three.js's src/
     renderers/      GPURenderer, RenderTarget (+ gpu/ internals)
     rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
@@ -503,7 +503,7 @@ All from three.js r170 `examples/jsm/objects/`, faithful ports in
   (Water) under a Sky with a lens flare on the sun, and animated
   metaballs.
 
-### M17: spatial audio
+### M17: spatial audio (done)
 
 three.js's audio API (`src/audio/`), on Rive's audio API (`rive/audio`)
 instead of Web Audio:
@@ -534,6 +534,28 @@ instead of Web Audio:
 - Example `Audio`: a few sound emitters moving around the camera (one
   with a cone), a non-positional ambience, an analyser bar graph, and
   the PositionalAudioHelper cones.
+
+Done: `three/audio/` (AudioListener, Audio, PositionalAudio,
+AudioAnalyser, AudioContext, the Web Audio node stand-ins in AudioNodes,
+AudioMath, the mixer in AudioMixer, a WAV decoder), `loaders/AudioLoader`,
+`addons/helpers/PositionalAudioHelper`; the gallery's `Audio` example and
+its `AudioCheck` artboard; `tools/make_audio_samples.py` (the example's
+original sounds) and `tools/check_audio.py` (panning, the three distance
+models, cones, seamless loops, click-free stop and pause, the analyser's
+peak, measured from `--render-audio` WAVs); `tests/audio_test.as`. The
+listener publishes in `updateMatrixWorld` (as three.js) and in an explicit
+`listener.update()` for frames without a render. The mixer costs about
+0.03 ms per 512-frame block for eight panned, delayed and shadowed voices
+compiled (0.3% of the block), 0.47 ms interpreted (4.4%). Left out: HRTF
+convolution (equal-power panning plus an interaural delay and a head-shadow
+low-pass instead), media streams, Web Audio nodes beyond gain, panner,
+biquad, oscillator and analyser, `fftSize` above 4096, MP3 / FLAC from
+fetched bytes (Rive decodes them only from audio assets). Still to do by
+ear: a listening pass on desktop and on the web (a page with cross origin
+isolation, where processors run; elsewhere the fallback plays assets
+through Rive's `Audio.play` without panning). The gallery as it ships
+(`tools/release_build.sh` without `--override`, on `.libraries/`) builds
+once the engine library is republished with `three/audio/`.
 
 ## Deviations from three.js
 

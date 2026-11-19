@@ -133,6 +133,9 @@ tools/bake_shaders.sh              # optional "optimized" mode: bake shader vari
 tools/bake_shaders.sh --clean      # back to the uber-shader only (the default)
 python3 tools/validate_manifest.py --all   # every example's --gpu-manifest checked against
                                            # WebGPU rules and the web limits (no GPU)
+python3 tools/check_audio.py       # audio: --render-audio the gallery's AudioCheck scenarios
+                                   # and measure panning, distance, cones, loops, fades
+python3 tools/make_audio_samples.py        # regenerate the Audio example's sounds
 tools/release_build.sh build/release       # release .rivs of the engine and the gallery
 python3 tools/check_glsl.py build/release/gallery/three_as.riv
 tools/publish.sh                   # publish the engine library and the gallery (below)
