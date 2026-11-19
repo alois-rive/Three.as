@@ -326,8 +326,9 @@ use. The default repository state bakes nothing.
   `stencilZFail`, `stencilZPass`, with three.js's constants. Colour passes
   use a `depth24plusStencil8` target (24-bit depth, was 32-bit float).
   **Stencil starts at 0 in every pass and does not survive across
-  passes**, and there is no `renderer.clearStencil()` or `onAfterRender`
-  mid-pass: order stencil draws with `renderOrder` within one render.
+  passes**, and there is no `renderer.clearStencil()` mid-pass (and
+  `onAfterRender` runs after the pass, see [Object hooks](#object-hooks-onbeforerender-onafterrender)):
+  order stencil draws with `renderOrder` within one render.
 - `depthFunc` (NeverDepth ... NotEqualDepth) and `polygonOffset` /
   `polygonOffsetFactor` / `polygonOffsetUnits` work (polygonOffset as the
   pipeline's depth bias). At most 511 distinct depth/stencil/offset
@@ -1146,6 +1147,135 @@ use. The default repository state bakes nothing.
   `renderToScreen = false`, the other objects' materials swapped to black,
   a mix ShaderPass): see the gallery's `examples/effects/effects.as` and
   `examples/effects/bloom_mix.wgsl`.
+
+## Object hooks: onBeforeRender, onAfterRender
+
+three.js calls `object.onBeforeRender(renderer, scene, camera, geometry,
+material, group)` right before an object's draw and `onAfterRender` right
+after it, inside the render. A Rive render pass cannot be interrupted for
+another render, so:
+
+- **They are methods to override** (no closures): `class Mirror extends
+  Mesh { override onBeforeRender(renderer, scene, camera, geometry,
+  material, group): void { ... } }`, with `renderer` a GPURenderer and
+  `group` always null. The renderer calls them for every object it draws
+  in a render (visible, in the camera's layers, not frustum culled), once
+  per render, in scene order (three.js: per draw, in draw order). The base
+  methods mark the object as hookless (`noBeforeRender`,
+  `noAfterRender`) the first time they run, and the renderer skips it from
+  then on, so an override must not call `super.onBeforeRender`.
+- **onBeforeRender runs before the render's pass.** It may render (into
+  other targets: `renderer.render` nests, with the outer render's viewport
+  override and ArrayCamera state set aside) or copy; when it did, the
+  render collects its draws again (without calling the hooks twice), so
+  what it rendered and moved is drawn. Nested renders call the hooks of
+  what they draw too (a mirror seen in the water renders its reflection
+  for the water's camera), except that an object whose hook already
+  rendered for the outermost render is not called again by the nested
+  renders of that render's later hooks: they draw it with what it rendered
+  for the outermost camera. In three.js, where each hook runs just before
+  its object's draw, the last call before a draw is always for the
+  drawing camera; here the hooks run before every draw, and without that
+  rule a later object's nested renders would leave an earlier one showing
+  another camera's reflection. Reflections of reflections are therefore
+  exact only for objects whose hooks run later in the scene order.
+- **onAfterRender runs after the render's pass**, for the same objects in
+  the same order. It may copy the framebuffer (`copyFramebufferToTexture`)
+  and draw over it (`renderBufferDirect`, or a `render` with `autoClear`
+  off): the first time a hook loads the colour or depth of a pass that did
+  not keep them (MSAA samples, depth), that render is drawn again with them
+  kept (the pass keeps them from then on).
+- **`renderer.renderBufferDirect(camera, scene, geometry, material,
+  object, group)`** draws a Mesh (its `matrixWorld`) with the given
+  geometry and material over the current target: no clear, no culling, no
+  lights or background (`scene` and `group` are only accepted). Each call
+  is a pass of its own.
+- Renders nested in hooks do not reset `renderer.info` (only the outermost
+  render does).
+
+## Addon objects (Reflector, Refractor, Water, Water2, Sky, Lensflare, MarchingCubes)
+
+three.js r170's `examples/jsm/objects`, in `three/addons/objects/` (and
+`WaterRefractionShader` in `three/addons/shaders/`), with their GLSL ported
+to WGSL in `three/shaders/objects/` (each carries the chunks it needs
+between `// @chunks-begin` / `// @chunks-end`, refreshed by
+`tools/make_shader_chunks.py`). Their shader objects are
+`ShaderDefinition`s (`Reflector.ReflectorShader`, `Refractor.RefractorShader`,
+`Water2`'s `Water.WaterShader`, `Sky.SkyShader`, `LensflareElement.Shader`,
+`WaterRefractionShader`); their materials are ShaderMaterials, reached
+through `material as ShaderMaterial` or a typed `shaderMaterial` getter
+(Water, Water2, Sky). What differs everywhere:
+
+- **Options are typed classes** with three.js's names and defaults:
+  `ReflectorOptions`, `RefractorOptions`, `WaterOptions` (Water.js),
+  `Water2Options` (Water2.js); colours are hex numbers, `shader` a
+  ShaderDefinition. Water.js and Water2.js both export `Water`: import
+  Water2's as `import { Water as Water2 } from ".../objects/Water2"`
+  (`Addons.as` exports it as `Water2`, as three.js's Addons.js).
+- **The virtual cameras render in `onBeforeRender`**, before the pass (see
+  [Object hooks](#object-hooks-onbeforerender-onafterrender)), with
+  `renderer.shadowMap.autoUpdate` off as three.js (shadow maps are those
+  of the previous render). There is no `renderer.xr`.
+- **Oblique clipping writes WebGPU's [0, 1] depth**, as three.js's
+  ReflectorNode with the WebGPU coordinate system: the clip plane is
+  scaled by `1 / (C . q)` and `clipBias` subtracted from the third row's z
+  (WebGL's form, `2 / (C . q)` and `+ 1 - clipBias`, maps to [-1, 1]).
+  The texture matrices are three.js's; Water2's shader reads the
+  projected depth as `2 z - 1`, which is WebGL's.
+- `Reflector.updateMatrices(camera)` / `Refractor.updateMatrices(camera)`
+  (Rive-only) are the first half of onBeforeRender: virtual camera,
+  texture matrix and oblique projection, without rendering (false when
+  there is nothing to render). `obliqueClip(projection, plane, clipBias)`
+  is the shared Lengyel step.
+- **Render targets hold their rows top first** (see [Render target
+  features](#render-target-features)), so the shaders read them at
+  `(u, 1 - v)`; images (normal, flow and dudv maps, flare textures) too.
+- **One sampler per shader**, the first texture's: textures that repeat
+  (the normal and dudv maps) come first in the uniforms, and render
+  target coordinates are clamped by hand (`clamp(uv, 0, 1)`).
+- **Water** (Water.js): `lights: true` (getShadowMask is the product of
+  the frame's light shadows when the water receives shadows); the mirror
+  target is **HalfFloatType** (three.js renders linear colour into an
+  8-bit target; an 8-bit target here holds tone-mapped sRGB). `time` is
+  advanced by you (`water.shaderMaterial.uniform<f64>("time").value +=
+  seconds`), as three.js's example.
+- **Water2**: without `normalMap0` / `normalMap1` the maps are flat
+  (three.js loads `textures/water/Water_*_M_Normal.jpg` by URL); its flow
+  clock is a Clock fed by **`water.tick(seconds)`** (Rive-only; three.js's
+  Clock reads the wall clock); USE_FLOWMAP selects the fragment entry
+  point (`fs_flowmap`), and `flowDirection` and `tFlowMap` are both always
+  uniforms.
+- **Sky**: as three.js; for environment lighting,
+  `PMREMGenerator.fromScene(skyScene)` renders at the start of the next
+  render, so the scene must still hold a sky then (give it a Sky of its
+  own rather than moving the one in the main scene, as three.js's ocean
+  example does).
+- **Lensflare** does its work in **onAfterRender** (three.js:
+  onBeforeRender at its own draw, last thanks to `renderOrder = Infinity`;
+  here `renderOrder` is 2^30 - 1): it copies the 16 x 16 pixels at the
+  flare (copyFramebufferToTexture, at whole pixels), draws the magenta
+  occlusion quad, copies it, restores the pixels and draws the elements
+  with renderBufferDirect, one pass each, with no pixel read back. The
+  occlusion map is read texel by texel (`textureLoad`); element textures
+  are premultiplied (colour and alpha scaled by the visibility together).
+  `LensflareElement(texture, size, distance, color)` takes a `Color?`
+  (null: white). A flare is drawn in every render that draws it,
+  reflections included, as three.js: put it on a layer only the main
+  camera sees to keep it (and its passes) out of them.
+- **MarchingCubes(resolution, material, enableUvs, enableColors,
+  maxPolyCount)**: three.js's field, `addBall`, `addPlaneX/Y/Z`, `setCell`,
+  `getCell`, `blur`, `reset` and `update` (the geometry rebuilt on the CPU
+  and uploaded each update, drawn up to `drawRange.count`). Its
+  per-instance closures are methods (the polygonization helpers private);
+  `addBall`'s `colors` is a `Color?` (`new Color(0xff0000)` for a hex,
+  `new Color(r, g, b)` for an array; components are not clamped as
+  three.js clamps arrays; the default is the ball's position as linear
+  rgb, as three.js); `maxPolyCount` is a field; `uvArray` / `colorArray`
+  are empty, not undefined, when disabled; there is no
+  `setUsage(DynamicDrawUsage)`; triangles past `maxPolyCount` are counted
+  (and warned about) but not written, where JavaScript drops the
+  out-of-range writes. About 2.5 ms an update at resolution 28 with ten
+  balls (interpreted).
 
 ## Cube maps and CubeCamera
 
