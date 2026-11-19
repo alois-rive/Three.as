@@ -65,7 +65,15 @@ tools/screenshots.sh build/shots/before                   # every example, twice
 python3 tools/compare_shots.py build/shots/before build/shots/after
 tools/bake_shaders.sh              # optional "optimized" mode: bake shader variants
 tools/bake_shaders.sh --clean      # back to the uber-shader only (the default)
+python3 tools/validate_manifest.py --all   # every example's --gpu-manifest checked against
+                                           # WebGPU rules and the web limits (no GPU)
 ```
+
+Rive's own WebGPU validator (`tools/webgpu_validate`, named by `rive --help`
+for `--gpu-manifest`) does not ship with the CLI; validate_manifest.py checks
+the descriptors (see its docstring for what it cannot see). Run it after
+changing bindings, layouts, vertex layouts or shaders, and before
+`--publish=web`.
 
 Optimizations must not change pixels: capture `tools/screenshots.sh` before
 and after and compare (the uber-shader path is pixel-identical across M14;

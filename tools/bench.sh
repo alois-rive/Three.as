@@ -9,6 +9,8 @@
 #   tools/bench.sh --tolerance=40     allowed slowdown in percent (default 30)
 #   tools/bench.sh --skip-glsl        no release build (it takes a minute or two)
 #   tools/bench.sh --frames=600       frames a bench times (default 300)
+#   tools/bench.sh --manifests        also check every example's --gpu-manifest
+#                                     (tools/validate_manifest.py --all, 3 minutes)
 #
 # Timings depend on the machine: keep one baseline per CI machine (the
 # stored one is from the M-series Mac M14 was measured on) and refresh it
@@ -21,13 +23,15 @@ tolerance=30
 update=0
 glsl=1
 frames=300
+manifests=0
 for arg in "$@"; do
     case "$arg" in
         --update) update=1 ;;
         --tolerance=*) tolerance="${arg#--tolerance=}" ;;
         --skip-glsl) glsl=0 ;;
         --frames=*) frames="${arg#--frames=}" ;;
-        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+        --manifests) manifests=1 ;;
+        -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
         *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -67,6 +71,11 @@ if [ "$glsl" = 1 ]; then
     else
         fail "release build wrote no .riv"
     fi
+fi
+
+if [ "$manifests" = 1 ]; then
+    step manifests python3 tools/validate_manifest.py --all
+    grep -c ": ok$" "$WORK/manifests.log" | sed 's/^/     artboards with valid manifests: /'
 fi
 
 # ------------------------------------------------------------------- bench
