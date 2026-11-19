@@ -300,7 +300,10 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   materials; **done**: toJSON returns a Dynamic, `THREE.JSON.stringify`
   writes it; ObjectLoader, MaterialLoader, BufferGeometryLoader; BatchedMesh
   and addon geometries' parameters left out), FBXLoader (binary and ASCII),
-  GLTFExporter (to a Blob).
+  GLTFExporter (**done**: r170's writer and default plugins, .glb bytes or
+  .gltf text; images as PNGs encoded from pixels in memory, so Rive images,
+  canvases and compressed textures are left out; no JPEG, no compression
+  of PNGs, no KHR_mesh_quantization output).
 - Example `Models`: a glTF with the extensions above, an STL and an SVG
   extruded, loaded asynchronously with a progress bar artboard.
 

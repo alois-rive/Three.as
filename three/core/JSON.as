@@ -11,7 +11,8 @@
 //
 // A table with string keys is written as an object, any other table
 // (including an empty one) as an array; three.js leaves empty objects out
-// of its JSON, so this matches what it writes.
+// of its JSON, so this matches what it writes. Where an empty object must
+// stay one (glTF's KHR_materials_unlit: {}), use `emptyObject()`.
 
 import { Dynamic, DynamicKind } from "rive/dynamic";
 import { parseJson } from "rive/json";
@@ -79,6 +80,15 @@ export function jsonMetadata(type: string, generator: string): Dynamic {
     m.set("type", Dynamic.fromString(type));
     m.set("generator", Dynamic.fromString(generator));
     return m;
+}
+
+/// A table `JSON.stringify` writes as an empty object, `{}` (an empty table
+/// is written `[]`): its string keyed part holds one key set to null, which
+/// the writer skips. Members set on it later are written as usual.
+export function emptyObject(): Dynamic {
+    const entries = new Map<string, Dynamic?>();
+    entries.set("", null);
+    return Dynamic.fromMap(entries);
 }
 
 export function setNumber(data: Dynamic, key: string, value: f64): void {

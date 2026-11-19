@@ -435,7 +435,10 @@ export class Demo extends Layout {
   visible`, `node.morphTargetInfluences[i|name]` and `node.material.color|
   opacity|emissive`; nodes by name under the root (names cannot hold
   dots: `PropertyBinding.sanitizeNodeName`). No uuid paths, no arbitrary
-  properties.
+  properties. The static `PropertyBinding.findNode(root, nodeName)` is
+  three.js's (the root, a skeleton bone, or a descendant by name or
+  uuid); `parseTrackName` splits "node.bones[Arm].position" with
+  `objectIndex` "Arm".
 - `mixer.clipAction(clip)` takes an `AnimationClip` (not a clip name).
   Mixer events (`finished`, `loop`) are not dispatched: poll
   `action.isRunning()`, `action.enabled`, `action.paused`. Cross-fades
@@ -629,6 +632,62 @@ export class Demo extends Layout {
   Object3D with a warning, as three.js's default. A directional or spot
   light whose target is not in the document gets a new Object3D, as
   three.js. Meshes get `updateMorphTargets()`.
+- `THREE.JSON.stringify` writes an empty table as `[]`; `emptyObject()`
+  (`three/core/JSON`) makes a table written `{}` (it holds one key set to
+  null, which the writer skips), for JSON whose empty objects matter.
+
+## Exporters
+
+- **GLTFExporter** (`three/addons/exporters/GLTFExporter`, r170) has no
+  callbacks: **`parse(input, options)` returns a `GLTFExporterResult`**
+  at once (three.js's `parse(input, onDone, onError, options)`): `glb`
+  (the .glb bytes, an ArrayBuffer) with `binary`, else `json` (the .gltf
+  text, its buffer and images as base64 data: URIs); `gltf` is the
+  document as a Dynamic either way (three.js hands .gltf callers the JSON
+  object). `parseAsync` returns a Rive `Promise`, already settled. What
+  three.js throws or warns about (an image it cannot read, a morph target
+  name not found, CUBICSPLINE morph tracks to merge, ShaderMaterials) is
+  in `result.warnings`, the item left out.
+- `input` is an `Object3D` or an `Array<Object3D>` (a generic method);
+  `options` a `GLTFExporterOptions` (`{ binary: true, animations: [clip]
+  }` works), not changed by the call.
+- **Plugins are objects**: `register(plugin)` / `unregister(plugin)` take
+  a `GLTFExporterPlugin` subclass overriding the hooks it needs
+  (`beforeParse`, `writeNode`, `writeMesh`, `writeMaterial` for three.js's
+  `writeMaterialAsync`, `writeTexture`, `afterParse`), with `writer` set
+  to the parse's `GLTFWriter` (three.js registers `writer => plugin`
+  factories). The built-in extensions are plugins in
+  `exporter.pluginCallbacks`, in three.js's order. The writer is
+  synchronous: `processTexture`, `processMaterial`, `processMesh`,
+  `processNode` (three.js's `...Async`); `processAccessor(attribute,
+  geometry, start, count)` takes a float attribute and returns -1 for
+  three.js's null, indices go through `processIndexAccessor`;
+  `extensionsUsed` / `extensionsRequired` are `Map<string, bool>`.
+  `GLTFExporter.Utils` has `insertKeyframe` and `mergeMorphTargetTracks`
+  (`toFloat32BufferAttribute` is not needed: attributes are f32).
+- **Images are PNGs encoded by the exporter** (stored deflate blocks: not
+  compressed, so large) from the pixels a texture holds: a DataTexture in
+  RGBA8 (premultiplied ones are divided by alpha), which is what
+  GLTFLoader's textures are once their images have decoded. JPEG is never
+  written (`userData.mimeType` is ignored). A texture with no pixels whose
+  `source.url` is a base64 data: url is written from that url, in its own
+  format. Rive images, canvases, artboards, render targets and compressed
+  textures cannot be read back and are left out, with a warning (three.js
+  draws images into a canvas, and decompresses through
+  `setTextureUtils`, not ported). `maxTextureSize` scales larger images
+  down (nearest; three.js crops DataTextures). Separate metalness and
+  roughness maps are merged into one texture when both are RGBA8
+  DataTextures (nearest scaling), else the one there is written alone.
+- Attributes are f32 here, so accessors are FLOAT, except JOINTS_0
+  (UNSIGNED_SHORT) and indices (UNSIGNED_SHORT when every index fits,
+  else UNSIGNED_INT); KHR_mesh_quantization is never written. Node
+  matrices are written with f32 precision as short decimals. Morph tracks
+  may name targets by index (`morphTargetInfluences[1]`, as GLTFLoader
+  here names them) as well as by name. `_COLOR_0` of
+  EXT_mesh_gpu_instancing holds the `count` drawn instances' colours (as
+  the other instance attributes; three.js writes the whole attribute). A
+  .glb without binary data has no BIN chunk (three.js writes an empty
+  one).
 
 ## Shadows
 

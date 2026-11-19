@@ -41,3 +41,4 @@ export * from "./controls/FlyControls";
 export * from "./controls/FirstPersonControls";
 export * from "./controls/DragControls";
 export * from "./controls/TransformControls";
+export * from "./exporters/GLTFExporter";
