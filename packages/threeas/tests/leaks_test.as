@@ -5,9 +5,11 @@
 import { Tests } from "rive/test";
 import { ViewModel } from "rive/data";
 import { Object3D } from "../three/core/Object3D";
-import { BufferGeometry, disposedGeometries } from "../three/core/BufferGeometry";
-import { disposedMaterials } from "../three/materials/Material";
-import { disposedTextures } from "../three/textures/Texture";
+import { BufferGeometry } from "../three/core/BufferGeometry";
+import { Event, EventDispatcher, EventListener } from "../three/core/EventDispatcher";
+import { Mesh } from "../three/objects/Mesh";
+import { Line } from "../three/objects/Line";
+import { Texture } from "../three/textures/Texture";
 import { AnimationClip } from "../three/animation/AnimationClip";
 import { AnimationMixer } from "../three/animation/AnimationMixer";
 import { KeyframeTrack, VectorKeyframeTrack } from "../three/animation/KeyframeTrack";
@@ -48,6 +50,59 @@ function rig(): Object3D {
     b.name = "b";
     root.add(b);
     return root;
+}
+
+/// Counts one object's "dispose" events.
+class DisposeCount extends EventListener {
+    count: i32 = 0;
+    recorder: DisposeRecorder;
+    constructor(recorder: DisposeRecorder) {
+        super();
+        this.recorder = recorder;
+    }
+    override handleEvent(event: Event): void {
+        this.count++;
+        this.recorder.events++;
+    }
+}
+
+/// Watches materials, geometries or textures (each once) for "dispose".
+class DisposeRecorder {
+    objects: Array<EventDispatcher> = [];
+    counts: Array<DisposeCount> = [];
+    /// Every dispose event seen (one object disposed twice counts twice).
+    events: i32 = 0;
+
+    watch(object: EventDispatcher): void {
+        if (this.objects.indexOf(object) >= 0) return;
+        const l = new DisposeCount(this);
+        object.addEventListener("dispose", l);
+        this.objects.push(object);
+        this.counts.push(l);
+    }
+
+    watched(): i32 { return this.objects.length; }
+
+    /// Watched objects disposed at least once.
+    disposed(): i32 {
+        let n = 0;
+        for (let i = 0; i < this.counts.length; i++) if (this.counts[i].count > 0) n++;
+        return n;
+    }
+}
+
+/// Watches the geometry and material of every mesh and line under `root`.
+function watchMeshes(root: Object3D, materials: DisposeRecorder, geometries: DisposeRecorder): void {
+    if (root instanceof Mesh) {
+        const m = root as Mesh;
+        materials.watch(m.material);
+        geometries.watch(m.geometry);
+    } else if (root instanceof Line) {
+        const l = root as Line;
+        materials.watch(l.material);
+        geometries.watch(l.geometry);
+    }
+    for (let i = 0; i < root.children.length; i++) watchMeshes(root.children[i], materials, geometries);
 }
 
 function silentBuffer(): AudioBuffer {
@@ -228,69 +283,77 @@ export class LeakTests extends Tests {
             });
         });
 
-        group("dispose queues helpers' materials and geometries", () => {
+        group("dispose disposes helpers' materials and geometries", () => {
             test("DirectionalLightHelper and PlaneHelper", (expect) => {
-                const m0 = disposedMaterials.length, g0 = disposedGeometries.length;
                 const helper = new DirectionalLightHelper(new DirectionalLight(0xffffff, 1), 2);
+                const materials = new DisposeRecorder(), geometries = new DisposeRecorder();
+                watchMeshes(helper, materials, geometries);
+                expect.that(materials.watched()).is(2);
                 helper.dispose();
-                expect.that(disposedMaterials.length).is(m0 + 2);
-                expect.that(disposedMaterials.indexOf(helper.lightPlane.material.id) >= 0).is(true);
-                expect.that(disposedMaterials.indexOf(helper.targetLine.material.id) >= 0).is(true);
-                expect.that(disposedGeometries.length).is(g0 + 2);
+                expect.that(materials.disposed()).is(2);
+                expect.that(materials.events).is(2);
+                expect.that(geometries.disposed()).is(2);
                 const plane = new PlaneHelper(new Plane(new Vector3(0, 1, 0), 0), 2);
+                const pm = new DisposeRecorder(), pg = new DisposeRecorder();
+                watchMeshes(plane, pm, pg);
+                expect.that(pm.watched()).is(2);   // the outline and the fill
                 plane.dispose();
-                expect.that(disposedMaterials.indexOf(plane.fill.material.id) >= 0).is(true);
-                expect.that(disposedGeometries.indexOf(plane.fill.geometry.id) >= 0).is(true);
-                expect.that(disposedMaterials.length).is(m0 + 4);
-                disposedMaterials.length = m0;
-                disposedGeometries.length = g0;
+                expect.that(pm.disposed()).is(2);
+                expect.that(pg.disposed()).is(2);
             });
             test("TransformControls disposes its gizmo", (expect) => {
-                const m0 = disposedMaterials.length, g0 = disposedGeometries.length;
                 const controls = new TransformControls(new PerspectiveCamera());
-                let meshes = 0;
+                const materials = new DisposeRecorder(), geometries = new DisposeRecorder();
                 const gizmo = controls.getHelper();
-                for (let i = 0; i < gizmo.children.length; i++) meshes++;
+                watchMeshes(gizmo, materials, geometries);
+                expect.that(materials.watched()).is(gizmo.children.length);
                 controls.dispose();
-                expect.that(disposedMaterials.length).is(m0 + meshes);
+                expect.that(materials.disposed()).is(gizmo.children.length);
+                expect.that(materials.events).is(gizmo.children.length);
                 // Nine shared geometries, each once.
-                expect.that(disposedGeometries.length).is(g0 + 9);
-                disposedMaterials.length = m0;
-                disposedGeometries.length = g0;
+                expect.that(geometries.watched()).is(9);
+                expect.that(geometries.disposed()).is(9);
+                expect.that(geometries.events).is(9);
             });
             test("RoomEnvironment", (expect) => {
-                const m0 = disposedMaterials.length, g0 = disposedGeometries.length;
                 const room = new RoomEnvironment();
+                const materials = new DisposeRecorder(), geometries = new DisposeRecorder();
+                watchMeshes(room, materials, geometries);
                 room.dispose();
-                expect.that(disposedGeometries.length).is(g0 + 1);   // one box shared
-                expect.that(disposedMaterials.length).is(m0 + 8);    // room, boxes, six lights
-                disposedMaterials.length = m0;
-                disposedGeometries.length = g0;
+                expect.that(geometries.watched()).is(1);   // one box shared
+                expect.that(geometries.events).is(1);
+                expect.that(materials.watched()).is(8);    // room, boxes, six lights
+                expect.that(materials.disposed()).is(8);
+                expect.that(materials.events).is(8);
             });
             test("Water2 and its flat normal maps", (expect) => {
-                const m0 = disposedMaterials.length, t0 = disposedTextures.length;
                 const water = new Water2(new PlaneGeometry(10, 10));
+                const material = new DisposeRecorder(), textures = new DisposeRecorder();
+                material.watch(water.material);
+                const m = water.shaderMaterial;
+                // The flat maps it made, and the reflector's and refractor's
+                // targets (their dispose disposes target and material).
+                textures.watch(m.uniform<Texture>("tNormalMap0").value);
+                textures.watch(m.uniform<Texture>("tNormalMap1").value);
+                textures.watch(m.uniform<Texture>("tReflectionMap").value);
+                textures.watch(m.uniform<Texture>("tRefractionMap").value);
+                expect.that(textures.watched()).is(4);
                 water.dispose();
-                // The reflector's, the refractor's and its own.
-                expect.that(disposedMaterials.length).is(m0 + 3);
-                expect.that(disposedMaterials.indexOf(water.material.id) >= 0).is(true);
-                // Two render target textures and the two flat maps (at least).
-                expect.that(disposedTextures.length >= t0 + 4).is(true);
-                disposedMaterials.length = m0;
-                disposedTextures.length = t0;
+                expect.that(material.disposed()).is(1);
+                expect.that(textures.disposed()).is(4);
             });
             test("LUTPass disposes its placeholder LUT once replaced", (expect) => {
-                const t0 = disposedTextures.length;
-                const m0 = disposedMaterials.length, g0 = disposedGeometries.length;
                 const pass = new LUTPass();
+                const placeholder = new DisposeRecorder(), lut = new DisposeRecorder();
+                placeholder.watch(pass.uniform<Texture>("lut").value);
                 const white = new Uint8Array(4 * 8);
-                pass.lut = new Data3DTexture(white, 2, 2, 2);
-                expect.that(disposedTextures.length).is(t0 + 1);
+                const texture = new Data3DTexture(white, 2, 2, 2);
+                lut.watch(texture);
+                pass.lut = texture;
+                expect.that(placeholder.events).is(1);
                 pass.dispose();
-                expect.that(disposedTextures.length).is(t0 + 1);   // the LUT set is the caller's
-                disposedTextures.length = t0;
-                disposedMaterials.length = m0;
-                disposedGeometries.length = g0;
+                expect.that(placeholder.events).is(1);
+                expect.that(lut.events).is(0);   // the LUT set is the caller's
             });
         });
 
@@ -305,11 +368,9 @@ export class LeakTests extends Tests {
                 GeometryBVH.dispose(a);
                 expect.that(GeometryBVH.count()).is(count + 1);
                 expect.that(GeometryBVH.get(a) == null).is(true);
-                const g0 = disposedGeometries.length;
                 b.dispose();
                 expect.that(GeometryBVH.count()).is(count);
                 expect.that(b.hasListeners("dispose")).is(false);
-                disposedGeometries.length = g0;
             });
             test("past maxTrees the least recently used goes", (expect) => {
                 const max = GeometryBVH.maxTrees;
