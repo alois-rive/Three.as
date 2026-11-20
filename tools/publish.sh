@@ -27,7 +27,8 @@
 #     afterwards, even on failure: the gallery's `override: ../threeas` only
 #     works while the engine pushes to the UAT library file.
 #  3. Gallery (UAT): `rive library update --uat` (newest engine version into
-#     threeas.rml, rive.yaml and .libraries/), verify, `rive push --uat` to
+#     threeas.rml, rive.yaml and .libraries/), verify, a release build and
+#     check_glsl.py of the gallery as it ships, `rive push --uat` to
 #     its file (38626), then `--publish=web --uat` to the threeas page of the
 #     UAT Rive workspace (41013), from a copy
 #     without the library override, so the page runs the published engine.
@@ -115,7 +116,11 @@ run tools/threeas_bake.sh "$GALLERY" --engine="$ENGINE" --check
 # not build against the previous snapshot in .libraries/.
 run tools/release_build.sh "$WORK/release" --override
 run python3 tools/check_glsl.py "$WORK/release/threeas/threeas.riv"
-run python3 tools/check_glsl.py "$WORK/release/gallery/three_as.riv"
+# Not the gallery's GLSL here: under the override, the engine's existing
+# shaders still come from the .libraries/ snapshot (only new scripts and
+# shader names come from packages/threeas), so a fixed engine shader would
+# fail this check until it is published. Step 3 checks the gallery after
+# `rive library update`, before pushing and publishing it.
 
 # ------------------------------------------------------------------ 2. engine
 trap restore_uat EXIT
@@ -163,6 +168,9 @@ if [ "$gallery" = 1 ]; then
         exit 1
     fi
     run rive "$GALLERY" --verify --quiet
+    # The gallery as it ships (on the engine just published), before it goes out.
+    run tools/release_build.sh "$WORK/release-page"
+    run python3 tools/check_glsl.py "$WORK/release-page/gallery/three_as.riv"
     run env RIVE_NO_TUI=1 rive push "$GALLERY" --uat --yes --name="tools/publish.sh"
     # The page from a copy without the override: it runs the published engine.
     run rm -rf "$WORK/gallery"
