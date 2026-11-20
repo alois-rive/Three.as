@@ -427,7 +427,11 @@ repository commits the gallery unbaked.
   `GeometryBVH.request(geometry)` starts one early (any size),
   `GeometryBVH.build(geometry)` builds it on the spot (about 0.1 s a
   million triangles compiled, 2 s interpreted), `GeometryBVH.dispose`
-  drops it (`geometry.dispose()` too). A tree follows the position and index
+  drops it (`geometry.dispose()` too). Trees live in a table by geometry
+  (three-mesh-bvh's `geometry.boundsTree` goes with the geometry; scripts
+  have no weak references), so at most `GeometryBVH.maxTrees` (64) are
+  kept, the least recently raycast going first (raycast again, it is
+  rebuilt); `GeometryBVH.count()` tells how many. A tree follows the position and index
   attributes (a new attribute or array, or `needsUpdate`); writing
   positions without `needsUpdate` leaves it stale, as three-mesh-bvh's.
   Skinned and morphed meshes do not use one; they are posed once a
@@ -632,6 +636,14 @@ repository commits the gallery unbaked.
   `PropertyBinding.findNode(root, nodeName)` is three.js's (the root, a
   skeleton bone, or a descendant by name or uuid); `parseTrackName` splits
   "node.bones[Arm].position" with `objectIndex` "Arm".
+- **Bindings are counted as three.js's**: actions on one root share a
+  binding per track name; `uncacheAction`, `uncacheClip` and
+  `uncacheRoot(root)` drop the bindings no cached action uses any more
+  (and the objects they hold), and `update` applies only those an active
+  action uses. `mixer.stats.actions` / `stats.bindings` (`total`, `inUse`)
+  as three.js (no `controlInterpolants`). `uncacheRoot` writes the root's
+  original values back, as three.js; stopping an action does not (see
+  above).
 - `mixer.clipAction(clip)` takes an `AnimationClip` (not a clip name).
   Mixer events (`finished`, `loop`) are not dispatched: poll
   `action.isRunning()`, `action.enabled`, `action.paused`. Cross-fades
@@ -1148,7 +1160,9 @@ repository commits the gallery unbaked.
 - Note for test suites: `rive --test` names blobs by file stem, so give
   blob files distinct stems (`studio_rgbe.hdr`, `studio_exr.exr`).
 - `CanvasTexture(canvas)` takes a Rive 2D `Canvas` (`context.canvas(w, h)`),
-  not an HTML canvas.
+  not an HTML canvas. As three.js leaves the canvas element to the page,
+  `dispose()` leaves the canvas to the caller: `canvas.release()` frees
+  its GPU backing when it is no longer drawn.
 - UV transforms as three.js: each map has its own `offset`, `repeat`,
   `rotation`, `center` (`matrix`, `matrixAutoUpdate`, `updateMatrix()`),
   wrapping and filters. `channel` 0 reads "uv", 1 reads "uv1" (2 and 3
@@ -1245,7 +1259,8 @@ repository commits the gallery unbaked.
   `parameters` is a `GTAOPassParameters`. `GTAOPass.setGBuffer(depth,
   normals)` takes a DepthTexture and optional packed view normals (an
   attachment of a multiple render target works); without normals they are
-  rebuilt from depth.
+  rebuilt from depth. Each call disposes the prepass target (and its depth
+  texture) an earlier call made (three.js drops it undisposed).
 - **OutlinePass(resolution, scene, camera, selectedObjects)**: three.js's
   stages and parameters (`visibleEdgeColor`, `hiddenEdgeColor`,
   `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`,
@@ -1390,7 +1405,9 @@ through `material as ShaderMaterial` or a typed `shaderMaterial` getter
   clock is a Clock fed by **`water.tick(seconds)`** (Rive-only; three.js's
   Clock reads the wall clock); USE_FLOWMAP selects the fragment entry
   point (`fs_flowmap`), and `flowDirection` and `tFlowMap` are both always
-  uniforms.
+  uniforms. `dispose()` (not in three.js's Water2) disposes the reflector,
+  the refractor, the material and the flat maps it made, not the maps
+  passed in.
 - **Sky**: as three.js; for environment lighting,
   `PMREMGenerator.fromScene(skyScene)` renders at the start of the next
   render, so the scene must still hold a sky then (give it a Sky of its
@@ -1486,14 +1503,28 @@ Audio's; what differs:
   nothing clicks. The mixer fades out while nothing publishes for 0.5 s (the
   script stopped advancing or went away) and stops when its context is
   collected.
+- **Voices, analyser slots and `dispose()` (Rive-only).** A Web Audio
+  node is collected when nothing references it; here the mixer has
+  `MIX_MAX_VOICES` (32) voices and four analyser slots, so they are given
+  back explicitly: a voice when its Audio stops or ends (after the
+  fade-out), an oscillator source's when the oscillator stops or the
+  Audio is disconnected (`osc.start()` or `connect()` takes one again); a
+  paused Audio keeps its voice to resume. `audio.dispose()` stops it and
+  frees its voice and analyser slot (call it before dropping a paused or
+  oscillator Audio; it may play again later); `audioAnalyser.dispose()`
+  frees the analyser's slot. When all four slots are taken, slots whose
+  analyser no playing Audio uses are reclaimed (taken again when it
+  plays). The listener keeps no list of its sources: it updates the world
+  matrices of the Audio objects holding a voice only.
 - **When audio updates.** As three.js, in `updateMatrixWorld`: the
   listener's override calls `listener.update()`, which computes every
   source from the listener's and the sources' world matrices and publishes
   the mix, so a render each frame keeps it current. Headless runs advance
   without rendering, and scripts may not render every frame: call
   `listener.update()` from `advance` (it updates the world matrices it
-  needs first; the Audio example does). Sources update in the listener's
-  update, not in their own `updateMatrixWorld`.
+  needs first, the listener's and those of the sources it mixes; the
+  Audio example does). Sources update in the listener's update, not in
+  their own `updateMatrixWorld`.
 - **`context` / `AudioContext`.** `listener.context` (also `audio.context`)
   is the engine: `currentTime` (the mixer's clock), `sampleRate`, `state`
   ("suspended" until the mixer runs, on the web until the page's first
@@ -1669,6 +1700,9 @@ scene, and the scene can write Rive UI:
 - Polling, not listeners: `update()` compares values each frame (ThreeLayout
   calls it after `animate`). View model properties cannot be enumerated
   from a script, so bindings name them.
+- `dispose()` detaches every binding (a trigger binding's listener on the
+  view model would otherwise keep the scene alive as long as the view
+  model) and forgets the bindings, named actions and spec.
 
 ### Rive-driven animation
 
@@ -1706,6 +1740,12 @@ three.js objects:
 - `ArtboardTexture(artboard, width = 0, height = 0)`: a live artboard as a
   texture. Call `texture.advance(seconds)` from the script's `advance`; it
   redraws only after a change. `texture.artboard` is the instance.
+- **Artboard instances are released by `dispose()`**: `ArtboardTexture`
+  (its canvas too), the overlay objects (`ArtboardObject.dispose()`,
+  Rive-only: a CSS object's element is the page's) and `RiveRig.dispose()`
+  release the instance they made (not an artboard passed with `instance =
+  false`); afterwards they draw, advance and take events no more
+  (`disposed`), and the overlay renderer skips them.
 - `Color.alphaOf(argb)` and `color.getRiveColor(alpha)` convert to Rive
   colours; `setHex` accepts a Rive `Color` (alpha ignored), so `Color` script
   inputs plug straight in.

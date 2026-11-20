@@ -30,7 +30,14 @@ export class PropertyMixer {
     private work: Float64Array;
     cumulativeWeight: f64 = 0;
     cumulativeWeightAdditive: f64 = 0;
+    /// Active actions using it (three.js's useCount).
     useCount: i32 = 0;
+    /// Cached actions bound to it (three.js's referenceCount): it goes when
+    /// the last is uncached.
+    referenceCount: i32 = 0;
+    /// The mixer's key for it and the root it was bound under.
+    _cacheKey: string = "";
+    _root: Object3D? = null;
 
     constructor(binding: PropertyBinding) {
         this.binding = binding;
@@ -192,6 +199,10 @@ export class AnimationAction {
         this.mixer.activate(this);
         return this;
     }
+
+    /// The property mixers of its tracks (null for a track that did not
+    /// bind); the mixer counts their uses.
+    getPropertyMixers(): Array<PropertyMixer?> { return this.mixers; }
 
     stop(): AnimationAction {
         this.mixer.deactivate(this);
@@ -374,6 +385,18 @@ export class AnimationAction {
     }
 }
 
+export class AnimationMixerCount {
+    total: i32 = 0;
+    inUse: i32 = 0;
+}
+
+/// three.js's `mixer.stats` (no `controlInterpolants`: fades are not
+/// interpolants here).
+export class AnimationMixerStats {
+    actions: AnimationMixerCount = new AnimationMixerCount();
+    bindings: AnimationMixerCount = new AnimationMixerCount();
+}
+
 export class AnimationMixer {
     root: Object3D;
     /// Global time, seconds.
@@ -382,7 +405,10 @@ export class AnimationMixer {
     private actions: Array<AnimationAction> = [];
     private active: Array<AnimationAction> = [];
     private bindings: Map<string, PropertyMixer> = new Map<string, PropertyMixer>();
+    /// Every cached binding (three.js's _bindings); `activeBindings` those
+    /// an active action uses, the only ones update() applies.
     private bindingList: Array<PropertyMixer> = [];
+    private activeBindings: Array<PropertyMixer> = [];
 
     constructor(root: Object3D) {
         this.root = root;
@@ -422,7 +448,7 @@ export class AnimationMixer {
         const direction: f64 = deltaTime > 0 ? 1 : deltaTime < 0 ? -1 : 0;
         const active = this.active;
         for (let i = 0; i < active.length; i++) active[i].update(this.time, deltaTime, direction);
-        const list = this.bindingList;
+        const list = this.activeBindings;
         for (let i = 0; i < list.length; i++) list[i].apply();
         return this;
     }
@@ -436,43 +462,135 @@ export class AnimationMixer {
 
     getRoot(): Object3D { return this.root; }
 
+    /// Forgets every action of `clip` and the bindings only they used.
     uncacheClip(clip: AnimationClip): void {
         for (let i = this.actions.length - 1; i >= 0; i--) {
-            if (this.actions[i].clip === clip) {
-                this.deactivate(this.actions[i]);
-                this.actions.splice(i, 1);
+            const action = this.actions[i];
+            if (action.clip === clip) {
+                this.deactivate(action);
+                this.removeInactiveAction(action);
             }
         }
     }
 
+    /// Forgets every action on `root` and every binding under it,
+    /// restoring the bound properties' original values (three.js).
+    uncacheRoot(root: Object3D): void {
+        // (three.js restores them as the actions are deactivated and the
+        // bindings left; here deactivating restores nothing, so all are
+        // restored first.)
+        for (let i = 0; i < this.bindingList.length; i++) {
+            const binding = this.bindingList[i];
+            if (binding._root === root) binding.restoreOriginalState();
+        }
+        for (let i = this.actions.length - 1; i >= 0; i--) {
+            const action = this.actions[i];
+            if (action.localRoot === root) {
+                this.deactivate(action);
+                this.removeInactiveAction(action);
+            }
+        }
+        for (let i = this.bindingList.length - 1; i >= 0; i--) {
+            const binding = this.bindingList[i];
+            if (binding._root === root) this.removeInactiveBinding(binding);
+        }
+    }
+
+    /// Forgets the action of `clip` on `optionalRoot` (the mixer's root)
+    /// and the bindings only it used.
     uncacheAction(clip: AnimationClip, optionalRoot: Object3D? = null): void {
         const a = this.existingAction(clip, optionalRoot);
         if (a == null) return;
         this.deactivate(a);
-        const i = this.actions.indexOf(a);
-        if (i >= 0) this.actions.splice(i, 1);
+        this.removeInactiveAction(a);
     }
 
     // Internal.
 
+    /// The binding of `trackName` under `root`, shared by every action on
+    /// that root; each call counts one more reference (the action's).
     bindingFor(root: Object3D, trackName: string): PropertyMixer? {
         const key = root.id.toString() + ":" + trackName;
-        if (this.bindings.has(key)) return this.bindings.get(key);
+        if (this.bindings.has(key)) {
+            const existing = this.bindings.get(key);
+            existing.referenceCount++;
+            return existing;
+        }
         const binding = PropertyBinding.create(root, trackName);
         if (!binding.isBound) return null;
         const pm = new PropertyMixer(binding);
+        pm._cacheKey = key;
+        pm._root = root;
+        pm.referenceCount = 1;
         this.bindings.set(key, pm);
         this.bindingList.push(pm);
         return pm;
     }
 
     activate(action: AnimationAction): void {
-        if (this.active.indexOf(action) < 0) this.active.push(action);
+        if (this.active.indexOf(action) >= 0) return;
+        this.active.push(action);
+        // three.js's _lendBinding (the original value stays the one read
+        // when the binding was made: see docs/DEVIATIONS.md, Animation).
+        const mixers = action.getPropertyMixers();
+        for (let i = 0; i < mixers.length; i++) {
+            const pm = mixers[i];
+            if (pm == null) continue;
+            if (pm.useCount++ == 0) this.activeBindings.push(pm!);
+        }
     }
 
     deactivate(action: AnimationAction): void {
         const i = this.active.indexOf(action);
-        if (i >= 0) this.active.splice(i, 1);
+        if (i < 0) return;
+        this.active.splice(i, 1);
+        // three.js's _takeBackBinding (without writing the original value
+        // back).
+        const mixers = action.getPropertyMixers();
+        for (let m = 0; m < mixers.length; m++) {
+            const pm = mixers[m];
+            if (pm == null) continue;
+            if (--pm.useCount == 0) {
+                const j = this.activeBindings.indexOf(pm!);
+                if (j >= 0) this.activeBindings.splice(j, 1);
+            }
+        }
+    }
+
+    /// Counts, as three.js's `stats.actions.total / inUse` and
+    /// `stats.bindings.total / inUse`.
+    get stats(): AnimationMixerStats {
+        const s = new AnimationMixerStats();
+        s.actions.total = this.actions.length;
+        s.actions.inUse = this.active.length;
+        s.bindings.total = this.bindingList.length;
+        s.bindings.inUse = this.activeBindings.length;
+        return s;
+    }
+
+    // three.js's _removeInactiveAction and _removeInactiveBindingsForAction.
+    private removeInactiveAction(action: AnimationAction): void {
+        const i = this.actions.indexOf(action);
+        if (i < 0) return;
+        this.actions.splice(i, 1);
+        const mixers = action.getPropertyMixers();
+        for (let m = 0; m < mixers.length; m++) {
+            const pm = mixers[m];
+            if (pm == null) continue;
+            if (--pm.referenceCount == 0) this.removeInactiveBinding(pm!);
+        }
+    }
+
+    private removeInactiveBinding(binding: PropertyMixer): void {
+        if (this.bindings.has(binding._cacheKey) && this.bindings.get(binding._cacheKey) === binding) {
+            this.bindings.delete(binding._cacheKey);
+        }
+        const i = this.bindingList.indexOf(binding);
+        if (i >= 0) this.bindingList.splice(i, 1);
+        const j = this.activeBindings.indexOf(binding);
+        if (j >= 0) this.activeBindings.splice(j, 1);
+        binding.referenceCount = 0;
+        binding.useCount = 0;
     }
 
     isActive(action: AnimationAction): bool { return this.active.indexOf(action) >= 0; }

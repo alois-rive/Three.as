@@ -13,6 +13,7 @@ import { AudioSource } from "rive/audio";
 import { Promise } from "rive/promise";
 import { blackman, fft, biquadCoefficients } from "./AudioMath";
 import { MixAnalyserFrame, MIX_MAX_FFT, SOURCE_SINE, SOURCE_SQUARE, SOURCE_SAWTOOTH, SOURCE_TRIANGLE } from "./AudioMixer";
+import { Audio } from "./Audio";
 
 /// A Web Audio AudioParam: a value. Automation sets it now (the mixer ramps
 /// it over about 10 ms); the times are ignored.
@@ -113,6 +114,9 @@ export class OscillatorNode extends AudioNode {
     stopDelay: f64 = 0;
     /// Bumped by start() and stop(); read by the voice.
     generation: i32 = 0;
+    /// The Audio playing it (setNodeSource): start() gives it a voice again
+    /// after a stop released it.
+    _audio: Audio? = null;
 
     constructor() {
         super();
@@ -124,6 +128,8 @@ export class OscillatorNode extends AudioNode {
         this.stopped = false;
         this.startDelay = when;
         this.generation++;
+        const audio = this._audio;
+        if (audio != null && audio.source === this && audio._connected) audio.context.acquireVoice(audio);
     }
 
     stop(when: f64 = 0): void {

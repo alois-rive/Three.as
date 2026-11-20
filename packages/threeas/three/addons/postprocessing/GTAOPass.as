@@ -196,6 +196,11 @@ export class GTAOPass extends Pass {
     /// target) instead of the pass's prepass; without normals they are
     /// reconstructed from depth. null, null: the pass's own prepass.
     setGBuffer(depthTexture: DepthTexture?, normalTexture: Texture? = null): void {
+        // The prepass target made by an earlier call (and its depth texture)
+        // goes (three.js drops it without dispose).
+        const previous = this.normalRenderTarget;
+        if (previous != null) previous.dispose();
+        this.normalRenderTarget = null;
         if (depthTexture != null) {
             this.depthTexture = depthTexture;
             this.normalTexture = normalTexture;

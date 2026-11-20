@@ -54,7 +54,12 @@ export class FullScreenQuad {
         renderer.render(this.scene, _camera);
     }
 
+    /// Disposes the quad's geometry, as three.js (shared by every quad: it
+    /// is uploaded again when one draws next) and lets its mesh go (the
+    /// renderer's sweep frees its draw state). The material is the
+    /// caller's, as three.js.
     dispose(): void {
+        this.mesh.geometry.dispose();
         this.scene.remove(this.mesh);
     }
 }

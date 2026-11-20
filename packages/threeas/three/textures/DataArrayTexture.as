@@ -54,6 +54,8 @@ export class DataArrayTexture extends Texture {
         let tex = this.gpuTexture;
         if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight || tex.format != format) {
             if (tex != null) tex.release();
+            const view = this.gpuView;
+            if (view != null) view.release();
             const desc = new GPUTextureDesc();
             desc.width = this.dataWidth;
             desc.height = this.dataHeight;
@@ -81,6 +83,8 @@ export class DataArrayTexture extends Texture {
     override dispose(): void {
         const tex = this.gpuTexture;
         if (tex != null) tex.release();
+        const view = this.gpuView;
+        if (view != null) view.release();
         this.gpuTexture = null;
         this.gpuView = null;
         this.uploadedVersion = -1;

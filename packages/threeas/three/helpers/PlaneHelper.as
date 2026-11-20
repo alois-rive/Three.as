@@ -13,6 +13,8 @@ import { BackSide } from "../constants";
 export class PlaneHelper extends Line {
     plane: Plane;
     size: f64;
+    /// The faint fill (three.js's children[0]).
+    fill: Mesh;
 
     constructor(plane: Plane, size: f64 = 1, hex: u32 = 0xffff00) {
         const geometry = new BufferGeometry();
@@ -27,9 +29,10 @@ export class PlaneHelper extends Line {
         fill.setAttribute("position", new Float32BufferAttribute(
             [1, 1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, -1, -1, 0, 1, -1, 0], 3));
         fill.computeBoundingSphere();
-        this.add(new Mesh(fill, new MeshBasicMaterial({
+        this.fill = new Mesh(fill, new MeshBasicMaterial({
             color: hex, opacity: 0.2, transparent: true, depthWrite: false, toneMapped: false, side: BackSide,
-        })));
+        }));
+        this.add(this.fill);
     }
 
     override updateMatrixWorld(force: bool = false): void {
@@ -43,5 +46,7 @@ export class PlaneHelper extends Line {
     dispose(): void {
         this.geometry.dispose();
         this.material.dispose();
+        this.fill.geometry.dispose();
+        this.fill.material.dispose();
     }
 }

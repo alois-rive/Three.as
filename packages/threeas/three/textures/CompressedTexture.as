@@ -315,6 +315,8 @@ export class CompressedTexture extends Texture {
         if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight || tex.format != format
                 || tex.numMipmaps != <u32>this.mipmaps.length) {
             if (tex != null) tex.release();
+            const view = this.gpuView;
+            if (view != null) view.release();
             const desc = new GPUTextureDesc();
             desc.width = this.dataWidth;
             desc.height = this.dataHeight;
@@ -343,6 +345,8 @@ export class CompressedTexture extends Texture {
         if (tex != null) tex.release();
         const job = this.job;
         if (job != null) job.release();
+        const view = this.gpuView;
+        if (view != null) view.release();
         this.job = null;
         this.gpuTexture = null;
         this.gpuView = null;

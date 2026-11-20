@@ -25,6 +25,14 @@ export class AudioAnalyser {
         return this.data;
     }
 
+    /// Rive-only: gives the analyser's mixer slot back (at most four per
+    /// listener; slots no playing Audio listens through are also reclaimed
+    /// when all are taken) and detaches it from the Audio.
+    dispose(): void {
+        this.audio.context.releaseAnalyser(this.analyser);
+        if (this.audio.analyser === this.analyser) this.audio.analyser = null;
+    }
+
     getAverageFrequency(): f64 {
         let value: f64 = 0;
         const data = this.getFrequencyData();
