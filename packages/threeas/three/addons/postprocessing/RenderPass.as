@@ -49,6 +49,7 @@ export class RenderPass extends Pass {
             renderer.setClearColor<Color>(cc, this.clearAlpha);
         }
         renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+        if (this.clearDepth && (!this.clear || !renderer.autoClearDepth)) renderer.clearDepth();
         renderer.render(scene, this.camera);
         if (cc != null) renderer.setClearColor<Color>(this._oldClearColor, oldAlpha);
         if (this.overrideMaterial != null && scene instanceof Scene) (scene as Scene).overrideMaterial = oldOverride;

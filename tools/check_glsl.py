@@ -66,7 +66,11 @@ def main(path):
         open(f, "w").write(src)
         count += 1
         r = subprocess.run(["glslangValidator", f], capture_output=True, text=True)
-        errors = [l for l in r.stdout.splitlines() if "ERROR" in l]
+        output = (r.stdout + "\n" + r.stderr).splitlines()
+        errors = [l for l in output if "ERROR" in l]
+        if r.returncode != 0 and not errors:
+            detail = (r.stderr or r.stdout).strip()
+            errors.append("glslangValidator exited %d%s" % (r.returncode, ": " + detail if detail else ""))
         plain = plain_uniforms(src)
         if plain:
             emulated += 1
@@ -86,6 +90,9 @@ def main(path):
             print("== shader %d (%s)" % (count - 1, stage))
             print("\n".join(errors[:5]))
     shutil.rmtree(tmp)
+    if count == 0:
+        print("ERROR: no GLSL ES 3.0 shaders found in %s" % path, file=sys.stderr)
+        sys.exit(1)
     print("%d GLSL shaders, %d failing (%d with emulation uniforms, %d with shadow samplers)"
           % (count, failures, emulated, shadow))
     sys.exit(1 if failures else 0)

@@ -13,7 +13,7 @@ import { DepthTexture } from "../three/textures/DepthTexture";
 import { Points } from "../three/objects/Points";
 import { Mesh } from "../three/objects/Mesh";
 import { Object3D } from "../three/core/Object3D";
-import { HalfFloatType, FloatType, RedFormat, RepeatWrapping, NearestFilter } from "../three/constants";
+import { HalfFloatType, FloatType, RGBAFormat, RepeatWrapping, NearestFilter } from "../three/constants";
 import { SSAOPass } from "../three/addons/postprocessing/SSAOPass";
 import { SAOPass } from "../three/addons/postprocessing/SAOPass";
 import {
@@ -60,7 +60,7 @@ export class PostProcessingAOTests extends Tests {
                 expect.that(near(pass.kernel[0].length(), 0.1)).is(true);
                 const noise = pass.noiseTexture;
                 expect.that(<f64>noise.width).is(4);
-                expect.that(<f64>noise.format).is(<f64>RedFormat);
+                expect.that(<f64>noise.format).is(<f64>RGBAFormat);
                 expect.that(<f64>noise.type).is(<f64>FloatType);
                 expect.that(<f64>noise.wrapS).is(<f64>RepeatWrapping);
                 const rt = pass.normalRenderTarget;

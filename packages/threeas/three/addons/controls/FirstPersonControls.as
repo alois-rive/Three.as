@@ -79,6 +79,8 @@ export class FirstPersonControls extends Controls {
         return true;
     }
 
+    override capturing(): bool { return this.mouseDragOn; }
+
     override pointerDown(event: PointerEvent): void {
         if (!this.enabled) return;
         if (this.activeLook) this.moveForward = true;

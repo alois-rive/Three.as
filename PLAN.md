@@ -355,8 +355,8 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
   onto three.js Skeletons, and Rive timelines onto Object3D transforms
   (beyond `copyNodeTransform`).
 - Examples `Animation` (done) and `RiveDriven` (done).
-- Not planned: audio (no Rive scripting audio API yet), XR, node materials
-  and TSL (WGSL is the shading language here).
+- Not planned: XR, node materials and TSL (WGSL is the shading language here;
+  spatial audio was added in M17).
 
 ### M14: performance and shipping (done)
 
@@ -530,9 +530,9 @@ from the right place now); the gallery's `Addons` example (a Water
 ocean under a Sky lighting the scene through a PMREM, a Lensflare on the
 sun, a Reflector, a Refractor with WaterRefractionShader, a Water2 pool on
 a flow map, MarchingCubes metaballs) takes about 4.5 ms advance and 5.8 ms
-render a frame interpreted, 0.3 ms and 2.3 ms ahead of time (800 x 600). The gallery carries copies of
-the new shaders (`packages/gallery/three/shaders/objects/`) until the
-engine library is republished; see docs/DEVIATIONS.md.
+render a frame interpreted, 0.3 ms and 2.3 ms ahead of time (800 x 600). The
+new shaders (`three/shaders/objects/`) are now part of the published engine
+library; see docs/DEVIATIONS.md.
 
 ### M17: spatial audio (done)
 
@@ -584,9 +584,8 @@ biquad, oscillator and analyser, `fftSize` above 4096, MP3 / FLAC from
 fetched bytes (Rive decodes them only from audio assets). Still to do by
 ear: a listening pass on desktop and on the web (a page with cross origin
 isolation, where processors run; elsewhere the fallback plays assets
-through Rive's `Audio.play` without panning). The gallery as it ships
-(`tools/release_build.sh` without `--override`, on `.libraries/`) builds
-once the engine library is republished with `three/audio/`.
+through Rive's `Audio.play` without panning). `three/audio/` is now published
+in the engine library.
 
 ### M18: shader baking for any project (done)
 

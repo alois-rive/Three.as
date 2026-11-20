@@ -273,8 +273,15 @@ def capture_all(root):
     out = os.path.join(root, "build", "manifests")
     os.makedirs(out, exist_ok=True)
     rml = "".join(open(p).read() for p in sorted(glob.glob(os.path.join(root, "examples", "*", "*.rml"))))
-    names = re.findall(r'<Artboard isComponent="true"[^>]*name="([^"]*)"', rml) + ["Gallery"]
+    names = []
+    for tag in re.findall(r"<Artboard\b[^>]*>", rml):
+        if 'isComponent="true"' in tag:
+            m = re.search(r'\bname="([^"]*)"', tag)
+            if m:
+                names.append(m.group(1))
+    names.append("Gallery")
     paths = []
+    capture_failed = 0
     for name in names:
         path = os.path.join(out, name + ".json")
         shot = os.path.join(out, name + ".png")
@@ -282,9 +289,10 @@ def capture_all(root):
                             "--advance=1s"], capture_output=True, text=True)
         if r.returncode != 0 or not os.path.exists(path):
             print(f"{name}: rive failed\n{r.stdout[-2000:]}{r.stderr[-2000:]}")
+            capture_failed += 1
             continue
         paths.append(path)
-    return paths
+    return paths, capture_failed
 
 
 def main(args):
@@ -292,11 +300,15 @@ def main(args):
     for a in [a for a in args if a.startswith("--gallery=")]:
         root = a[len("--gallery="):]
         args.remove(a)
-    paths = capture_all(root) if args == ["--all"] else args
-    if not paths:
+    capture_failed = 0
+    if args == ["--all"]:
+        paths, capture_failed = capture_all(root)
+    else:
+        paths = args
+    if not paths and not capture_failed:
         print(__doc__)
         return 2
-    failed = 0
+    failed = capture_failed
     for path in paths:
         problems, (nl, np_, ng, ns, skipped) = check(path)
         name = os.path.splitext(os.path.basename(path))[0]

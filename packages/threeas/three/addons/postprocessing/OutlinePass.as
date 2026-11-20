@@ -19,6 +19,7 @@
 import { GPURenderer } from "../../renderers/GPURenderer";
 import { RenderTarget, RenderTargetOptions } from "../../renderers/RenderTarget";
 import { ShaderMaterial, UniformBase, Uniform } from "../../materials/ShaderMaterial";
+import { Material } from "../../materials/Material";
 import { MeshDepthMaterial } from "../../materials/MeshDepthMaterial";
 import { Texture } from "../../textures/Texture";
 import { DepthTexture } from "../../textures/DepthTexture";
@@ -352,8 +353,10 @@ export class OutlinePass extends Pass {
             // Make the selected objects invisible.
             this.changeVisibilityOfSelectedObjects(false);
             let currentBackground: ColorOrTexture? = null;
+            let currentOverrideMaterial: Material? = null;
             if (isScene) {
                 currentBackground = (scene as Scene).background;
+                currentOverrideMaterial = (scene as Scene).overrideMaterial;
                 (scene as Scene).background = null;
             }
 
@@ -381,7 +384,7 @@ export class OutlinePass extends Pass {
             if (isScene) (scene as Scene).overrideMaterial = pm;
             renderer.setRenderTarget(this.renderTargetMaskBuffer);
             renderer.render(scene, this.renderCamera);
-            if (isScene) (scene as Scene).overrideMaterial = null;
+            if (isScene) (scene as Scene).overrideMaterial = currentOverrideMaterial;
             this.changeVisibilityOfNonSelectedObjects(true);
             this._visibilityCache.clear();
             this._selectionCache.clear();

@@ -70,6 +70,7 @@ grep -q "falling back to the downloaded library" "$WORK/verify-gallery.log" \
     && fail "the gallery's library override was refused: it builds the published engine (see $WORK/verify-gallery.log)"
 step test-engine rive "$ENGINE" --test
 step test-gallery rive "$GALLERY" --test
+step shader-chunks python3 tools/make_shader_chunks.py --check
 step bake-selftest tools/threeas_bake.sh --self-test
 step bake-check tools/threeas_bake.sh "$GALLERY" --engine="$ENGINE" --check
 if [ "$bake_e2e" = 1 ]; then
@@ -98,34 +99,37 @@ if [ "$manifests" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------- bench
-measure() {   # tier, extra flags...: prints "<tier>.advance <ms>" and "<tier>.render <ms>"
+measure() {   # tier, extra flags...: appends "<tier>.advance <ms>" and "<tier>.render <ms>" to $WORK/results.txt
     local tier="$1"; shift
     local log="$WORK/bench-$tier.log"
     if ! rive "$GALLERY" --artboard=Benchmark --bench="$frames" "$@" > "$log" 2>&1; then
         fail "bench $tier (see $log)"
         return
     fi
-    sed -n "s/.*bench advance: mean \([0-9.]*\)ms.*/$tier.advance \1/p" "$log"
-    sed -n "s/.*bench render: mean \([0-9.]*\)ms.*/$tier.render \1/p" "$log"
+    sed -n "s/.*bench advance: mean \([0-9.]*\)ms.*/$tier.advance \1/p" "$log" >> "$WORK/results.txt"
+    sed -n "s/.*bench render: mean \([0-9.]*\)ms.*/$tier.render \1/p" "$log" >> "$WORK/results.txt"
     local growth
     growth=$(sed -n 's/.*wasm pages (+\([0-9]*\)).*/\1/p' "$log")
     [ "${growth:-0}" = 0 ] || fail "bench $tier: wasm memory grew $growth pages"
 }
 
-{
-    measure interp
-    measure aot --aot
-} > "$WORK/results.txt"
+: > "$WORK/results.txt"
+measure interp
+measure aot --aot
 echo "bench (Benchmark artboard, $frames frames, mean ms):"
 sed 's/^/     /' "$WORK/results.txt"
 
 if [ "$update" = 1 ]; then
-    {
-        echo "# tools/bench.sh baseline: Benchmark artboard means in ms ($(uname -m), $(date +%Y-%m-%d))."
-        echo "# Refresh with tools/bench.sh --update after an intended change."
-        cat "$WORK/results.txt"
-    } > "$BASELINE"
-    echo "wrote $BASELINE"
+    if [ "$failures" -gt 0 ] || [ ! -s "$WORK/results.txt" ]; then
+        fail "not updating $BASELINE after failures"
+    else
+        {
+            echo "# tools/bench.sh baseline: Benchmark artboard means in ms ($(uname -m), $(date +%Y-%m-%d))."
+            echo "# Refresh with tools/bench.sh --update after an intended change."
+            cat "$WORK/results.txt"
+        } > "$BASELINE"
+        echo "wrote $BASELINE"
+    fi
 elif [ -f "$BASELINE" ]; then
     while read -r metric value; do
         case "$metric" in \#*|"") continue ;; esac

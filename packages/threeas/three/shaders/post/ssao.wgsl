@@ -91,7 +91,7 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let packed = textureSampleLevel(tNormal, s_tex, in.uv, 0.0).xyz;
     let noise_size = vec2<i32>(textureDimensions(tNoise));
     let np = vec2<i32>(floor(in.uv * u.resolution)) % noise_size;
-    let random = vec3<f32>(textureLoad(tNoise, np, 0).r);
+    let random = textureLoad(tNoise, np, 0).xyz;
     if (depth == 1.0) {
         return vec4<f32>(1.0);   // don't influence the background
     }
@@ -100,7 +100,10 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let view_normal = packed * 2.0 - 1.0;
 
     // The matrix reorienting a kernel vector.
-    let tangent = normalize(random - view_normal * dot(random, view_normal));
+    let proj = random - view_normal * dot(random, view_normal);
+    let len2 = dot(proj, proj);
+    let fallback = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), abs(view_normal.x) > 0.9);
+    let tangent = select(normalize(fallback - view_normal * dot(fallback, view_normal)), proj * inverseSqrt(len2), len2 > 1e-6);
     let bitangent = cross(view_normal, tangent);
     let kernel_matrix = mat3x3<f32>(tangent, bitangent, view_normal);
 

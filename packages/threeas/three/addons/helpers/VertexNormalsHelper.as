@@ -19,7 +19,9 @@ export class VertexNormalsHelper extends LineSegments {
     size: f64;
 
     constructor(object: Mesh, size: f64 = 1, color: u32 = 0xff0000) {
-        const count = object.geometry.getAttribute("normal") != null ? object.geometry.getAttribute("normal")!.count : 0;
+        const posAttr = object.geometry.getAttribute("position");
+        const normAttr = object.geometry.getAttribute("normal");
+        const count = posAttr != null && normAttr != null ? min<i32>(posAttr.count, normAttr.count) : 0;
         const geometry = new BufferGeometry();
         geometry.setAttribute("position", new BufferAttribute(new Float32Array(count * 2 * 3), 3));
         super(geometry, new LineBasicMaterial({ color: color, toneMapped: false }));
@@ -38,8 +40,9 @@ export class VertexNormalsHelper extends LineSegments {
         const objPos = this.object.geometry.getAttribute("position");
         const objNorm = this.object.geometry.getAttribute("normal");
         if (objPos == null || objNorm == null) return;
+        const count = min<i32>(min<i32>(objPos.count, objNorm.count), position.count / 2);
         let idx = 0;
-        for (let j = 0; j < objPos.count; j++) {
+        for (let j = 0; j < count; j++) {
             _v1.fromBufferAttribute(objPos, j).applyMatrix4(matrixWorld);
             _v2.fromBufferAttribute(objNorm, j);
             _v2.applyMatrix3(_normalMatrix).normalize().multiplyScalar(this.size).add(_v1);

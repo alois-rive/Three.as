@@ -146,6 +146,27 @@ if [ "$mode" = check ] && [ ! -f "$out/keys.txt" ]; then
 fi
 
 # ------------------------------------------------------- the engine baked
+sha256_prefix() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -c1-16
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -c1-16
+    else
+        die "neither shasum nor sha256sum found"
+    fi
+}
+
+rml_files() {
+    find "$project" \( -name '.?*' -o -path "$project/build" -o -path "$out" \) -prune -o -name '*.rml' -print0
+}
+
+cat_rml_files() {
+    local f
+    while IFS= read -r -d '' f; do
+        cat "$f"
+    done < <(rml_files)
+}
+
 if [ -n "$engine" ]; then
     [ -d "$engine" ] || die "no engine directory $engine"
     engine="$(cd "$engine" && pwd)"
@@ -163,8 +184,7 @@ else
     [ ${#snapshots[@]} -gt 0 ] || die "no threeas library in $project/.libraries (rive library update <project> --uat, or pass --engine=DIR)"
     snapshot="${snapshots[0]}"
     if [ ${#snapshots[@]} -gt 1 ]; then
-        used=$(find "$project" \( -name '.?*' -o -path "$project/build" \) -prune -o -name '*.rml' -print0 \
-            | xargs -0 cat | tr '\n' ' ' | grep -o '<LibraryAsset [^>]*>' | sed -n 's/.* assetId="\([0-9]*\)".*/\1/p')
+        used=$(cat_rml_files | tr '\n' ' ' | { grep -o '<LibraryAsset [^>]*>' || true; } | sed -n 's/.* assetId="\([0-9]*\)".*/\1/p')
         for s in "${snapshots[@]}"; do
             for id in $used; do [ "${s##*@}" = "$id" ] && snapshot="$s"; done
         done
@@ -176,7 +196,7 @@ else
         note "rive.yaml overrides a library: if it is threeas, previews run its sources; pass --engine=<override dir> to bake for them"
     fi
 fi
-hash=$(shasum -a 256 "$src" | cut -c1-16)
+hash=$(sha256_prefix "$src")
 if [ -f "$hash_as" ]; then
     declared=$(sed -n 's/.*THREE_WGSL_HASH: string = "\([0-9a-f]*\)".*/\1/p' "$hash_as")
     [ "$declared" = "$hash" ] || die "$hash_as says three.wgsl is $declared, it is $hash (engine sources: run tools/make_shader_chunks.py)"
@@ -186,9 +206,6 @@ if [ -f "$renderer_as" ] && ! grep -q "ShaderVariants" "$renderer_as"; then
 fi
 
 # -------------------------------------------------------------- the scenes
-rml_files() {
-    find "$project" \( -name '.?*' -o -path "$project/build" -o -path "$out" \) -prune -o -name '*.rml' -print0
-}
 main_artboard=$(sed -n 's/^main: *"\{0,1\}\([^"#]*[^"# ]\)"\{0,1\} *\(#.*\)\{0,1\}$/\1/p' "$project/rive.yaml" | head -n 1)
 artboards=()
 if [ -n "$artboard_list" ]; then
@@ -197,8 +214,8 @@ elif [ "$main_only" = 1 ]; then
     [ -n "$main_artboard" ] || die "rive.yaml has no main: artboard (use --artboard=NAME)"
     artboards=("$main_artboard")
 else
-    while IFS= read -r a; do [ -n "$a" ] && artboards+=("$a"); done < <(rml_files | xargs -0 cat | tr '\n' ' ' \
-        | grep -o '<Artboard [^>]*>' | sed -n 's/.* name="\([^"]*\)".*/\1/p')
+    while IFS= read -r a; do [ -n "$a" ] && artboards+=("$a"); done < <(cat_rml_files | tr '\n' ' ' \
+        | { grep -o '<Artboard [^>]*>' || true; } | sed -n 's/.* name="\([^"]*\)".*/\1/p')
 fi
 [ ${#artboards[@]} -gt 0 ] || [ ${#scenarios[@]} -gt 0 ] || [ ${#keys_files[@]} -gt 0 ] \
     || die "no artboards found in $project's .rml files"

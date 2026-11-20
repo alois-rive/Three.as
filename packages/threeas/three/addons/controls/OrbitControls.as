@@ -183,6 +183,8 @@ export class OrbitControls extends Controls {
 
     // ------------------------------------------------------------ events
 
+    override capturing(): bool { return this.state != STATE_NONE; }
+
     override pointerDown(event: PointerEvent): void {
         if (!this.enabled) return;
         if (this.pointerIds.length == 0) this.started();
@@ -239,6 +241,8 @@ export class OrbitControls extends Controls {
         } else if (this.pointerIds.length == 1) {
             const p = this.pointerPositions[0];
             this.startSingleAt(p.x, p.y);
+        } else if (this.pointerIds.length == 2) {
+            this.startDollyPan();
         }
         event.hit();
     }

@@ -247,6 +247,7 @@ export class Lensflare extends Mesh {
     }
 
     dispose(): void {
+        this.material.dispose();
         this.material1a.dispose();
         this.material1b.dispose();
         this.material2.dispose();

@@ -146,12 +146,14 @@ export class SAOPass extends Pass {
 
         const p = this.params;
         const near = cameraNear(this.camera), far = cameraFar(this.camera);
+        const perspective = isPerspective(this.camera);
         const sao = this.saoMaterial;
         sao.uniform<f64>("bias").value = p.saoBias;
         sao.uniform<f64>("intensity").value = p.saoIntensity;
         sao.uniform<f64>("scale").value = p.saoScale;
         sao.uniform<f64>("kernelRadius").value = p.saoKernelRadius;
         sao.uniform<f64>("minResolution").value = p.saoMinResolution;
+        sao.uniform<f64>("perspective").value = perspective;
         sao.uniform<f64>("cameraNear").value = near;
         sao.uniform<f64>("cameraFar").value = far;
         // The projection as it is now (three.js copies it on setSize).
@@ -161,6 +163,7 @@ export class SAOPass extends Pass {
         const depthCutoff = p.saoBlurDepthCutoff * (far - near);
         const blurs: StaticArray<ShaderMaterial> = [this.vBlurMaterial, this.hBlurMaterial];
         for (let i = 0; i < 2; i++) {
+            blurs[i].uniform<f64>("perspective").value = perspective;
             blurs[i].uniform<f64>("depthCutoff").value = depthCutoff;
             blurs[i].uniform<f64>("cameraNear").value = near;
             blurs[i].uniform<f64>("cameraFar").value = far;

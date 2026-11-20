@@ -80,13 +80,13 @@ export class FlyControls extends Controls {
         if (r == null) return;
         r.getSize(_size);
         const hw = _size.x / 2, hh = _size.y / 2;
+        if (hw <= 0 || hh <= 0) return;
         this.yawLeft = -(<f64>event.position.x - hw) / hw;
         this.pitchDown = (<f64>event.position.y - hh) / hh;
         this.updateRotationVector();
     }
 
     override pointerUp(event: PointerEvent): void {
-        if (!this.enabled) return;
         if (this.dragToLook) {
             this.status = max<i32>(0, this.status - 1);
             this.yawLeft = 0;
@@ -98,7 +98,7 @@ export class FlyControls extends Controls {
         this.updateRotationVector();
     }
 
-    override capturing(): bool { return this.status > 0; }
+    override capturing(): bool { return this.enabled && this.status > 0; }
 
     override update(delta: f64 = -1): bool {
         if (!this.enabled || delta <= 0) return false;
