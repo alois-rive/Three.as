@@ -674,10 +674,11 @@ repository commits the gallery unbaked.
   instance's row from a per-instance vertex attribute (slot 7, location
   13: the renderer's shared 0, 1, 2 ... buffer, grown on demand), not
   `@builtin(instance_index)` as three.js's `gl_InstanceID`: naga emulates
-  that builtin on WebGL2 with a plain uniform (`naga_vs_first_instance`)
-  that Rive's web runtime queries with no program bound, which throws for
-  every program carrying it. No ThreeAS shader reads `instance_index`, and
-  `tools/check_glsl.py` fails on any such emulation uniform.
+  that builtin on WebGL2 with a plain uniform (`naga_vs_first_instance`),
+  avoided as a precaution (it was blamed for the web crash that the
+  shadow comparison sampler turned out to cause, see [Shadows](#shadows)).
+  No ThreeAS shader reads `instance_index`, and `tools/check_glsl.py`
+  fails on any such emulation uniform.
 - **The vertex textures borrow extra map slots**: the morph texture takes
   extra slot 4, the bone texture slot 3 and an instanced morphTexture
   slot 2 (group 1 bindings 6, 5, 4; the web allows 16 textures a stage
@@ -1006,7 +1007,24 @@ repository commits the gallery unbaked.
   Lights beyond 24 layers cast no shadow.
 - `VSMShadowMap` renders as `PCFSoftShadowMap` (PCF 5x5); `shadow.radius`
   scales the PCF step. `SpotLight.map` (projected textures) is not
-  supported (the main shader has no texture binding left).
+  supported.
+- **Depth comparisons are done in the shader**, not by a comparison
+  sampler (`sampler2DShadow` in three.js's GLSL): a WGSL
+  `sampler_comparison` becomes a GLSL shadow sampler, which crashes Rive's
+  web runtime (it queries the program's samplers with no program bound;
+  see AGENTS.md). three.wgsl reads the shadow maps with `textureLoad` and
+  `shadow_compare` filters as a linear lessEqual comparison sampler with
+  clamp-to-edge would (2x2 texels compared, weighted bilinearly), one
+  such sample for BasicShadowMap, 3x3 for PCF and 5x5 for PCFSoft. With
+  `radius` <= 1 the samples are a texel apart and share texels, so each
+  texel of the 4x4 (PCF) or 6x6 (PCFSoft) block is loaded and compared
+  once (16 and 36 loads); a larger radius takes 4 loads a sample (36 and
+  100). The result differs from the hardware's by at most 1-2 levels at a
+  few edge pixels (its filter weights have less sub-texel precision).
+  Group 0 binding 4 (the shadow sampler) is gone: a `lights: true`
+  ShaderMaterial's frame bindings are 0-3 and 5-7 (`three_chunks.wgsl`);
+  one still declaring the old `s_shadow` there fails to bind (copy the
+  chunks again).
 - The **CSM** addon (`three/addons/csm/`) fits one DirectionalLight per
   cascade as three.js; instead of injecting shader code
   (`setupMaterial` does nothing), each cascade light carries its view

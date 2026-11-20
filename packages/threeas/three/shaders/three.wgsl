@@ -203,8 +203,10 @@ const BONE_TEXTURE: u32 = 4u;
 @group(0) @binding(0) var<uniform> F: FrameU;
 @group(0) @binding(1) var t_env: texture_2d<f32>;
 @group(0) @binding(2) var s_env: sampler;
+// The shadow maps, read with textureLoad: no comparison sampler, which
+// Rive's web runtime cannot bind (shadow_compare filters as one would).
+// Binding 4 is free.
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
-@group(0) @binding(4) var s_shadow: sampler_comparison;
 // RectAreaLight's LTC tables: 32 x 32 texels, four pack2x16float words
 // each (LTC_MAT_1 xy zw, LTC_MAT_2 xy zw).
 struct LtcTable {
@@ -1237,6 +1239,27 @@ fn dfg_approx(N: vec3<f32>, V: vec3<f32>, roughness: f32) -> vec2<f32> {
 
 // ---------------------------------------------------------------- shadows
 
+/// Texel `p` of shadow map `layer` (clamped to its edge) compared with
+/// `depth`: 1 when `depth` <= the stored depth (lit), else 0.
+fn shadow_texel(p: vec2<i32>, size: vec2<i32>, layer: i32, depth: f32) -> f32 {
+    let q = clamp(p, vec2<i32>(0), size - vec2<i32>(1));
+    return select(0.0, 1.0, depth <= textureLoad(t_shadow, q, layer, 0));
+}
+
+/// A comparison sample of shadow map `layer` at `uv`, as a linear
+/// lessEqual comparison sampler with clamp-to-edge filters it: the 2x2
+/// texels around `uv` compared, then weighted bilinearly.
+fn shadow_compare(uv: vec2<f32>, size: vec2<i32>, layer: i32, depth: f32) -> f32 {
+    let t = uv * vec2<f32>(size) - 0.5;
+    let i = vec2<i32>(floor(t));
+    let f = t - floor(t);
+    let a = shadow_texel(i, size, layer, depth);
+    let b = shadow_texel(i + vec2<i32>(1, 0), size, layer, depth);
+    let c = shadow_texel(i + vec2<i32>(0, 1), size, layer, depth);
+    let d = shadow_texel(i + vec2<i32>(1, 1), size, layer, depth);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 /// How lit `world` is by `light`, 0 (shadowed) to 1, from its shadow map.
 fn shadow_factor(light: Light, world: vec3<f32>, normal: vec3<f32>) -> f32 {
     let first = i32(light.shadow.x);
@@ -1265,18 +1288,35 @@ fn shadow_factor(light: Light, world: vec3<f32>, normal: vec3<f32>) -> f32 {
     }
     let depth = ndc.z + light.shadow.y;
     let kind = u32(F.shadow_params.x);
+    let size = vec2<i32>(textureDimensions(t_shadow));
     var lit = 0.0;
     if (kind == 0u) {
-        lit = textureSampleCompareLevel(t_shadow, s_shadow, uv, layer, depth);
+        lit = shadow_compare(uv, size, layer, depth);
     } else {
-        let step = F.shadow_params.y * max(light.shadow.w, 1.0);
+        // A (2 reach + 1)^2 grid of comparison samples, `step` apart.
         let reach = select(1, 2, kind == 2u);
-        var count = 0.0;
-        for (var y = -reach; y <= reach; y++) {
-            for (var x = -reach; x <= reach; x++) {
-                let o = vec2<f32>(f32(x), f32(y)) * step;
-                lit += textureSampleCompareLevel(t_shadow, s_shadow, uv + o, layer, depth);
-                count += 1.0;
+        let count = f32((2 * reach + 1) * (2 * reach + 1));
+        if (light.shadow.w <= 1.0) {
+            // Samples one texel apart share their texels: compare each
+            // texel of the (2 reach + 2)^2 block once, weighted by the
+            // samples it is in: per axis 1 - f for the first row (column),
+            // f for the last, (1 - f) + f for those between.
+            let t = uv * vec2<f32>(size) - 0.5;
+            let i = vec2<i32>(floor(t));
+            let f = t - floor(t);
+            for (var y = -reach; y <= reach + 1; y++) {
+                let wy = select(0.0, 1.0 - f.y, y <= reach) + select(0.0, f.y, y > -reach);
+                for (var x = -reach; x <= reach + 1; x++) {
+                    let wx = select(0.0, 1.0 - f.x, x <= reach) + select(0.0, f.x, x > -reach);
+                    lit += wx * wy * shadow_texel(i + vec2<i32>(x, y), size, layer, depth);
+                }
+            }
+        } else {
+            let step = F.shadow_params.y * light.shadow.w;
+            for (var y = -reach; y <= reach; y++) {
+                for (var x = -reach; x <= reach; x++) {
+                    lit += shadow_compare(uv + vec2<f32>(f32(x), f32(y)) * step, size, layer, depth);
+                }
             }
         }
         lit /= count;

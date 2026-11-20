@@ -838,7 +838,6 @@ export class GPURenderer {
     private shadowSize: u32 = 0;
     private shadowLayers: u32 = 0;
     private dummyShadowView: GPUTextureView? = null;
-    private compareSampler: GPUSampler? = null;
     private tileUbos: Array<GPUBuffer> = [];
     private tileGroups: Array<GPUBindGroup> = [];
     private tileStaging: ArrayBuffer = new ArrayBuffer(FRAME_BYTES);
@@ -1961,8 +1960,6 @@ export class GPURenderer {
             dv.dimension = TextureViewDimension.array2D;
             dv.aspect = TextureAspect.depthOnly;
             this.dummyShadowView = dummyShadow.view(dv);
-            this.compareSampler = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest,
-                WrapMode.clampToEdge, WrapMode.clampToEdge, CompareFunction.lessEqual);
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
             this.maxAnisotropy = features.anisotropicFiltering ? 16 : 1;
@@ -3336,13 +3333,14 @@ export class GPURenderer {
     }
 
     /// A group 0 over `ubo`: the frame block, its textures and samplers, and
-    /// the RectAreaLight tables.
+    /// the RectAreaLight tables. No sampler at binding 4: three.wgsl reads
+    /// the shadow maps with textureLoad (a comparison sampler crashes Rive's
+    /// web runtime; docs/DEVIATIONS.md).
     private makeFrameGroup(layout: GPUBindGroupLayout, ubo: GPUBuffer, env: GPUTextureView, shadow: GPUTextureView,
                            tr: GPUTextureView): GPUBindGroup {
         return new GPUBindGroup(layout, [new GPUBindGroupUBO(0, ubo), new GPUBindGroupUBO(7, this.ltcUbo!)],
             [new GPUBindGroupTexture(1, env), new GPUBindGroupTexture(3, shadow), new GPUBindGroupTexture(5, tr)],
-            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(4, this.compareSampler!),
-                new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
+            [new GPUBindGroupSampler(2, this.backgroundSampler(true)), new GPUBindGroupSampler(6, this.backgroundSampler(true))]);
     }
 
     /// The frame bind group: the frame block, the environment, the shadow
