@@ -10,6 +10,12 @@
 //     scene.environment = hdr;
 
 import { Context } from "rive/host";
+import { Jobs } from "rive/jobs";
+import { Promise } from "rive/promise";
+import { Blob } from "rive/shared";
+import { Loader } from "../../loaders/Loader";
+import { LoadingManager } from "../../loaders/LoadingManager";
+import { fetchBytes } from "../../loaders/FileLoader";
 import { DataTexture } from "../../textures/DataTexture";
 import { toHalf } from "../../textures/DataUpload";
 import { HalfFloatType, FloatType, LinearFilter, RGBAFormat, LinearSRGBColorSpace } from "../../constants";
@@ -26,15 +32,76 @@ export class RGBEData {
     type: i32 = HalfFloatType;
 }
 
-export class RGBELoader {
-    /// Needed by `load` (BlobAssets and log lines); `parse` works without.
-    context: Context?;
+/// What `decodeRGBE` hands back from a Rive job: pixel data in a shared Blob.
+export class RGBEDecoded {
+    width: i32 = 0;
+    height: i32 = 0;
+    header: string = "";
+    gamma: f64 = 1;
+    exposure: f64 = 1;
+    type: i32 = HalfFloatType;
+    blob: Blob? = null;
+    error: string = "";
+}
+
+class RGBEParseResult {
+    data: RGBEData? = null;
+    error: string = "";
+}
+
+/// Decodes a Radiance .hdr file off the main lane (the job behind loadAsync /
+/// parseAsync).
+@job export function decodeRGBE(data: ArrayBuffer, type: i32 = HalfFloatType): RGBEDecoded {
+    const res = parseRGBECore(Uint8Array.wrap(data), type);
+    const out = new RGBEDecoded();
+    if (res.data == null) {
+        out.error = res.error;
+        return out;
+    }
+    const d = res.data!;
+    out.width = d.width;
+    out.height = d.height;
+    out.header = d.header;
+    out.gamma = d.gamma;
+    out.exposure = d.exposure;
+    out.type = d.type;
+    const view = d.data;
+    if (view.byteLength > 0) {
+        out.blob = Blob.from(view.buffer, view.byteOffset, view.byteLength);
+    }
+    return out;
+}
+
+export function buildRGBEData(decoded: RGBEDecoded): RGBEData? {
+    if (decoded.error.length > 0 || decoded.width <= 0 || decoded.height <= 0) return null;
+    const out = new RGBEData();
+    out.width = decoded.width;
+    out.height = decoded.height;
+    out.header = decoded.header;
+    out.gamma = decoded.gamma;
+    out.exposure = decoded.exposure;
+    out.type = decoded.type;
+    const blob = decoded.blob;
+    const count = decoded.width * decoded.height * 4;
+    if (decoded.type == FloatType) {
+        const f = new Float32Array(count);
+        if (blob != null && blob.id != 0) blob.readInto(0, f);
+        out.data = f;
+    } else {
+        const h = new Uint16Array(count);
+        if (blob != null && blob.id != 0) blob.readInto(0, h);
+        out.data = h;
+    }
+    return out;
+}
+
+export class RGBELoader extends Loader {
     type: i32 = HalfFloatType;
     /// Why the last parse failed ("" when it did not).
     error: string = "";
 
-    constructor(context: Context? = null) {
-        this.context = context;
+    constructor(context: Context? = null, manager: LoadingManager? = null) {
+        super(context, manager);
     }
 
     setDataType(value: i32): RGBELoader {
@@ -47,10 +114,10 @@ export class RGBELoader {
     load(name: string): DataTexture? {
         const context = this.context;
         if (context == null) return null;
-        const bytesAsset = context.blob(name);
+        const bytesAsset = context.blob(this.path + name);
         const bytes = bytesAsset != null ? bytesAsset!.toArrayBuffer() : null;
         if (bytes == null) {
-            context.log("three: RGBELoader: no blob asset named '" + name + "'");
+            context.log("three: RGBELoader: no blob asset named '" + this.path + name + "'");
             return null;
         }
         const d = this.parse(Uint8Array.wrap(bytes));
@@ -58,98 +125,137 @@ export class RGBELoader {
             context.log("three: RGBELoader: " + this.error);
             return null;
         }
-        const t = new DataTexture(d.data, <u32>d.width, <u32>d.height, RGBAFormat, d.type);
-        t.name = name;
-        t.colorSpace = LinearSRGBColorSpace;
-        t.minFilter = LinearFilter;
-        t.magFilter = LinearFilter;
-        t.generateMipmaps = false;
-        t.flipY = true;
-        return t;
+        return makeRGBETexture(d, name);
+    }
+
+    /// An https: url or a blob asset name, decoded in a Rive job.
+    loadAsync(url: string): Promise<DataTexture> {
+        return loadRGBEAsync(this, url);
+    }
+
+    /// As `parse`, decoding in a Rive job off the main lane.
+    parseAsync(data: ArrayBuffer): Promise<RGBEData> {
+        return parseRGBEAsync(this, data);
     }
 
     parse(buffer: Uint8Array): RGBEData? {
-        this.error = "";
-        let pos = 0;
-        // Header lines, up to the blank line.
-        let header = "";
-        let format = false;
-        let gamma: f64 = 1, exposure: f64 = 1;
-        let first = true;
-        while (pos < buffer.length) {
-            const line = readLine(buffer, pos);
-            pos += line.length + 1;
-            if (first) {
-                if (!line.startsWith("#?")) {
-                    this.error = "not a Radiance file (no #? magic)";
-                    return null;
-                }
-                first = false;
-            }
-            header += line + "\n";
-            if (line.length == 0) break;
-            if (line.startsWith("FORMAT=")) {
-                format = line == "FORMAT=32-bit_rle_rgbe";
-                if (!format) {
-                    this.error = "unsupported " + line;
-                    return null;
-                }
-            } else if (line.startsWith("GAMMA=")) {
-                gamma = parseFloat(line.substring(6));
-            } else if (line.startsWith("EXPOSURE=")) {
-                exposure = parseFloat(line.substring(9));
-            }
-        }
-        // The resolution: -Y height +X width.
-        const res = readLine(buffer, pos);
-        pos += res.length + 1;
-        const parts = res.split(" ");
-        if (parts.length != 4 || parts[0] != "-Y" || parts[2] != "+X") {
-            this.error = "unsupported resolution line '" + res + "'";
-            return null;
-        }
-        const height = I32.parseInt(parts[1]);
-        const width = I32.parseInt(parts[3]);
-        if (width <= 0 || height <= 0) {
-            this.error = "bad size";
-            return null;
-        }
-        const rgbe = new Uint8Array(width * height * 4);
-        if (!readPixels(buffer, pos, width, height, rgbe)) {
-            this.error = "truncated or corrupt pixel data";
-            return null;
-        }
-        const out = new RGBEData();
-        out.width = width;
-        out.height = height;
-        out.header = header;
-        out.gamma = gamma;
-        out.exposure = exposure;
-        out.type = this.type == FloatType ? FloatType : HalfFloatType;
-        const count = width * height;
-        if (out.type == FloatType) {
-            const f = new Float32Array(count * 4);
-            for (let i = 0; i < count; i++) {
-                const s = rgbeScale(rgbe[i * 4 + 3]);
-                f[i * 4] = <f32>(<f64>rgbe[i * 4] * s);
-                f[i * 4 + 1] = <f32>(<f64>rgbe[i * 4 + 1] * s);
-                f[i * 4 + 2] = <f32>(<f64>rgbe[i * 4 + 2] * s);
-                f[i * 4 + 3] = 1;
-            }
-            out.data = f;
-        } else {
-            const h = new Uint16Array(count * 4);
-            for (let i = 0; i < count; i++) {
-                const s = rgbeScale(rgbe[i * 4 + 3]);
-                h[i * 4] = toHalf(<f32>(<f64>rgbe[i * 4] * s));
-                h[i * 4 + 1] = toHalf(<f32>(<f64>rgbe[i * 4 + 1] * s));
-                h[i * 4 + 2] = toHalf(<f32>(<f64>rgbe[i * 4 + 2] * s));
-                h[i * 4 + 3] = 0x3c00;
-            }
-            out.data = h;
-        }
-        return out;
+        const res = parseRGBECore(buffer, this.type);
+        this.error = res.error;
+        return res.data;
     }
+}
+
+function makeRGBETexture(d: RGBEData, name: string): DataTexture {
+    const t = new DataTexture(d.data, <u32>d.width, <u32>d.height, RGBAFormat, d.type);
+    t.name = name;
+    t.colorSpace = LinearSRGBColorSpace;
+    t.minFilter = LinearFilter;
+    t.magFilter = LinearFilter;
+    t.generateMipmaps = false;
+    t.flipY = true;
+    return t;
+}
+
+async function loadRGBEAsync(loader: RGBELoader, url: string): Promise<DataTexture> {
+    const bytes = await fetchBytes(loader, url);
+    const data = await parseRGBEAsync(loader, bytes);
+    return makeRGBETexture(data, url);
+}
+
+async function parseRGBEAsync(loader: RGBELoader, data: ArrayBuffer): Promise<RGBEData> {
+    const job = Jobs.run(decodeRGBE, data, loader.type);
+    const settled = await job.promise().settled();
+    job.release();
+    if (!settled.ok) return await Promise.reject<RGBEData>(settled.error);
+    const decoded = settled.value;
+    loader.error = decoded.error;
+    const out = buildRGBEData(decoded);
+    if (out == null) return await Promise.reject<RGBEData>("RGBELoader: " + decoded.error);
+    return out;
+}
+
+function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
+    const res = new RGBEParseResult();
+    let pos = 0;
+    // Header lines, up to the blank line.
+    let header = "";
+    let format = false;
+    let gamma: f64 = 1, exposure: f64 = 1;
+    let first = true;
+    while (pos < buffer.length) {
+        const line = readLine(buffer, pos);
+        pos += line.length + 1;
+        if (first) {
+            if (!line.startsWith("#?")) {
+                res.error = "not a Radiance file (no #? magic)";
+                return res;
+            }
+            first = false;
+        }
+        header += line + "\n";
+        if (line.length == 0) break;
+        if (line.startsWith("FORMAT=")) {
+            format = line == "FORMAT=32-bit_rle_rgbe";
+            if (!format) {
+                res.error = "unsupported " + line;
+                return res;
+            }
+        } else if (line.startsWith("GAMMA=")) {
+            gamma = parseFloat(line.substring(6));
+        } else if (line.startsWith("EXPOSURE=")) {
+            exposure = parseFloat(line.substring(9));
+        }
+    }
+    // The resolution: -Y height +X width.
+    const resLine = readLine(buffer, pos);
+    pos += resLine.length + 1;
+    const parts = resLine.split(" ");
+    if (parts.length != 4 || parts[0] != "-Y" || parts[2] != "+X") {
+        res.error = "unsupported resolution line '" + resLine + "'";
+        return res;
+    }
+    const height = I32.parseInt(parts[1]);
+    const width = I32.parseInt(parts[3]);
+    if (width <= 0 || height <= 0) {
+        res.error = "bad size";
+        return res;
+    }
+    const rgbe = new Uint8Array(width * height * 4);
+    if (!readPixels(buffer, pos, width, height, rgbe)) {
+        res.error = "truncated or corrupt pixel data";
+        return res;
+    }
+    const out = new RGBEData();
+    out.width = width;
+    out.height = height;
+    out.header = header;
+    out.gamma = gamma;
+    out.exposure = exposure;
+    out.type = targetType == FloatType ? FloatType : HalfFloatType;
+    const count = width * height;
+    if (out.type == FloatType) {
+        const f = new Float32Array(count * 4);
+        for (let i = 0; i < count; i++) {
+            const s = rgbeScale(rgbe[i * 4 + 3]);
+            f[i * 4] = <f32>(<f64>rgbe[i * 4] * s);
+            f[i * 4 + 1] = <f32>(<f64>rgbe[i * 4 + 1] * s);
+            f[i * 4 + 2] = <f32>(<f64>rgbe[i * 4 + 2] * s);
+            f[i * 4 + 3] = 1;
+        }
+        out.data = f;
+    } else {
+        const h = new Uint16Array(count * 4);
+        for (let i = 0; i < count; i++) {
+            const s = rgbeScale(rgbe[i * 4 + 3]);
+            h[i * 4] = toHalf(<f32>(<f64>rgbe[i * 4] * s));
+            h[i * 4 + 1] = toHalf(<f32>(<f64>rgbe[i * 4 + 1] * s));
+            h[i * 4 + 2] = toHalf(<f32>(<f64>rgbe[i * 4 + 2] * s));
+            h[i * 4 + 3] = 0x3c00;
+        }
+        out.data = h;
+    }
+    res.data = out;
+    return res;
 }
 
 /// three.js's HDRLoader is the same loader.

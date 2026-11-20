@@ -144,24 +144,36 @@ export class GLTFTests extends Tests {
                 if (bytes == null) return;
                 const decoded = decodeGLTF(bytes!, true, [], [], false);
                 expect.that(decoded.error).is("");
+                expect.that(decoded.blob != null).is(true);
                 expect.that(decoded.offsets.length > 10).is(true);
                 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
                 const gd = new GLTFData(bytes!, null);   // no decoder: everything comes decoded
-                gd.decoded = decoded.floats;
-                gd.decodedOffsets = decoded.offsets;
-                gd.decodedLengths = decoded.lengths;
+                gd.setDecoded(decoded);
                 const a = loader.parseData(gd);
                 expect.that(loader.error).is("");
                 const b = loader.parse(bytes!);
                 if (a == null || b == null) return;
                 const pa = (find(a.scene, "Glass") as THREE.Mesh).geometry.getAttribute("position")!;
                 const pb = (find(b.scene, "Glass") as THREE.Mesh).geometry.getAttribute("position")!;
+                expect.that(pa._blob != null).is(true);
                 let same = pa.count == pb.count;
                 for (let i = 0; i < pa.array.length && same; i++) if (pa.array[i] != pb.array[i]) same = false;
                 expect.that(same).is(true);
                 const ia = (find(a.scene, "Glass") as THREE.Mesh).geometry.index!;
                 expect.that(ia.count).is(576 * 3);
                 expect.that(a.animations[0].tracks[0].values.length).is(20);
+            });
+            test("malformed GLB chunk length fails cleanly", (expect) => {
+                const bad = new ArrayBuffer(28);
+                const dv = new DataView(bad);
+                dv.setUint32(0, 0x46546C67, true);   // glTF
+                dv.setUint32(4, 2, true);            // version 2
+                dv.setUint32(8, 28, true);           // total length
+                dv.setUint32(12, 0xFFFFFFF8, true);  // huge chunk length
+                dv.setUint32(16, 0x4E4F534A, true);  // JSON
+                const loader = new GLTFLoader();
+                expect.that(loader.parse(bad) == null).is(true);
+                expect.that(loader.error.length > 0).is(true);
             });
             test(".gltf JSON with a base64 buffer", (expect) => {
                 const bytes = this.blob("features_embedded");

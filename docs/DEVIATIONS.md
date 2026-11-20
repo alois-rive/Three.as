@@ -177,8 +177,11 @@ repository commits the gallery unbaked.
 
 - **`Matrix4` is backed by Rive's `Mat4`** (`matrix.mat4`, shared storage):
   `elements` is a `StaticArray<f32>` (three.js uses f64 numbers), column-major
-  as in three.js. `set()` still takes row-major arguments. Pass `matrix.mat4`
-  to any Rive API; `Matrix4.fromMat4(m)` copies one in.
+  as in three.js. `set()` still takes row-major arguments. `multiplyMatrices`
+  and `invert` use `Mat4.multiplyAffine` / `Mat4.invertAffine` for affine
+  matrices and fall back to general `Mat4.multiply` / `Mat4.invert` for
+  projective matrices. Pass `matrix.mat4` to any Rive API;
+  `Matrix4.fromMat4(m)` copies one in.
 - **Projection matrices map depth to [0, 1]** (WebGPU), as three.js with
   `WebGPUCoordinateSystem`. `Vector3.project` returns `z` in [0, 1], not
   [-1, 1]. `makePerspective` / `makeOrthographic` take no
@@ -202,7 +205,12 @@ repository commits the gallery unbaked.
   `geometry.attributes.position` becomes `geometry.getAttribute("position")`.
 - `BufferAttribute(array: Float32Array, itemSize, normalized)` holds f32 data
   only. `Float32BufferAttribute(array: Array<f64>, itemSize)` converts a
-  plain array, as three.js.
+  plain array, as three.js. Static geometry buffers upload with Rive's
+  `immutable: true` (no host CPU shadow copy) and promote to mutable on a
+  subsequent update. `setBlob(blob, byteOffset, byteLength)` (Rive-only, used
+  by job-backed loaders) lets the renderer upload directly from a shared
+  `Blob` via `GPUBuffer.fromBlob`; `needsUpdate = true` or `dispose()` clears
+  the reference.
 - Indices: `setIndex(Array<i32>)` (three.js also accepts an attribute: use
   `setIndexAttribute(Uint32BufferAttribute)`). `geometry.index` is a
   `Uint32BufferAttribute`; `Uint16BufferAttribute` has the same storage. The
@@ -833,8 +841,9 @@ repository commits the gallery unbaked.
   (three.js keeps them strings, so a texture's Scaling / Translation read
   wrong there). The parsed tree is typed (`FBXTree`, `FBXNode`, `FBXValue`,
   `FBXProperty`) and walks objects in three.js's for-in order.
-- OBJLoader ignores `mtllib` (.mtl files): materials are MeshPhongMaterials
-  named after `usemtl`.
+- OBJLoader extends `Loader` (supporting `loadAsync` / `parseAsync` in a Rive
+  job, as `STLLoader` and `PLYLoader` do too) and ignores `mtllib` (.mtl
+  files): materials are MeshPhongMaterials named after `usemtl`.
 - **SVGLoader** (`three/addons/loaders/SVGLoader`, r170): `load(name)`
   reads a BlobAsset, `loadAsync(url)` fetches, `parse(text)` returns an
   `SVGResult` (`paths`, `xml`: the root element). **`paths` are
@@ -1114,11 +1123,13 @@ repository commits the gallery unbaked.
 - `DataArrayTexture` / `Data3DTexture` (same data rules) are for
   ShaderMaterials declaring `texture_2d_array<f32>` / `texture_3d<f32>`;
   built-in materials do not read them; `addLayerUpdate` is not ported.
-- `RGBELoader` (alias `HDRLoader`) and `EXRLoader` read BlobAssets (`load(name)`,
-  or `parse(bytes)` without a Context), returning a DataTexture with
-  `flipY` true (rows top first). EXR: scanline files with NO, RLE, ZIPS or
-  ZIP compression only (no PIZ, PXR24, B44, DWA; no tiled, deep or
-  multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
+- `RGBELoader` (alias `HDRLoader`) and `EXRLoader` extend `Loader`, read
+  BlobAssets (`load(name)`, or `parse(bytes)` without a Context) and also
+  decode off the main lane via `loadAsync(url)` / `parseAsync(bytes)` in a
+  Rive job (transferring pixels through a shared `Blob`), returning a
+  DataTexture with `flipY` true (rows top first). EXR: scanline files with
+  NO, RLE, ZIPS or ZIP compression only (no PIZ, PXR24, B44, DWA; no tiled,
+  deep or multi-part). `libs/fflate` has `inflateSync`, `unzlibSync` and
   `decompressSync` (no compression).
 - `CompressedTexture(mipmaps, width, height, format)`: `mipmaps` are
   `CompressedMipmap(data, width, height)`. The GPU samples the blocks

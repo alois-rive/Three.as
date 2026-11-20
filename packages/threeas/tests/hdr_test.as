@@ -1,11 +1,11 @@
 // HDR loaders and inflate: rive . --test
 
 import { Tests } from "rive/test";
-import { RGBELoader } from "../three/addons/loaders/RGBELoader";
-import { EXRLoader } from "../three/addons/loaders/EXRLoader";
+import { RGBELoader, decodeRGBE, buildRGBEData } from "../three/addons/loaders/RGBELoader";
+import { EXRLoader, decodeEXR, buildEXRData } from "../three/addons/loaders/EXRLoader";
 import { unzlibSync } from "../three/addons/libs/fflate";
 import { toHalf, fromHalf } from "../three/textures/DataUpload";
-import { FloatType } from "../three/constants";
+import { FloatType, HalfFloatType } from "../three/constants";
 
 const DYNAMIC: StaticArray<u8> = [120,218,237,210,215,59,21,0,28,198,113,13,52,105,162,197,105,210,50,154,52,105,162,73,19,45,116,138,163,168,115,164,65,147,38,154,52,105,162,73,19,45,52,105,162,73,147,38,154,52,233,170,231,233,252,46,190,127,66,23,110,223,139,239,205,251,209,209,55,104,220,188,117,7,27,219,254,67,70,140,157,228,173,154,187,96,233,170,200,168,93,251,15,159,56,155,145,121,247,225,179,215,37,165,191,171,213,170,223,68,97,110,217,189,207,64,103,151,137,83,103,204,158,23,18,186,110,211,246,61,9,137,103,46,92,185,121,47,191,224,253,231,31,58,218,76,23,59,251,161,35,199,73,102,125,116,204,129,35,39,37,243,161,172,188,122,237,6,146,25,230,234,54,109,166,191,100,14,38,37,95,188,122,75,50,53,12,141,90,180,233,40,153,233,126,234,133,203,86,75,230,82,86,246,163,231,111,36,211,210,194,170,71,223,65,146,89,28,22,190,121,199,94,201,60,41,44,250,242,179,138,100,122,57,56,142,26,63,89,50,91,99,227,142,158,58,39,153,111,21,186,117,26,54,149,204,24,119,79,159,128,32,201,28,79,73,187,118,251,190,100,234,25,155,182,237,212,85,50,179,52,139,150,175,217,32,153,27,57,143,95,188,253,40,153,246,214,61,251,13,30,46,153,149,17,91,118,238,59,36,153,87,197,95,127,85,173,41,153,1,78,163,39,76,81,74,102,119,252,177,211,231,47,75,230,143,94,221,70,205,90,73,198,195,203,119,206,252,37,146,73,77,191,126,231,193,83,201,152,152,181,235,220,173,183,100,2,131,87,172,221,184,77,50,185,121,47,223,125,250,46,25,237,153,146,209,158,41,25,237,153,146,209,158,41,25,237,153,146,161,9,15,154,72,165,9,19,154,8,164,137,92,154,176,161,137,72,154,40,161,9,103,154,72,160,9,125,154,240,166,137,12,154,80,208,68,8,77,228,211,132,29,77,68,211,68,25,77,184,210,68,18,77,24,210,132,31,77,100,209,132,5,77,132,209,68,33,77,56,208,68,44,77,84,208,132,59,77,164,208,132,49,77,104,104,34,135,38,172,105,34,130,38,138,105,194,137,38,226,105,66,143,38,188,104,34,157,38,204,104,34,152,38,242,104,194,150,38,162,104,162,148,38,92,104,34,145,38,12,104,66,69,19,153,52,97,78,19,161,52,81,64,19,246,52,17,67,19,229,52,225,70,19,201,52,97,68,19,106,154,200,166,9,43,154,8,167,137,34,154,112,164,137,56,154,208,165,9,79,154,72,163,9,211,127,103,6,250,168,149,74,75,149,70,17,224,175,112,245,13,82,42,42,135,202,225,63,28,254,2,68,166,199,122];
 const STORED: StaticArray<u8> = [120,1,1,17,0,238,255,115,116,111,114,101,100,32,98,108,111,99,107,32,116,101,115,116,60,42,6,157];
@@ -70,6 +70,46 @@ export class HDRTests extends Tests {
                     if (d > worst) worst = d;
                 }
                 expect.that(worst < 0.02).is(true);
+            });
+            test("decodeEXR and decodeRGBE (job paths) match parse", (expect) => {
+                const hdrBytes = this.blob("studio_rgbe");
+                const exrBytes = this.blob("studio_exr");
+                if (hdrBytes != null) {
+                    const sync = new RGBELoader().setDataType(HalfFloatType).parse(Uint8Array.wrap(hdrBytes!))!;
+                    const dec = decodeRGBE(hdrBytes!, HalfFloatType);
+                    expect.that(dec.error).is("");
+                    expect.that(dec.blob != null).is(true);
+                    const asyncData = buildRGBEData(dec)!;
+                    expect.that(asyncData.width).is(sync.width);
+                    expect.that(asyncData.height).is(sync.height);
+                    const sa = sync.data as Uint16Array, sb = asyncData.data as Uint16Array;
+                    let same = sa.length == sb.length;
+                    for (let i = 0; i < sa.length && same; i++) if (sa[i] != sb[i]) same = false;
+                    expect.that(same).is(true);
+                }
+                if (exrBytes != null) {
+                    const sync = new EXRLoader().setDataType(FloatType).parse(Uint8Array.wrap(exrBytes!))!;
+                    const dec = decodeEXR(exrBytes!, FloatType);
+                    expect.that(dec.error).is("");
+                    expect.that(dec.blob != null).is(true);
+                    const asyncData = buildEXRData(dec)!;
+                    expect.that(asyncData.width).is(sync.width);
+                    expect.that(asyncData.height).is(sync.height);
+                    const sa = sync.data as Float32Array, sb = asyncData.data as Float32Array;
+                    let same = sa.length == sb.length;
+                    for (let i = 0; i < sa.length && same; i++) if (sa[i] != sb[i]) same = false;
+                    expect.that(same).is(true);
+                }
+                // Malformed EXR header with negative attribute size fails cleanly
+                const bad = new Uint8Array(24);
+                const dv = new DataView(bad.buffer);
+                dv.setUint32(0, 20000630, true);
+                dv.setUint32(4, 2, true);
+                bad[8] = 97; bad[9] = 0; bad[10] = 98; bad[11] = 0;
+                dv.setInt32(12, -100, true);
+                const badDec = decodeEXR(bad.buffer, HalfFloatType);
+                expect.that(badDec.error.length > 0).is(true);
+                expect.that(buildEXRData(badDec) == null).is(true);
             });
         });
     }

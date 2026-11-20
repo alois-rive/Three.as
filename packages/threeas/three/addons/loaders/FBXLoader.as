@@ -29,6 +29,8 @@
 import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { Promise } from "rive/promise";
 import { Jobs } from "rive/jobs";
+import { Blob } from "rive/shared";
+import { BinaryReader as RiveBinaryReader } from "rive/binary_reader";
 import { Loader } from "../../loaders/Loader";
 import { LoadingManager } from "../../loaders/LoadingManager";
 import { LoaderUtils } from "../../loaders/LoaderUtils";
@@ -220,9 +222,10 @@ async function parseFBXAsync(loader: FBXLoader, data: ArrayBuffer, path: string)
 }
 
 /// A binary FBX's compressed arrays, inflated, in file order: the values of
-/// array k are values[offsets[k] .. offsets[k] + lengths[k]].
+/// array k are at [offsets[k] .. offsets[k] + lengths[k]] in the shared Blob.
 export class FBXInflated {
     error: string = "";
+    blob: Blob? = null;
     values: Float64Array = new Float64Array(0);
     offsets: Int32Array = new Int32Array(0);
     lengths: Int32Array = new Int32Array(0);
@@ -241,7 +244,7 @@ export class FBXInflated {
     }
     let total = 0;
     for (let i = 0; i < collected.length; i++) total += collected[i].length;
-    out.values = new Float64Array(total);
+    const packed = new Float64Array(total);
     out.offsets = new Int32Array(collected.length);
     out.lengths = new Int32Array(collected.length);
     let at = 0;
@@ -249,9 +252,10 @@ export class FBXInflated {
         const array = collected[i];
         out.offsets[i] = at;
         out.lengths[i] = array.length;
-        for (let j = 0; j < array.length; j++) out.values[at + j] = array[j];
+        for (let j = 0; j < array.length; j++) packed[at + j] = array[j];
         at += array.length;
     }
+    if (total > 0) out.blob = Blob.fromArray(packed);
     return out;
 }
 
@@ -2775,9 +2779,14 @@ export class BinaryParser {
                     return new FBXValue();
                 }
                 const array = new Array<f64>(arrayLength);
-                const values = inflated.values;
                 const offset = inflated.offsets[k];
-                for (let j = 0; j < arrayLength; j++) array[j] = values[offset + j];
+                const blob = inflated.blob;
+                if (blob != null && blob.id != 0) {
+                    if (arrayLength > 0) blob.readInto(<u32>(offset * 8), array);
+                } else {
+                    const values = inflated.values;
+                    for (let j = 0; j < arrayLength; j++) array[j] = values[offset + j];
+                }
                 return FBXValue.ofArray(array);
             }
             const compressed = Uint8Array.wrap(reader.getArrayBuffer(compressedLength));
@@ -2803,29 +2812,55 @@ export class BinaryParser {
     }
 }
 
-/// Little-endian reads over a byte buffer. Reads past the end return 0 and
-/// set `overflow` (three.js's DataView throws).
+/// Little-endian reads over a byte buffer (backed by Rive's native
+/// BinaryReader). Reads past the end return 0 and set `overflow` (three.js's
+/// DataView throws).
 export class BinaryReader {
+    private reader: RiveBinaryReader;
     dv: DataView;
-    offset: i32 = 0;
     littleEndian: bool;
     overflow: bool = false;
 
     constructor(buffer: ArrayBuffer, byteOffset: i32 = 0, byteLength: i32 = -1, littleEndian: bool = true) {
-        this.dv = new DataView(buffer, byteOffset, byteLength >= 0 ? byteLength : buffer.byteLength - byteOffset);
+        const len = byteLength >= 0 ? byteLength : buffer.byteLength - byteOffset;
+        this.reader = new RiveBinaryReader(buffer, byteOffset, len);
+        this.dv = new DataView(buffer, byteOffset, len);
         this.littleEndian = littleEndian;
     }
 
-    getOffset(): i32 { return this.offset; }
+    get offset(): i32 { return <i32>this.reader.position; }
+    set offset(value: i32) {
+        if (value < 0 || <u32>value > this.reader.byteLength) {
+            this.overflow = true;
+            this.reader.position = this.reader.byteLength;
+        } else {
+            this.reader.position = <u32>value;
+        }
+    }
 
-    size(): i32 { return this.dv.byteLength; }
+    getOffset(): i32 { return <i32>this.reader.position; }
 
-    skip(length: i32): void { this.offset += length; }
+    size(): i32 { return <i32>this.reader.byteLength; }
+
+    skip(length: i32): void {
+        if (length < 0) {
+            const next = <i32>this.reader.position + length;
+            if (next < 0) {
+                this.overflow = true;
+                this.reader.position = this.reader.byteLength;
+            } else {
+                this.reader.position = <u32>next;
+            }
+            return;
+        }
+        this.reader.skip(<u32>length);
+        if (this.reader.didOverflow) this.overflow = true;
+    }
 
     private take(bytes: i32): bool {
-        if (bytes < 0 || this.offset + bytes > this.dv.byteLength || this.offset < 0) {
+        if (bytes < 0 || <u32>bytes > this.reader.remaining) {
             this.overflow = true;
-            this.offset = this.dv.byteLength;
+            this.reader.position = this.reader.byteLength;
             return false;
         }
         return true;
@@ -2838,117 +2873,154 @@ export class BinaryReader {
     getBooleanArray(size: i32): Array<f64> {
         const a = new Array<f64>(max(size, 0));
         if (!this.take(size)) return a;
-        for (let i = 0; i < size; i++) a[i] = <f64>(this.dv.getUint8(this.offset + i) & 1);
-        this.offset += size;
+        for (let i = 0; i < size; i++) a[i] = <f64>(this.reader.readByte() & 1);
         return a;
     }
 
     getUint8(): u32 {
         if (!this.take(1)) return 0;
-        const value = <u32>this.dv.getUint8(this.offset);
-        this.offset += 1;
-        return value;
+        return <u32>this.reader.readByte();
     }
 
     getInt16(): i32 {
         if (!this.take(2)) return 0;
-        const value = <i32>this.dv.getInt16(this.offset, this.littleEndian);
-        this.offset += 2;
-        return value;
+        if (this.littleEndian) return <i32>this.reader.read<i16>();
+        const off = <i32>this.reader.position;
+        this.reader.skip(2);
+        return <i32>this.dv.getInt16(off, false);
     }
 
     getInt32(): i32 {
         if (!this.take(4)) return 0;
-        const value = this.dv.getInt32(this.offset, this.littleEndian);
-        this.offset += 4;
-        return value;
+        if (this.littleEndian) return this.reader.read<i32>();
+        const off = <i32>this.reader.position;
+        this.reader.skip(4);
+        return this.dv.getInt32(off, false);
     }
 
     getInt32Array(size: i32): Array<f64> {
         const a = new Array<f64>(max(size, 0));
-        if (!this.take(size * 4)) return a;
-        for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getInt32(this.offset + i * 4, this.littleEndian);
-        this.offset += size * 4;
+        if (size < 0 || <u64>size * 4 > <u64>this.reader.remaining) {
+            this.overflow = true;
+            this.reader.position = this.reader.byteLength;
+            return a;
+        }
+        if (this.littleEndian) {
+            for (let i = 0; i < size; i++) a[i] = <f64>this.reader.read<i32>();
+        } else {
+            const off = <i32>this.reader.position;
+            for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getInt32(off + i * 4, false);
+            this.reader.skip(<u32>(size * 4));
+        }
         return a;
     }
 
     getUint32(): u32 {
         if (!this.take(4)) return 0;
-        const value = this.dv.getUint32(this.offset, this.littleEndian);
-        this.offset += 4;
-        return value;
+        if (this.littleEndian) return this.reader.readUint32();
+        const off = <i32>this.reader.position;
+        this.reader.skip(4);
+        return this.dv.getUint32(off, false);
     }
 
     // Exact (three.js computes a JavaScript number).
     getInt64(): i64 {
         if (!this.take(8)) return 0;
-        const value = this.dv.getInt64(this.offset, this.littleEndian);
-        this.offset += 8;
-        return value;
+        if (this.littleEndian) return this.reader.read<i64>();
+        const off = <i32>this.reader.position;
+        this.reader.skip(8);
+        return this.dv.getInt64(off, false);
     }
 
     getInt64Array(size: i32): Array<f64> {
         const a = new Array<f64>(max(size, 0));
-        if (!this.take(size * 8)) return a;
-        for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getInt64(this.offset + i * 8, this.littleEndian);
-        this.offset += size * 8;
+        if (size < 0 || <u64>size * 8 > <u64>this.reader.remaining) {
+            this.overflow = true;
+            this.reader.position = this.reader.byteLength;
+            return a;
+        }
+        if (this.littleEndian) {
+            for (let i = 0; i < size; i++) a[i] = <f64>this.reader.read<i64>();
+        } else {
+            const off = <i32>this.reader.position;
+            for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getInt64(off + i * 8, false);
+            this.reader.skip(<u32>(size * 8));
+        }
         return a;
     }
 
     getUint64(): u64 {
         if (!this.take(8)) return 0;
-        const value = this.dv.getUint64(this.offset, this.littleEndian);
-        this.offset += 8;
-        return value;
+        if (this.littleEndian) return this.reader.read<u64>();
+        const off = <i32>this.reader.position;
+        this.reader.skip(8);
+        return this.dv.getUint64(off, false);
     }
 
     getFloat32(): f64 {
         if (!this.take(4)) return 0;
-        const value = <f64>this.dv.getFloat32(this.offset, this.littleEndian);
-        this.offset += 4;
-        return value;
+        if (this.littleEndian) return <f64>this.reader.readFloat32();
+        const off = <i32>this.reader.position;
+        this.reader.skip(4);
+        return <f64>this.dv.getFloat32(off, false);
     }
 
     getFloat32Array(size: i32): Array<f64> {
         const a = new Array<f64>(max(size, 0));
-        if (!this.take(size * 4)) return a;
-        for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getFloat32(this.offset + i * 4, this.littleEndian);
-        this.offset += size * 4;
+        if (size < 0 || <u64>size * 4 > <u64>this.reader.remaining) {
+            this.overflow = true;
+            this.reader.position = this.reader.byteLength;
+            return a;
+        }
+        if (this.littleEndian) {
+            for (let i = 0; i < size; i++) a[i] = <f64>this.reader.readFloat32();
+        } else {
+            const off = <i32>this.reader.position;
+            for (let i = 0; i < size; i++) a[i] = <f64>this.dv.getFloat32(off + i * 4, false);
+            this.reader.skip(<u32>(size * 4));
+        }
         return a;
     }
 
     getFloat64(): f64 {
         if (!this.take(8)) return 0;
-        const value = this.dv.getFloat64(this.offset, this.littleEndian);
-        this.offset += 8;
-        return value;
+        if (this.littleEndian) return this.reader.readFloat64();
+        const off = <i32>this.reader.position;
+        this.reader.skip(8);
+        return this.dv.getFloat64(off, false);
     }
 
     getFloat64Array(size: i32): Array<f64> {
         const a = new Array<f64>(max(size, 0));
-        if (!this.take(size * 8)) return a;
-        for (let i = 0; i < size; i++) a[i] = this.dv.getFloat64(this.offset + i * 8, this.littleEndian);
-        this.offset += size * 8;
+        if (size < 0 || <u64>size * 8 > <u64>this.reader.remaining) {
+            this.overflow = true;
+            this.reader.position = this.reader.byteLength;
+            return a;
+        }
+        if (this.littleEndian) {
+            for (let i = 0; i < size; i++) a[i] = this.reader.readFloat64();
+        } else {
+            const off = <i32>this.reader.position;
+            for (let i = 0; i < size; i++) a[i] = this.dv.getFloat64(off + i * 8, false);
+            this.reader.skip(<u32>(size * 8));
+        }
         return a;
     }
 
     getArrayBuffer(size: i32): ArrayBuffer {
         if (!this.take(size)) return new ArrayBuffer(0);
-        const start = this.dv.byteOffset + this.offset;
-        const value = this.dv.buffer.slice(start, start + size);
-        this.offset += size;
-        return value;
+        return this.reader.readBytes(<u32>size);
     }
 
     // UTF-8, up to the first NUL byte.
     getString(size: i32): string {
         if (!this.take(size)) return "";
+        const off = <i32>this.reader.position;
         let length = 0;
-        while (length < size && this.dv.getUint8(this.offset + length) != 0) length++;
-        const start = this.dv.byteOffset + this.offset;
-        this.offset += size;
-        if (length == 0) return "";
-        return String.UTF8.decode(this.dv.buffer.slice(start, start + length));
+        while (length < size && this.dv.getUint8(off + length) != 0) length++;
+        const str = length > 0 ? this.reader.readString(<u32>length) : "";
+        if (length < size) this.reader.skip(<u32>(size - length));
+        return str;
     }
 }
 

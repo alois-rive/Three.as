@@ -5,6 +5,7 @@ import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
 import { Vector3 } from "../math/Vector3";
 import { Dynamic } from "rive/dynamic";
+import { Blob } from "rive/shared";
 import { numbersOf } from "./JSON";
 
 export class BufferAttribute {
@@ -15,6 +16,11 @@ export class BufferAttribute {
     normalized: bool;
     /// Bumped by `needsUpdate = true`; the renderer re-uploads on change.
     version: i32 = 0;
+    /// Optional shared Blob backing `array` (e.g. from a Rive job): uploaded
+    /// directly via GPUBuffer.fromBlob on first draw (internal).
+    _blob: Blob? = null;
+    _blobOffset: u32 = 0;
+    _blobBytes: u32 = 0;
 
     constructor(array: Float32Array, itemSize: i32, normalized: bool = false) {
         this.array = array;
@@ -22,9 +28,23 @@ export class BufferAttribute {
         this.normalized = normalized;
     }
 
+    /// Associates a shared Rive `Blob` range matching `array`, so GPURenderer
+    /// uploads directly from shared memory via `GPUBuffer.fromBlob`.
+    setBlob(blob: Blob, byteOffset: u32 = 0, byteLength: u32 = 0): BufferAttribute {
+        this._blob = blob;
+        this._blobOffset = byteOffset;
+        this._blobBytes = byteLength > 0 ? byteLength : <u32>this.array.byteLength;
+        return this;
+    }
+
     get count(): i32 { return this.array.length / this.itemSize; }
 
-    set needsUpdate(value: bool) { if (value) this.version++; }
+    set needsUpdate(value: bool) {
+        if (value) {
+            this.version++;
+            this._blob = null;
+        }
+    }
 
     getComponent(index: i32, component: i32): f64 { return this.array[index * this.itemSize + component]; }
     setComponent(index: i32, component: i32, value: f64): BufferAttribute {

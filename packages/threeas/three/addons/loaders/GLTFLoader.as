@@ -27,6 +27,8 @@ import { Context, DecodedImage, ImageDecodeListener } from "rive/host";
 import { parseJson } from "rive/json";
 import { Jobs } from "rive/jobs";
 import { Promise } from "rive/promise";
+import { Blob } from "rive/shared";
+import { BinaryReader } from "rive/binary_reader";
 import { Loader } from "../../loaders/Loader";
 import { LoadingManager } from "../../loaders/LoadingManager";
 import { LoaderUtils } from "../../loaders/LoaderUtils";
@@ -374,7 +376,8 @@ export class GLTFData {
     external: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     externalImages: Map<i32, Uint8Array> = new Map<i32, Uint8Array>();
     /// Accessors decoded ahead (by a job): floats from offsets[i], lengths[i]
-    /// long; offset -1 when not decoded.
+    /// long; offset -1 when not decoded. Crosses lanes in a shared Blob.
+    decodedBlob: Blob? = null;
     decoded: Float32Array? = null;
     decodedOffsets: Int32Array? = null;
     decodedLengths: Int32Array? = null;
@@ -392,7 +395,8 @@ export class GLTFData {
 
     /// Takes what decodeGLTF decoded.
     setDecoded(decoded: GLTFDecoded): void {
-        this.decoded = decoded.floats;
+        this.decodedBlob = decoded.blob;
+        this.decoded = decoded.floats.length > 0 ? decoded.floats : null;
         this.decodedOffsets = decoded.offsets;
         this.decodedLengths = decoded.lengths;
         for (let i = 0; i < decoded.dracoViews.length; i++) this.dracoDecoded.set(decoded.dracoViews[i], decoded.dracoData[i]);
@@ -434,13 +438,34 @@ export class GLTFData {
 
     /// Accessor `index` as floats, decoded ahead or now.
     accessor(index: i32): Float32Array {
-        const d = this.decoded;
         const offsets = this.decodedOffsets;
         const lengths = this.decodedLengths;
-        if (d != null && offsets != null && lengths != null && index >= 0 && index < offsets.length && offsets[index] >= 0) {
-            return d.slice(offsets[index], offsets[index] + lengths[index]);
+        if (offsets != null && lengths != null && index >= 0 && index < offsets.length && offsets[index] >= 0) {
+            const off = offsets[index], len = lengths[index];
+            const blob = this.decodedBlob;
+            if (blob != null && blob.id != 0) {
+                const out = new Float32Array(len);
+                if (len > 0) blob.readInto(<u32>(off * 4), out);
+                return out;
+            }
+            const d = this.decoded;
+            if (d != null) return d.slice(off, off + len);
         }
         return this.floats(index);
+    }
+
+    /// Attaches the shared Blob range of a job-decoded accessor onto `attr`,
+    /// so GPURenderer uploads directly via GPUBuffer.fromBlob.
+    attachBlob(attr: BufferAttribute, accessorIndex: i32): void {
+        const blob = this.decodedBlob;
+        const offsets = this.decodedOffsets;
+        const lengths = this.decodedLengths;
+        if (blob == null || blob.id == 0 || offsets == null || lengths == null) return;
+        if (accessorIndex < 0 || accessorIndex >= offsets.length) return;
+        const off = offsets[accessorIndex], len = lengths[accessorIndex];
+        if (off >= 0 && len > 0 && len == attr.array.length) {
+            attr.setBlob(blob, <u32>(off * 4), <u32>(len * 4));
+        }
     }
 
 
@@ -464,22 +489,31 @@ export class GLTFData {
 
     private readGlb(): bool {
         const b = this.bytes;
-        if (b.length < 20 || u32At(b, 0) != 0x46546C67) {
+        const r = new BinaryReader(this.data);
+        if (r.byteLength < 20 || r.readUint32() != 0x46546C67) {
             this.error = "not a .glb (binary glTF) nor .gltf JSON";
             return false;
         }
-        let offset = 12;
+        r.skip(8);   // version, total length
         let jsonText = "";
-        while (offset + 8 <= b.length) {
-            const length = <i32>u32At(b, offset);
-            const type = u32At(b, offset + 4);
-            const start = offset + 8;
-            if (type == 0x4E4F534A) {
-                jsonText = String.UTF8.decode(this.data.slice(start, start + length));
-            } else if (type == 0x004E4942) {
-                this.bin = b.subarray(start, start + length);
+        while (r.remaining >= 8) {
+            const length = r.readUint32();
+            const type = r.readUint32();
+            if (length > r.remaining) {
+                this.error = "truncated GLB chunk";
+                return false;
             }
-            offset = start + ((length + 3) & ~3);
+            const start = r.position;
+            if (type == 0x4E4F534A) {
+                jsonText = r.readString(length);
+            } else if (type == 0x004E4942) {
+                this.bin = b.subarray(<i32>start, <i32>(start + length));
+                r.skip(length);
+            } else {
+                r.skip(length);
+            }
+            const pad: u32 = (4 - (length & 3)) & 3;
+            if (pad > 0 && pad <= r.remaining) r.skip(pad);
         }
         const result = parseJson(jsonText);
         if (!result.ok || result.value == null) {
@@ -600,9 +634,10 @@ export class GLTFData {
 }
 
 /// What decodeGLTF hands back to the main lane: every accessor as floats,
-/// back to back (crossing lanes as one block).
+/// back to back in a shared Blob (crossing lanes without copying).
 export class GLTFDecoded {
     error: string = "";
+    blob: Blob? = null;
     floats: Float32Array = new Float32Array(0);
     offsets: Int32Array = new Int32Array(0);
     lengths: Int32Array = new Int32Array(0);
@@ -639,17 +674,18 @@ export class GLTFDecoded {
         parts.push(f);
         total += f.length;
     }
-    out.floats = new Float32Array(total);
+    const packed = new Float32Array(total);
     out.offsets = new Int32Array(n);
     out.lengths = new Int32Array(n);
     let at = 0;
     for (let i = 0; i < n; i++) {
         const empty = parts[i].length == 0 && dget(accessors[i], "bufferView") == null;
-        out.floats.set(parts[i], at);
+        packed.set(parts[i], at);
         out.offsets[i] = empty ? -1 : at;
         out.lengths[i] = parts[i].length;
         at += parts[i].length;
     }
+    if (total > 0) out.blob = Blob.fromArray(packed);
     if (draco) {
         const meshes = arr(gd.json, "meshes");
         for (let m = 0; m < meshes.length; m++) {
@@ -727,7 +763,8 @@ class GLTFParser {
                 this.error = "required extension " + name + " is not supported";
                 return null;
             }
-            if (name == "EXT_meshopt_compression" && gd.meshoptDecoder == null && gd.decoded == null) {
+            if (name == "EXT_meshopt_compression" && gd.meshoptDecoder == null && gd.decoded == null
+                    && gd.decodedBlob == null) {
                 this.error = "setMeshoptDecoder must be called before loading compressed files";
                 return null;
             }
@@ -1033,17 +1070,30 @@ class GLTFParser {
         const positions = this.attributeFloats(attrs, "POSITION", draco);
         if (positions == null) return null;
         const g = new BufferGeometry();
-        g.setAttribute("position", new BufferAttribute(positions, 3));
+        const posAttr = new BufferAttribute(positions, 3);
+        if (draco == null) this.gd.attachBlob(posAttr, <i32>num(attrs, "POSITION", -1));
+        g.setAttribute("position", posAttr);
         const normals = this.attributeFloats(attrs, "NORMAL", draco);
         if (normals != null) g.setAttribute("normal", new BufferAttribute(normals, 3));
         const uvs = this.attributeFloats(attrs, "TEXCOORD_0", draco);
-        if (uvs != null) g.setAttribute("uv", new BufferAttribute(uvs, 2));
+        if (uvs != null) {
+            const uvAttr = new BufferAttribute(uvs, 2);
+            if (draco == null) this.gd.attachBlob(uvAttr, <i32>num(attrs, "TEXCOORD_0", -1));
+            g.setAttribute("uv", uvAttr);
+        }
         const uvs1 = this.attributeFloats(attrs, "TEXCOORD_1", draco);
-        if (uvs1 != null) g.setAttribute("uv1", new BufferAttribute(uvs1, 2));
+        if (uvs1 != null) {
+            const uv1Attr = new BufferAttribute(uvs1, 2);
+            if (draco == null) this.gd.attachBlob(uv1Attr, <i32>num(attrs, "TEXCOORD_1", -1));
+            g.setAttribute("uv1", uv1Attr);
+        }
         const c = this.attributeFloats(attrs, "COLOR_0", draco);
         if (c != null) {
             const count = g.getAttribute("position")!.count;
-            g.setAttribute("color", new BufferAttribute(c, count > 0 ? c.length / count : 3));
+            const cSize = count > 0 ? c.length / count : 3;
+            const colAttr = new BufferAttribute(c, cSize);
+            if (draco == null && cSize == 4) this.gd.attachBlob(colAttr, <i32>num(attrs, "COLOR_0", -1));
+            g.setAttribute("color", colAttr);
         }
         const joints = this.attributeFloats(attrs, "JOINTS_0", draco);
         const weights = this.attributeFloats(attrs, "WEIGHTS_0", draco);

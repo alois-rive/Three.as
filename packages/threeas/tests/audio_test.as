@@ -260,6 +260,36 @@ export class AudioTests extends Tests {
                 near(expect, <f64>out[7], (7 * 4096 - 16384) / 32768);
                 expect.that(parseWAVHeader(new ArrayBuffer(16)).error.length > 0).is(true);
             });
+            test("data before fmt and malformed chunk sizes", (expect) => {
+                // data chunk before fmt chunk
+                const bytes = new Uint8Array(52);
+                const view = new DataView(bytes.buffer);
+                const tags = ["RIFF", "WAVE", "data", "fmt "];
+                const offs = [0, 8, 12, 28];
+                for (let t = 0; t < 4; t++) for (let i = 0; i < 4; i++) bytes[offs[t] + i] = <u8>tags[t].charCodeAt(i);
+                view.setUint32(4, 44, true);
+                view.setUint32(16, 8, true);   // 4 mono 16-bit samples
+                view.setInt16(20, 16384, true);
+                view.setUint32(32, 16, true);
+                view.setUint16(36, 1, true);   // PCM
+                view.setUint16(38, 1, true);   // mono
+                view.setUint32(40, 48000, true);
+                view.setUint32(44, 96000, true);
+                view.setUint16(48, 2, true);
+                view.setUint16(50, 16, true);
+                const info = parseWAVHeader(bytes.buffer);
+                expect.that(info.error).is("");
+                expect.that(info.frames).is(4);
+                expect.that(info.channels).is(1);
+                // 0xFFFFFFFF chunk size must not hang or crash
+                const bad = new Uint8Array(24);
+                const bv = new DataView(bad.buffer);
+                for (let i = 0; i < 4; i++) bad[i] = <u8>"RIFF".charCodeAt(i);
+                for (let i = 0; i < 4; i++) bad[8 + i] = <u8>"WAVE".charCodeAt(i);
+                for (let i = 0; i < 4; i++) bad[12 + i] = <u8>"JUNK".charCodeAt(i);
+                bv.setUint32(16, 0xFFFFFFFF, true);
+                expect.that(parseWAVHeader(bad.buffer).error.length > 0).is(true);
+            });
         });
 
         group("the mixer (MixCore)", () => {

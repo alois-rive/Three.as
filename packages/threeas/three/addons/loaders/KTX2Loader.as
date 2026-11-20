@@ -13,6 +13,7 @@
 //     const t = new KTX2Loader(context).detectSupport(renderer).load("crate");   // crate.ktx2
 
 import { Context } from "rive/host";
+import { BinaryReader } from "rive/binary_reader";
 import { GPURenderer } from "../../renderers/GPURenderer";
 import { Texture } from "../../textures/Texture";
 import { DataTexture } from "../../textures/DataTexture";
@@ -133,13 +134,17 @@ export class KTX2Loader {
     parseHeader(b: Uint8Array): KTX2Header? {
         if (b.length < 80) return null;
         for (let i = 0; i < 12; i++) if (b[i] != MAGIC[i]) return null;
-        const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        const r = new BinaryReader(b.buffer, b.byteOffset, b.byteLength);
+        r.position = 12;
         const h = new KTX2Header();
-        h.vkFormat = v.getUint32(12, true);
-        h.width = v.getUint32(20, true);
-        h.height = v.getUint32(24, true);
-        h.levelCount = max<u32>(1, v.getUint32(40, true));
-        h.supercompressionScheme = v.getUint32(44, true);
+        h.vkFormat = r.readUint32();
+        r.skip(4);   // typeSize
+        h.width = r.readUint32();
+        h.height = r.readUint32();
+        r.skip(12);   // pixelDepth, layerCount, faceCount
+        h.levelCount = max<u32>(1, r.readUint32());
+        h.supercompressionScheme = r.readUint32();
+        if (r.didOverflow) return null;
         const vk = <i32>h.vkFormat;
         if (vk == VK_R8G8B8A8_UNORM || vk == VK_R16G16B16A16_SFLOAT) h.format = RGBAFormat;
         else if (vk == VK_R8G8B8A8_SRGB) { h.format = RGBAFormat; h.srgb = true; }
@@ -185,17 +190,19 @@ export class KTX2Loader {
             this.error = "VkFormat " + h.vkFormat.toString() + " is not supported";
             return null;
         }
-        const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        const r = new BinaryReader(b.buffer, b.byteOffset, b.byteLength);
+        r.position = 80;
         const levels: Array<Uint8Array> = [];
+        const totalBytes = <u64>b.length;
         for (let l: u32 = 0; l < h.levelCount; l++) {
-            const o = 80 + <i32>l * 24;
-            const offset = <i32>v.getUint64(o, true);
-            const length = <i32>v.getUint64(o + 8, true);
-            if (offset + length > b.length) {
+            const offset = r.read<u64>();
+            const length = r.read<u64>();
+            r.skip(8);   // uncompressedByteLength
+            if (r.didOverflow || offset > totalBytes || length > totalBytes - offset) {
                 this.error = "truncated level " + l.toString();
                 return null;
             }
-            levels.push(b.subarray(offset, offset + length));
+            levels.push(b.subarray(<i32>offset, <i32>(offset + length)));
         }
         const colorSpace = h.srgb ? SRGBColorSpace : NoColorSpace;
         if (h.format == RGBAFormat) {

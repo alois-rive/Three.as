@@ -5,6 +5,7 @@
 // or WAVE_FORMAT_EXTENSIBLE. Channels past the second are dropped.
 
 import { Blob } from "rive/shared";
+import { BinaryReader } from "rive/binary_reader";
 
 /// What parseWAVHeader found.
 export class WAVInfo {
@@ -19,48 +20,54 @@ export class WAVInfo {
     frames: i32 = 0;
 }
 
-function u16(bytes: Uint8Array, at: i32): i32 {
-    return <i32>bytes[at] | (<i32>bytes[at + 1] << 8);
-}
-
-function u32(bytes: Uint8Array, at: i32): i32 {
-    return <i32>bytes[at] | (<i32>bytes[at + 1] << 8) | (<i32>bytes[at + 2] << 16) | (<i32>bytes[at + 3] << 24);
-}
-
-function tag(bytes: Uint8Array, at: i32, t: string): bool {
-    for (let i = 0; i < 4; i++) if (<i32>bytes[at + i] != t.charCodeAt(i)) return false;
-    return true;
-}
-
 /// Reads a RIFF/WAVE header: format, channels, rate and where the samples are.
 export function parseWAVHeader(buffer: ArrayBuffer): WAVInfo {
     const info = new WAVInfo();
-    const bytes = Uint8Array.wrap(buffer);
-    const n = bytes.length;
-    if (n < 12 || !tag(bytes, 0, "RIFF") || !tag(bytes, 8, "WAVE")) {
+    const reader = new BinaryReader(buffer);
+    const n: u32 = reader.byteLength;
+    if (n < 12 || reader.readString(4) != "RIFF") {
         info.error = "not a WAV file (RIFF/WAVE): Rive decodes MP3 and FLAC only from its audio assets";
         return info;
     }
-    let pos = 12;
+    reader.skip(4);   // RIFF chunk size
+    if (reader.readString(4) != "WAVE" || reader.didOverflow) {
+        info.error = "not a WAV file (RIFF/WAVE): Rive decodes MP3 and FLAC only from its audio assets";
+        return info;
+    }
     let haveFormat = false;
-    while (pos + 8 <= n) {
-        const size = u32(bytes, pos + 4);
-        const body = pos + 8;
-        if (tag(bytes, pos, "fmt ") && body + 16 <= n) {
-            let format = u16(bytes, body);
-            info.channels = u16(bytes, body + 2);
-            info.sampleRate = <f64>u32(bytes, body + 4);
-            info.bitsPerSample = u16(bytes, body + 14);
-            if (format == 0xfffe && size >= 40 && body + 26 <= n) format = u16(bytes, body + 24);
+    while (reader.remaining >= 8) {
+        const id = reader.readString(4);
+        const size = reader.readUint32();
+        const body = reader.position;
+        const avail = reader.remaining;
+        if (id == "fmt " && avail >= 16) {
+            const sub = reader.slice(min<u32>(size, avail));
+            let format = <i32>sub.readUint16();
+            info.channels = <i32>sub.readUint16();
+            info.sampleRate = <f64>sub.readUint32();
+            sub.skip(6);   // byteRate + blockAlign
+            info.bitsPerSample = <i32>sub.readUint16();
+            if (format == 0xfffe && size >= 40 && sub.remaining >= 10) {
+                sub.skip(8);   // cbSize + validBits + channelMask
+                format = <i32>sub.readUint16();
+            }
             info.format = format;
             haveFormat = true;
-        } else if (tag(bytes, pos, "data")) {
-            info.dataOffset = body;
-            info.dataLength = min<i32>(size, n - body);
-            break;
+            const pad: u32 = size & 1;
+            if (size >= avail || size + pad > avail) break;
+            reader.position = body + size + pad;
+        } else if (id == "data") {
+            info.dataOffset = <i32>body;
+            info.dataLength = <i32>min<u32>(size, avail);
+            if (haveFormat) break;
+            const pad: u32 = size & 1;
+            if (size >= avail || size + pad > avail) break;
+            reader.position = body + size + pad;
+        } else {
+            const pad: u32 = size & 1;
+            if (size >= avail || size + pad > avail) break;
+            reader.position = body + size + pad;
         }
-        if (size < 0) break;
-        pos = body + size + (size & 1);
     }
     if (!haveFormat || info.dataOffset == 0) {
         info.error = "WAV without a fmt or data chunk";
@@ -84,32 +91,35 @@ export function parseWAVHeader(buffer: ArrayBuffer): WAVInfo {
 /// Converts a WAV's samples to interleaved f32 frames (at most two
 /// channels) in a shared Blob: the job behind decodeAudioData.
 @job export function decodeWAV(buffer: ArrayBuffer, info: WAVInfo): Blob {
-    const bytes = Uint8Array.wrap(buffer);
     const channels = info.channels;
     const outChannels = min<i32>(channels, 2);
     const bytesPer = info.bitsPerSample / 8;
     const frames = info.frames;
     const out = new Float32Array(frames * outChannels);
-    const view = new DataView(buffer);
+    const reader = new BinaryReader(buffer, info.dataOffset, info.dataLength);
+    const skipExtra: u32 = <u32>((channels - outChannels) * bytesPer);
     for (let f = 0; f < frames; f++) {
         for (let c = 0; c < outChannels; c++) {
-            const at = info.dataOffset + (f * channels + c) * bytesPer;
             let v: f64 = 0;
             if (info.format == 3) {
-                v = bytesPer == 4 ? <f64>view.getFloat32(at, true) : view.getFloat64(at, true);
+                v = bytesPer == 4 ? <f64>reader.readFloat32() : reader.readFloat64();
             } else if (bytesPer == 1) {
-                v = (<f64>bytes[at] - 128) / 128;
+                v = (<f64>reader.readByte() - 128) / 128;
             } else if (bytesPer == 2) {
-                v = <f64>view.getInt16(at, true) / 32768;
+                v = <f64>reader.read<i16>() / 32768;
             } else if (bytesPer == 3) {
-                let s = <i32>bytes[at] | (<i32>bytes[at + 1] << 8) | (<i32>bytes[at + 2] << 16);
+                const b0 = <i32>reader.readByte();
+                const b1 = <i32>reader.readByte();
+                const b2 = <i32>reader.readByte();
+                let s = b0 | (b1 << 8) | (b2 << 16);
                 if ((s & 0x800000) != 0) s |= 0xff000000;
                 v = <f64>s / 8388608;
             } else {
-                v = <f64>view.getInt32(at, true) / 2147483648;
+                v = <f64>reader.read<i32>() / 2147483648;
             }
             out[f * outChannels + c] = <f32>v;
         }
+        if (skipExtra > 0) reader.skip(skipExtra);
     }
     return Blob.fromArray(out);
 }
