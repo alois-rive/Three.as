@@ -274,7 +274,6 @@ struct VsIn {
     @location(11) uv1: vec2<f32>,
     @location(12) tangent: vec4<f32>,
     @builtin(vertex_index) vertex: u32,
-    @builtin(instance_index) instance: u32,
 };
 
 struct InstanceIn {
@@ -308,7 +307,7 @@ struct SkinIn {
 
 @vertex
 fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
-    let m = morph(in);
+    let m = morph(in, 0u);
     return transform_vertex(m.position, m.normal, in, inst);
 }
 
@@ -317,7 +316,8 @@ fn vs_main(in: VsIn, inst: InstanceIn) -> VsOut {
 // target-major: texel (target x M.info.w + vertex x stride + k), k 0 the
 // position and 1 the normal (when the geometry morphs normals). An
 // instanced mesh reads each instance's weights from its morphTexture
-// (t_x2, a row per instance, weight k at texel k + 1).
+// (t_x2, a row per instance, weight k at texel k + 1): row `row`, which
+// the vs_morph_instanced entry points read from a vertex attribute.
 struct Morphed {
     position: vec3<f32>,
     normal: vec3<f32>,
@@ -328,7 +328,7 @@ fn morph_texel(index: u32) -> vec4<f32> {
     return textureLoad(t_x4, vec2<i32>(i32(index % w), i32(index / w)), 0);
 }
 
-fn morph(in: VsIn) -> Morphed {
+fn morph(in: VsIn, row: u32) -> Morphed {
     var out: Morphed;
     out.position = in.position;
     out.normal = in.normal;
@@ -344,7 +344,7 @@ fn morph(in: VsIn) -> Morphed {
         var morph_target = k;
         var weight = 0.0;
         if (instanced) {
-            weight = textureLoad(t_x2, vec2<i32>(i32(k + 1u), i32(in.instance)), 0).r;
+            weight = textureLoad(t_x2, vec2<i32>(i32(k + 1u), i32(row)), 0).r;
         } else {
             let pair = M.weights[k >> 1u];
             let odd = (k & 1u) == 1u;
@@ -377,7 +377,29 @@ fn displace(position: vec3<f32>, normal: vec3<f32>, in: VsIn) -> vec3<f32> {
 
 @vertex
 fn vs_displaced(in: VsIn, inst: InstanceIn) -> VsOut {
-    let m = morph(in);
+    let m = morph(in, 0u);
+    return transform_vertex(displace(m.position, m.normal, in), m.normal, in, inst);
+}
+
+// InstancedMesh morphs (MORPH_INSTANCED): the instance's morphTexture row
+// from a per-instance attribute, the renderer's 0, 1, 2 ... buffer at
+// slot 7, which gives what the instance index builtin would. No entry
+// point reads that builtin: naga emulates it on GLES with a plain uniform
+// (its first-instance offset) that Rive's web runtime fails to query; see
+// tools/check_glsl.py.
+struct MorphRowIn {
+    @location(13) row: f32,
+};
+
+@vertex
+fn vs_morph_instanced(in: VsIn, inst: InstanceIn, r: MorphRowIn) -> VsOut {
+    let m = morph(in, u32(r.row));
+    return transform_vertex(m.position, m.normal, in, inst);
+}
+
+@vertex
+fn vs_morph_instanced_displaced(in: VsIn, inst: InstanceIn, r: MorphRowIn) -> VsOut {
+    let m = morph(in, u32(r.row));
     return transform_vertex(displace(m.position, m.normal, in), m.normal, in, inst);
 }
 
@@ -414,7 +436,7 @@ fn skin_matrix(skin: SkinIn) -> mat4x4<f32> {
 
 @vertex
 fn vs_skinned(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
-    let mt = morph(in);
+    let mt = morph(in, 0u);
     let m = skin_matrix(skin);
     let p = (m * vec4<f32>(mt.position, 1.0)).xyz;
     let n = (m * vec4<f32>(mt.normal, 0.0)).xyz;
@@ -423,7 +445,7 @@ fn vs_skinned(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
 
 @vertex
 fn vs_skinned_displaced(in: VsIn, inst: InstanceIn, skin: SkinIn) -> VsOut {
-    let mt = morph(in);
+    let mt = morph(in, 0u);
     let m = skin_matrix(skin);
     let p = (m * vec4<f32>(displace(mt.position, mt.normal, in), 1.0)).xyz;
     let n = (m * vec4<f32>(mt.normal, 0.0)).xyz;

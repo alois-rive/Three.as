@@ -2,4 +2,4 @@
 // three/shaders/three.wgsl's SHA-256. Baked shader variants
 // (tools/threeas_bake.sh) are named from it, so GPURenderer finds only
 // those baked from this three.wgsl (gpu/ShaderVariants).
-export const THREE_WGSL_HASH: string = "80a7cc92ef11fbc1";
+export const THREE_WGSL_HASH: string = "02ca9e38d22778a6";

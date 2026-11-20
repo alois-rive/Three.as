@@ -121,7 +121,7 @@ import {
     OBJ_MODEL, OBJ_NORMAL, OBJ_COLOR, OBJ_EMISSIVE, OBJ_PBR, OBJ_SPECULAR, OBJ_EXTRA, OBJ_PHYSICAL0,
     OBJ_PHYSICAL1, OBJ_PHYSICAL2, OBJ_TEX_FLAGS, OBJ_FLAGS, OBJ_POINTS, OBJ_DASH, OBJ_BYTES,
     FLAG_VERTEX_COLORS, FLAG_FOG, FLAG_TRANSPARENT, FLAG_TONE_MAPPED, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_SPOT, LIGHT_RECT, FRAME_PROBE,
-    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, OBJ_USED, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
+    FOG_LINEAR, FOG_EXP2, INSTANCE_MATRIX_STRIDE, INSTANCE_COLOR_STRIDE, MORPH_ROW_STRIDE, OBJ_BIND_MATRIX, OBJ_BIND_MATRIX_INVERSE, OBJ_UV_MATRIX, OBJ_ENV, OBJ_X_UV, OBJ_X_FLAGS, OBJ_X_ROLES, OBJ_X_PARAMS, OBJ_X_PARAMS2, OBJ_X_PARAMS3, OBJ_PHYSICAL3, OBJ_PHYSICAL4, OBJ_PHYSICAL5, OBJ_PHYSICAL6, OBJ_CLIP_PLANES, OBJ_CLIP, MAX_CLIP_PLANES, OBJ_MISC0, OBJ_MISC1, OBJ_LIGHTS, OBJ_USED, MAX_OBJECT_LIGHTS, MAX_BONES, BONES_BYTES,
     MORPH_INFO, MORPH_BONES, MORPH_ACTIVE, MORPH_BYTES, MAX_ACTIVE_MORPHS, MORPH_NORMALS, MORPH_INSTANCED, BONE_TEXTURE,
     X_SLOT_MORPH, X_SLOT_BONES, X_SLOT_MORPH_INSTANCES, BONE_TEXELS,
 } from "./gpu/Layout";
@@ -151,10 +151,12 @@ const KEY_CLIP_SHADOW: i32 = 1 << 14;    // shadow passes: clip casters (clipSha
 const KEY_CUTOUT_SHADOW: i32 = 1 << 15;  // shadow passes: alphaTest / alphaHash cut-outs
 const KEY_WIDE_LINE: i32 = 1 << 16;      // LineMaterial: vs_wideline
 const KEY_LOG_DEPTH: i32 = 1 << 17;      // logarithmicDepthBuffer: fs_main_logdepth
+const KEY_MORPH_INSTANCED: i32 = 1 << 18; // InstancedMesh morphs: vs_morph_instanced*, rows at slot 7
 const KEY_STATE_SHIFT: i32 = 21;         // 9 bits: a depthFunc/stencil/polygonOffset state (0: default)
 const KEY_STATE_MASK: i32 = 511;
 // The key bits that pick a draw's entry points (buildPipeline, vertexEntry).
-const KEY_ENTRY_MASK: i32 = (3 << KEY_PRIM_SHIFT) | KEY_SKINNED | KEY_DISPLACED | KEY_WIDE_LINE | KEY_LOG_DEPTH;
+const KEY_ENTRY_MASK: i32 = (3 << KEY_PRIM_SHIFT) | KEY_SKINNED | KEY_DISPLACED | KEY_WIDE_LINE | KEY_LOG_DEPTH
+    | KEY_MORPH_INSTANCED;
 
 /// The vertex entry point of a draw's pipeline key (as buildPipeline picks it).
 function vertexEntry(key: i32): string {
@@ -163,6 +165,9 @@ function vertexEntry(key: i32): string {
     if (prim == PRIM_SPRITE) return "vs_sprite";
     if ((key & KEY_SKINNED) != 0) return (key & KEY_DISPLACED) != 0 ? "vs_skinned_displaced" : "vs_skinned";
     if ((key & KEY_WIDE_LINE) != 0) return "vs_wideline";
+    if ((key & KEY_MORPH_INSTANCED) != 0) {
+        return (key & KEY_DISPLACED) != 0 ? "vs_morph_instanced_displaced" : "vs_morph_instanced";
+    }
     return (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
 }
 // The colour passes' depth (and stencil) format.
@@ -581,6 +586,8 @@ class DrawItem {
     variant: i32 = -1;
     boneView: GPUTextureView? = null;
     instanceMorphView: GPUTextureView? = null;
+    /// The instance rows bound at slot 7 (KEY_MORPH_INSTANCED draws).
+    morphRows: GPUBuffer? = null;
     custom: CustomPipeline? = null;
     customUniforms: CustomUniforms? = null;
     positionOverride: GPUBuffer? = null;
@@ -624,6 +631,7 @@ class DrawItem {
         this.morphView = null;
         this.boneView = null;
         this.instanceMorphView = null;
+        this.morphRows = null;
         this.custom = null;
         this.customUniforms = null;
         this.positionOverride = null;
@@ -678,6 +686,8 @@ export class GPURenderer {
     private vertexBuffers: Array<GPUVertexBufferLayout> = [];
     private pointBuffers: Array<GPUVertexBufferLayout> = [];
     private skinBuffers: Array<GPUVertexBufferLayout> = [];
+    // vertexBuffers plus the instance rows of instanced morphs at slot 7.
+    private morphRowBuffers: Array<GPUVertexBufferLayout> = [];
     private dummyBones: GPUBuffer? = null;
     private dummyMorph: GPUBuffer? = null;
     private morphTargets: Map<i32, MorphTargetsGPU> = new Map<i32, MorphTargetsGPU>();
@@ -792,6 +802,8 @@ export class GPURenderer {
     private identityColor: GPUBuffer? = null;
     private whiteColors: GPUBuffer? = null;
     private whiteCount: i32 = 0;
+    private morphRows: GPUBuffer? = null;
+    private morphRowCount: u32 = 0;
     private samplers: Map<i32, GPUSampler> = new Map<i32, GPUSampler>();
     private bgView: GPUTextureView? = null;
     private bgModule: GPUShaderModule? = null;
@@ -1930,6 +1942,13 @@ export class GPURenderer {
                 new GPUVertexAttribute(VertexFormat.float4, 10, 16),
             ];
             this.skinBuffers = this.vertexBuffers.concat([skin]);
+            // An InstancedMesh's morphTexture row: 0, 1, 2 ... per instance
+            // (three.wgsl's MorphRowIn; WGSL's instance_index is not used,
+            // see vs_morph_instanced). InstancedMesh is never skinned, so
+            // slot 7 is free.
+            const morphRow = vertexLayout(MORPH_ROW_STRIDE, VertexFormat.float1, 13);
+            morphRow.stepMode = VertexStepMode.instance;
+            this.morphRowBuffers = this.vertexBuffers.concat([morphRow]);
             this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
             this.dummyMorph = new GPUBuffer(BufferUsage.uniform, <u32>MORPH_BYTES, new ArrayBuffer(MORPH_BYTES), true);
             const sd = new GPUTextureDesc();
@@ -2064,9 +2083,8 @@ export class GPURenderer {
                 d.vertexEntryPoint = (key & KEY_DISPLACED) != 0 ? "vs_skinned_displaced" : "vs_skinned";
                 d.vertexBuffers = this.skinBuffers;
             } else {
-                d.vertexEntryPoint = (key & KEY_WIDE_LINE) != 0 ? "vs_wideline"
-                    : (key & KEY_DISPLACED) != 0 ? "vs_displaced" : "vs_main";
-                d.vertexBuffers = this.vertexBuffers;
+                d.vertexEntryPoint = vertexEntry(key);
+                d.vertexBuffers = (key & KEY_MORPH_INSTANCED) != 0 ? this.morphRowBuffers : this.vertexBuffers;
                 if (prim == PRIM_LINES) {
                     d.topology = PrimitiveTopology.lineList;
                     d.cullMode = CullMode.none;
@@ -2731,6 +2749,10 @@ export class GPURenderer {
             }
             item.morphed = true;
             item.morphOffset = d.offset;
+            if ((flags & MORPH_INSTANCED) != 0) {
+                item.pipelineKey |= KEY_MORPH_INSTANCED;
+                item.morphRows = this.morphRowsFor(item.instanceCount);
+            }
             if (bigSkeleton) item.boneView = d.boneView;
         }
         if (skeleton == null) return;
@@ -3270,6 +3292,23 @@ export class GPURenderer {
         return this.whiteColors!;
     }
 
+    /// The instance rows of instanced morphs (0, 1, 2 ... as f32, an
+    /// instance-step buffer at slot 7), for at least `count` instances
+    /// (shared, grown). Draws bind it at offset 0 and start at instance 0,
+    /// so instance i reads row i, as @builtin(instance_index) would.
+    private morphRowsFor(count: u32): GPUBuffer {
+        if (this.morphRows == null || this.morphRowCount < count) {
+            const n = max<u32>(count, max<u32>(256, this.morphRowCount * 2));
+            const data = new Float32Array(<i32>n);
+            for (let i = 0; i < <i32>n; i++) data[i] = <f32>i;
+            // The old buffer may still be bound by passes recorded this
+            // frame: it is left to the collector.
+            this.morphRows = new GPUBuffer(BufferUsage.vertex, n * MORPH_ROW_STRIDE, data.buffer, true);
+            this.morphRowCount = n;
+        }
+        return this.morphRows!;
+    }
+
     /// Prepares the background texture's bind group; true when there is
     /// one to draw.
     private prepareBackground(scene: Object3D, frame: i32, canvas: GPUCanvas): bool {
@@ -3622,6 +3661,8 @@ export class GPURenderer {
                 pass.setVertexBuffer(6, g.uv1!);
                 if (item.skinned) {
                     pass.setVertexBuffer(7, g.skin!);
+                } else if (item.morphRows != null) {
+                    pass.setVertexBuffer(7, item.morphRows!);
                 }
                 const index = item.index;
                 if (index != null) {
@@ -3711,7 +3752,9 @@ export class GPURenderer {
         d.vertexModule = this.module;
         const skinned = (key & KEY_SKINNED) != 0;
         const displaced = (key & KEY_DISPLACED) != 0;
-        d.vertexEntryPoint = (skinned ? "vs_skinned" : "vs_main") + (displaced ? "_displaced" : "");
+        const rows = (key & KEY_MORPH_INSTANCED) != 0;
+        d.vertexEntryPoint = (skinned ? "vs_skinned" : rows ? "vs_morph_instanced" : "vs_main")
+            + (displaced ? "_displaced" : "");
         d.colorTargets = [];
         const cutout = (key & KEY_CUTOUT_SHADOW) != 0;
         if (cutout) {
@@ -3721,7 +3764,7 @@ export class GPURenderer {
             d.fragmentModule = this.module;
             d.fragmentEntryPoint = "fs_clip";
         }
-        d.vertexBuffers = skinned ? this.skinBuffers : this.vertexBuffers;
+        d.vertexBuffers = skinned ? this.skinBuffers : rows ? this.morphRowBuffers : this.vertexBuffers;
         d.bindGroupLayouts = displaced || cutout ? [this.frameLayout, this.objLayout, this.matLayout, this.samplerLayout]
             : [this.frameLayout, this.objLayout];
         const cull = key & KEY_CULL_MASK;
@@ -4753,6 +4796,10 @@ export class GPURenderer {
                     pass.setVertexBuffer(7, si);
                     lastSkin = si;
                 }
+            } else if (item.morphRows != null) {
+                // Slot 7 holds the instance rows now, not a skin buffer.
+                pass.setVertexBuffer(7, item.morphRows!);
+                lastSkin = null;
             }
             const index = item.index;
             if (index != null) {
