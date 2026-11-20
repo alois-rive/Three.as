@@ -20,7 +20,6 @@ export class AudioAnalyser {
     }
 
     getFrequencyData(): Uint8Array {
-        this.audio.context.readAnalyser(this.analyser);
         this.analyser.getByteFrequencyData(this.data);
         return this.data;
     }

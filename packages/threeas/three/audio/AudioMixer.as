@@ -82,7 +82,8 @@ export const S_POSITION: i32 = 0;     // seconds into the buffer
 export const S_ENDED: i32 = 1;        // the last generation that played to its end
 export const S_STATE: i32 = 2;        // VOICE_*
 export const S_GEN: i32 = 3;          // the generation in effect
-export const S_STRIDE: i32 = 4;
+export const S_SOURCE: i32 = 4;       // the source slot currently held by the audio thread
+export const S_STRIDE: i32 = 5;
 
 export const VOICE_IDLE: i32 = 0;
 export const VOICE_WAITING: i32 = 1;  // a delay, or a buffer not arrived yet
@@ -176,6 +177,8 @@ export class MixVoice {
     delayL: StaticArray<f32> = new StaticArray<f32>(DELAY_LENGTH);
     delayR: StaticArray<f32> = new StaticArray<f32>(DELAY_LENGTH);
     delayWrite: i32 = 0;
+    wasDelay: bool = false;
+    wasLpf: bool = false;
     // Biquad states (transposed direct form II), per filter and channel.
     biquad: StaticArray<f32> = new StaticArray<f32>(MIX_MAX_FILTERS * 4);
     coefficients: StaticArray<f32> = new StaticArray<f32>(MIX_MAX_FILTERS * 5);
@@ -185,6 +188,12 @@ export class MixVoice {
     winSlot: i32 = -1;
     winStart: i32 = 0;
     winCount: i32 = 0;
+    // Single-frame cache for loop-wrap interpolation (avoids thrashing `window` at low rates).
+    loopFrame: StaticArray<f32> = new StaticArray<f32>(2);
+    loopCacheSlot: i32 = -1;
+    loopCacheIndex: i32 = -1;
+    loopCacheL: f32 = 0;
+    loopCacheR: f32 = 0;
 }
 
 /// The mixer: voices, buffers and analysers. `render` mixes one block.
@@ -212,41 +221,55 @@ export class MixCore {
     masterEnv: f32 = 1;
     frames: f64 = 0;
     blocks: f64 = 0;
-    // Scratch for a voice's block (left and right before the delays).
-    scratchL: StaticArray<f32> = new StaticArray<f32>(0);
-    scratchR: StaticArray<f32> = new StaticArray<f32>(0);
 
     constructor() {
         for (let i = 0; i < MIX_MAX_VOICES; i++) this.voices.push(new MixVoice());
         for (let i = 0; i < MIX_MAX_ANALYSERS; i++) this.taps.push(new StaticArray<f32>(MIX_MAX_FFT));
-        for (let i = 0; i < MIX_MAX_VOICES; i++) this.params.data[i * P_STRIDE + P_SOURCE] = <f64>SOURCE_NONE;
+        for (let i = 0; i < MIX_MAX_VOICES; i++) {
+            this.params.data[i * P_STRIDE + P_SOURCE] = <f64>SOURCE_NONE;
+            this.status.data[i * S_STRIDE + S_GEN] = -1;
+            this.status.data[i * S_STRIDE + S_SOURCE] = <f64>SOURCE_NONE;
+        }
     }
 
     init(sampleRate: f64, maxFrames: i32, channels: i32): void {
-        this.sampleRate = sampleRate > 0 ? sampleRate : 48000;
+        this.sampleRate = sampleRate > 0 && isFinite(sampleRate) ? sampleRate : 48000;
         this.maxFrames = maxFrames > 0 ? maxFrames : 4096;
         this.channels = channels > 0 ? channels : 2;
-        this.scratchL = new StaticArray<f32>(this.maxFrames);
-        this.scratchR = new StaticArray<f32>(this.maxFrames);
         this.status.sampleRate = this.sampleRate;
     }
 
     /// A buffer arrived: its handle (made by the caller) and format.
     setBuffer(slot: i32, blob: Blob?, channels: i32, sampleRate: f64, frames: i32): void {
         if (slot < 0 || slot >= MIX_MAX_BUFFERS) return;
-        this.blobs[slot] = blob;
-        this.bufferChannels[slot] = channels;
-        this.bufferRates[slot] = sampleRate;
-        this.bufferFrames[slot] = frames;
-        // Windows of an earlier buffer in this slot are stale.
+        const valid = blob != null && channels >= 1 && channels <= 2 &&
+                      isFinite(sampleRate) && sampleRate > 0 && frames > 0;
+        if (valid) {
+            this.blobs[slot] = blob;
+            this.bufferChannels[slot] = channels;
+            this.bufferRates[slot] = sampleRate;
+            this.bufferFrames[slot] = frames;
+        } else {
+            this.blobs[slot] = null;
+            this.bufferChannels[slot] = 0;
+            this.bufferRates[slot] = 0;
+            this.bufferFrames[slot] = 0;
+        }
+        // Windows and loop caches of an earlier buffer in this slot are stale.
         for (let i = 0; i < this.voices.length; i++) {
-            if (this.voices[i].winSlot == slot) this.voices[i].winSlot = -1;
+            const voice = this.voices[i];
+            if (voice.winSlot == slot) voice.winSlot = -1;
+            if (voice.loopCacheSlot == slot) voice.loopCacheSlot = -1;
         }
     }
 
     /// Mixes `frames` frames into `out` (interleaved, `channels` wide, zeroed).
     render(out: StaticArray<f32>, frames: i32): void {
+        if (frames <= 0) return;
         if (frames > this.maxFrames) frames = this.maxFrames;
+        const maxOutFrames = out.length / this.channels;
+        if (frames > maxOutFrames) frames = maxOutFrames;
+        if (frames <= 0) return;
         const params = this.params;
         const sr = this.sampleRate;
         // The heartbeat: fade everything out while the main lane is silent.
@@ -311,16 +334,16 @@ export class MixCore {
     /// Starts generation `gen` on a voice: position, wait and duration.
     private start(voice: MixVoice, p: StaticArray<f64>, base: i32, source: i32): void {
         const sr = this.sampleRate;
-        voice.gen = p[base + P_GEN];
+        voice.gen = finiteF64(p[base + P_GEN]);
         voice.source = source;
         voice.pending = false;
         voice.ending = false;
         voice.stopWait = -1;
-        const bufferRate = source >= 0 ? this.bufferRates[source] : sr;
-        const offset = Math.max(0, p[base + P_OFFSET]);
+        const bufferRate = source >= 0 && this.bufferRates[source] > 0 ? this.bufferRates[source] : sr;
+        const offset = Math.max(0, finiteF64(p[base + P_OFFSET]));
         voice.pos = source >= 0 ? offset * bufferRate : 0;
-        voice.wait = Math.max(0, p[base + P_DELAY]) * sr;
-        const duration = p[base + P_DURATION];
+        voice.wait = Math.max(0, finiteF64(p[base + P_DELAY])) * sr;
+        const duration = finiteF64(p[base + P_DURATION]);
         voice.remaining = duration > 0 ? duration * bufferRate : -1;
         voice.state = voice.wait > 0 ? VOICE_WAITING : VOICE_PLAYING;
         // A start from the beginning keeps its attack; anything else fades in.
@@ -330,15 +353,17 @@ export class MixCore {
         for (let i = 0; i < DELAY_LENGTH; i++) { voice.delayL[i] = 0; voice.delayR[i] = 0; }
         for (let i = 0; i < MIX_MAX_FILTERS * 4; i++) voice.biquad[i] = 0;
         // Parameters start where they are (no ramp from the last play).
-        voice.ll = <f32>p[base + P_LL]; voice.lr = <f32>p[base + P_LR];
-        voice.rl = <f32>p[base + P_RL]; voice.rr = <f32>p[base + P_RR];
-        voice.gain = <f32>(p[base + P_GAIN] * p[base + P_MASTER]);
-        voice.tap = <f32>(p[base + P_TAP_PRE] > 0 ? 1 : p[base + P_GAIN]);
-        voice.rate = Math.max(0, p[base + P_RATE]);
-        voice.itdL = <f32>(p[base + P_ITD_L] * sr);
-        voice.itdR = <f32>(p[base + P_ITD_R] * sr);
-        voice.lpfL = <f32>onePole(p[base + P_LPF_L], sr);
-        voice.lpfR = <f32>onePole(p[base + P_LPF_R], sr);
+        voice.ll = <f32>finiteF64(p[base + P_LL]); voice.lr = <f32>finiteF64(p[base + P_LR]);
+        voice.rl = <f32>finiteF64(p[base + P_RL]); voice.rr = <f32>finiteF64(p[base + P_RR]);
+        voice.gain = <f32>finiteF64(p[base + P_GAIN] * p[base + P_MASTER]);
+        voice.tap = <f32>finiteF64(p[base + P_TAP_PRE] > 0 ? 1 : p[base + P_GAIN]);
+        voice.rate = Math.max(0, finiteF64(p[base + P_RATE], 1));
+        voice.itdL = <f32>Math.min(Math.max(finiteF64(p[base + P_ITD_L]) * sr, 0), <f64>(DELAY_LENGTH - 4));
+        voice.itdR = <f32>Math.min(Math.max(finiteF64(p[base + P_ITD_R]) * sr, 0), <f64>(DELAY_LENGTH - 4));
+        voice.lpfL = <f32>onePole(finiteF64(p[base + P_LPF_L]), sr);
+        voice.lpfR = <f32>onePole(finiteF64(p[base + P_LPF_R]), sr);
+        voice.wasDelay = voice.itdL > 0 || voice.itdR > 0;
+        voice.wasLpf = voice.lpfL < 1 || voice.lpfR < 1;
     }
 
     /// Mixes voice `v` into `out`; whether it made sound.
@@ -352,8 +377,11 @@ export class MixCore {
         const sbase = v * S_STRIDE;
 
         // Transport.
-        const gen = p[base + P_GEN];
-        const hasSource = source < SOURCE_NONE || (source >= 0 && source < MIX_MAX_BUFFERS && this.blobs[source] != null);
+        const gen = finiteF64(p[base + P_GEN]);
+        const hasSource = source < SOURCE_NONE || (source >= 0 && source < MIX_MAX_BUFFERS &&
+            this.blobs[source] != null && this.bufferChannels[source] >= 1 &&
+            this.bufferChannels[source] <= 2 && this.bufferRates[source] > 0 && this.bufferFrames[source] > 0);
+        let justStarted = false;
         if (gen != voice.gen && gen > 0) {
             if (voice.state == VOICE_PLAYING && voice.env > 0) {
                 // Fade the old play out first.
@@ -361,16 +389,23 @@ export class MixCore {
                 voice.target = 0;
             } else if (hasSource) {
                 this.start(voice, p, base, source);
+                justStarted = true;
             }
         }
         if (source == SOURCE_NONE && voice.state != VOICE_IDLE && !voice.pending) {
             voice.target = 0;
             voice.ending = false;
+            if (voice.state == VOICE_HELD || voice.state == VOICE_WAITING || voice.env <= 0) {
+                voice.state = VOICE_IDLE;
+                voice.source = SOURCE_NONE;
+                voice.env = 0;
+                voice.wait = 0;
+            }
         }
-        const stopGen = p[base + P_STOP_GEN];
+        const stopGen = finiteF64(p[base + P_STOP_GEN]);
         if (stopGen != voice.stopGen) {
             voice.stopGen = stopGen;
-            voice.stopWait = Math.max(0, p[base + P_STOP_DELAY]) * sr;
+            voice.stopWait = Math.max(0, finiteF64(p[base + P_STOP_DELAY])) * sr;
         }
         const playing = p[base + P_PLAYING] > 0;
         if (!voice.pending && !voice.ending) {
@@ -386,6 +421,19 @@ export class MixCore {
         if (voice.stopWait > 0) {
             voice.stopWait -= <f64>frames;
             if (voice.stopWait <= 0 && !playing) voice.target = 0;
+        }
+
+        // If stopped before emitting any audio (waiting in delay or stopped on the
+        // very block it started), silence immediately instead of a 10 ms fade-out burst.
+        if ((voice.state == VOICE_WAITING || justStarted) && voice.target <= 0 && !voice.pending) {
+            voice.env = 0;
+            voice.wait = 0;
+            if (source == SOURCE_NONE) {
+                voice.state = VOICE_IDLE;
+                voice.source = SOURCE_NONE;
+            } else {
+                voice.state = VOICE_HELD;
+            }
         }
 
         let made = false;
@@ -404,20 +452,33 @@ export class MixCore {
         // A pending start once the old play has faded.
         if (voice.pending && voice.env <= 0) {
             voice.pending = false;
-            if (hasSource) this.start(voice, p, base, source);
-            else voice.state = VOICE_IDLE;
+            if (hasSource) {
+                this.start(voice, p, base, source);
+                if (!playing && voice.stopWait <= 0) {
+                    voice.env = 0;
+                    voice.target = 0;
+                    voice.wait = 0;
+                    voice.state = VOICE_HELD;
+                }
+            } else {
+                voice.state = VOICE_IDLE;
+                voice.source = SOURCE_NONE;
+            }
         }
 
-        status[sbase + S_POSITION] = source >= 0 && voice.source >= 0 ? voice.pos / this.bufferRates[voice.source] : 0;
+        const br = voice.source >= 0 && voice.source < MIX_MAX_BUFFERS ? this.bufferRates[voice.source] : 0;
+        status[sbase + S_POSITION] = source >= 0 && voice.source >= 0 && br > 0 ? voice.pos / br : 0;
         status[sbase + S_ENDED] = voice.endedGen;
         status[sbase + S_STATE] = <f64>voice.state;
         status[sbase + S_GEN] = voice.gen;
+        status[sbase + S_SOURCE] = <f64>voice.source;
         return made;
     }
 
     /// Renders frames [from, frames) of a playing voice into `out`.
     private mix(voice: MixVoice, p: StaticArray<f64>, base: i32, out: StaticArray<f32>, from: i32, frames: i32,
                 masterFrom: f32, masterTo: f32): bool {
+        if (from < 0) from = 0;
         const sr = this.sampleRate;
         const n = frames - from;
         if (n <= 0) return false;
@@ -425,41 +486,65 @@ export class MixCore {
         // Block ramps: each parameter moves toward its target by a one-pole
         // step over the block, linearly within it.
         const k = <f32>(1 - Math.exp(-<f64>n / (MIX_SMOOTHING * sr)));
-        const tLL = <f32>p[base + P_LL], tLR = <f32>p[base + P_LR], tRL = <f32>p[base + P_RL], tRR = <f32>p[base + P_RR];
-        const tGain = <f32>(p[base + P_GAIN] * p[base + P_MASTER]);
-        const tTap = <f32>(p[base + P_TAP_PRE] > 0 ? 1 : p[base + P_GAIN]);
-        const tItdL = <f32>(Math.min(Math.max(p[base + P_ITD_L] * sr, 0), <f64>(DELAY_LENGTH - 4)));
-        const tItdR = <f32>(Math.min(Math.max(p[base + P_ITD_R] * sr, 0), <f64>(DELAY_LENGTH - 4)));
-        const tLpfL = <f32>onePole(p[base + P_LPF_L], sr), tLpfR = <f32>onePole(p[base + P_LPF_R], sr);
-        const tRate = Math.max(0, p[base + P_RATE]);
+        const tLL = <f32>finiteF64(p[base + P_LL]), tLR = <f32>finiteF64(p[base + P_LR]);
+        const tRL = <f32>finiteF64(p[base + P_RL]), tRR = <f32>finiteF64(p[base + P_RR]);
+        const tGain = <f32>finiteF64(p[base + P_GAIN] * p[base + P_MASTER]);
+        const tTap = <f32>finiteF64(p[base + P_TAP_PRE] > 0 ? 1 : p[base + P_GAIN]);
+        const tItdL = <f32>(Math.min(Math.max(finiteF64(p[base + P_ITD_L]) * sr, 0), <f64>(DELAY_LENGTH - 4)));
+        const tItdR = <f32>(Math.min(Math.max(finiteF64(p[base + P_ITD_R]) * sr, 0), <f64>(DELAY_LENGTH - 4)));
+        const tLpfL = <f32>onePole(finiteF64(p[base + P_LPF_L]), sr), tLpfR = <f32>onePole(finiteF64(p[base + P_LPF_R]), sr);
+        const tRate = Math.max(0, finiteF64(p[base + P_RATE]));
 
-        let ll = voice.ll, lr = voice.lr, rl = voice.rl, rr = voice.rr;
+        let ll = finiteF32(voice.ll), lr = finiteF32(voice.lr), rl = finiteF32(voice.rl), rr = finiteF32(voice.rr);
         const dll = (tLL - ll) * k / fn, dlr = (tLR - lr) * k / fn, drl = (tRL - rl) * k / fn, drr = (tRR - rr) * k / fn;
-        let gain = voice.gain, tap = voice.tap;
+        let gain = finiteF32(voice.gain), tap = finiteF32(voice.tap);
         const dgain = (tGain - gain) * k / fn, dtap = (tTap - tap) * k / fn;
-        let itdL = voice.itdL, itdR = voice.itdR;
+        let itdL = finiteF32(voice.itdL), itdR = finiteF32(voice.itdR);
         const ditdL = (tItdL - itdL) * k / fn, ditdR = (tItdR - itdR) * k / fn;
-        let lpfL = voice.lpfL, lpfR = voice.lpfR;
+        let lpfL = finiteF32(voice.lpfL, 1), lpfR = finiteF32(voice.lpfR, 1);
         const dlpfL = (tLpfL - lpfL) * k / fn, dlpfR = (tLpfR - lpfR) * k / fn;
-        let rate = voice.rate;
+        let rate = Math.max(0, finiteF64(voice.rate, 1));
         const drate = (tRate - rate) * <f64>k / <f64>n;
         const useDelay = tItdL > 0 || tItdR > 0 || itdL > 0 || itdR > 0;
         const useLpf = tLpfL < 1 || tLpfR < 1 || lpfL < 1 || lpfR < 1;
+        let initDelay = useDelay && !voice.wasDelay;
+        let initLpf = useLpf && !voice.wasLpf;
 
-        // Filters.
-        let filters = <i32>p[base + P_FILTERS];
+        // Filters (validate finiteness and Jury stability before applying).
+        let filters = <i32>finiteF64(p[base + P_FILTERS]);
+        if (filters < 0) filters = 0;
         if (filters > MIX_MAX_FILTERS) filters = MIX_MAX_FILTERS;
         if (filters != voice.filters) {
             for (let i = 0; i < MIX_MAX_FILTERS * 4; i++) voice.biquad[i] = 0;
             voice.filters = filters;
         }
-        for (let i = 0; i < filters * 5; i++) voice.coefficients[i] = <f32>p[base + P_FILTER0 + i];
+        for (let f = 0; f < filters; f++) {
+            const c = f * 5;
+            const pb = base + P_FILTER0 + c;
+            const b0 = <f32>p[pb], b1 = <f32>p[pb + 1], b2 = <f32>p[pb + 2];
+            const a1 = <f32>p[pb + 3], a2 = <f32>p[pb + 4];
+            if (isFinite(<f64>b0) && isFinite(<f64>b1) && isFinite(<f64>b2) &&
+                isFinite(<f64>a1) && isFinite(<f64>a2) &&
+                Mathf.abs(a2) < 1 && <f32>1 + a1 + a2 > 0 && <f32>1 - a1 + a2 > 0) {
+                voice.coefficients[c] = b0;
+                voice.coefficients[c + 1] = b1;
+                voice.coefficients[c + 2] = b2;
+                voice.coefficients[c + 3] = a1;
+                voice.coefficients[c + 4] = a2;
+            } else {
+                voice.coefficients[c] = 1;
+                voice.coefficients[c + 1] = 0;
+                voice.coefficients[c + 2] = 0;
+                voice.coefficients[c + 3] = 0;
+                voice.coefficients[c + 4] = 0;
+            }
+        }
 
         // Envelope.
         const fadeIn = <f32>(1.0 / (MIX_FADE_IN_SECONDS * sr));
         const fadeOut = <f32>(1.0 / (MIX_FADE_OUT_SECONDS * sr));
-        let env = voice.env;
-        let target = voice.target;
+        let env = finiteF32(voice.env);
+        let target = finiteF32(voice.target);
         let master = masterFrom;
         const dmaster = (masterTo - masterFrom) / <f32>frames;
         master += dmaster * <f32>from;
@@ -471,25 +556,33 @@ export class MixCore {
         let ratio: f64 = 1;
         let loop = false;
         let loopStart: f64 = 0, loopEnd: f64 = 0;
+        let finished = false;
         if (isBuffer) {
-            channels = this.bufferChannels[source];
-            bufferFrames = this.bufferFrames[source];
-            ratio = this.bufferRates[source] / sr;
-            loop = p[base + P_LOOP] > 0;
-            const bufferRate = this.bufferRates[source];
-            const ls = p[base + P_LOOP_START] * bufferRate, le = p[base + P_LOOP_END] * bufferRate;
-            if (ls >= 0 && le > 0 && ls < le) {
-                loopStart = ls;
-                loopEnd = Math.min(le, <f64>bufferFrames);
+            if (source >= MIX_MAX_BUFFERS || this.blobs[source] == null ||
+                this.bufferChannels[source] < 1 || this.bufferChannels[source] > 2 ||
+                !(this.bufferRates[source] > 0) || this.bufferFrames[source] <= 0) {
+                finished = true;
             } else {
-                loopStart = 0;
-                loopEnd = <f64>bufferFrames;
+                channels = this.bufferChannels[source];
+                bufferFrames = this.bufferFrames[source];
+                const bufferRate = this.bufferRates[source];
+                ratio = bufferRate / sr;
+                loop = p[base + P_LOOP] > 0;
+                const ls = finiteF64(p[base + P_LOOP_START]) * bufferRate;
+                const le = finiteF64(p[base + P_LOOP_END]) * bufferRate;
+                if (ls >= 0 && le > 0 && ls < le) {
+                    loopStart = ls;
+                    loopEnd = Math.min(le, <f64>bufferFrames);
+                } else {
+                    loopStart = 0;
+                    loopEnd = <f64>bufferFrames;
+                }
+                if (loopEnd - loopStart < 1) loop = false;
             }
-            if (loopEnd - loopStart < 1) loop = false;
         }
-        const frequency = p[base + P_FREQUENCY];
-        let pos = voice.pos;
-        let remaining = voice.remaining;
+        const frequency = finiteF64(p[base + P_FREQUENCY]);
+        let pos = Math.max(0, finiteF64(voice.pos));
+        let remaining = isFinite(voice.remaining) ? voice.remaining : -1;
         const outChannels = this.channels;
         const analyser = <i32>p[base + P_ANALYSER];
         const hasTap = analyser >= 0 && analyser < MIX_MAX_ANALYSERS;
@@ -497,150 +590,241 @@ export class MixCore {
         let tapW = hasTap ? this.tapWrite[analyser] : 0;
         const delayL = voice.delayL, delayR = voice.delayR;
         let dw = voice.delayWrite;
-        let yL = voice.yL, yR = voice.yR;
+        let yL = flushDenormal(voice.yL), yR = flushDenormal(voice.yR);
         const loopStartI = <i32>Math.floor(loopStart), loopEndI = <i32>Math.ceil(loopEnd);
-        let finished = false;
         let made = false;
 
-        for (let i = from; i < frames; i++) {
-            // Envelope.
-            if (env < target) env = min<f32>(target, env + fadeIn);
-            else if (env > target) env = max<f32>(target, env - fadeOut);
-
-            let inL: f32 = 0, inR: f32 = 0;
-            if (isBuffer) {
-                const i0 = <i32>Math.floor(pos);
-                const frac = <f32>(pos - <f64>i0);
-                let i1 = i0 + 1;
-                if (loop && i1 >= loopEndI) i1 = loopStartI + (i1 - loopEndI);
-                const o0 = this.fetch(voice, source, i0, channels, bufferFrames);
-                const a0 = o0 >= 0 ? voice.window[o0] : <f32>0;
-                const a1 = o0 >= 0 && channels > 1 ? voice.window[o0 + 1] : a0;
-                const o1 = this.fetch(voice, source, i1, channels, bufferFrames);
-                const b0 = o1 >= 0 ? voice.window[o1] : <f32>0;
-                const b1 = o1 >= 0 && channels > 1 ? voice.window[o1 + 1] : b0;
-                inL = a0 + (b0 - a0) * frac;
-                inR = a1 + (b1 - a1) * frac;
-                const step = rate * ratio;
-                pos += step;
-                if (remaining >= 0) {
-                    remaining -= step;
-                    if (remaining <= 0 && !voice.ending) { voice.ending = true; voice.target = 0; target = 0; }
-                }
-                if (loop) {
-                    if (pos >= loopEnd) {
-                        const len = loopEnd - loopStart;
-                        pos = loopStart + (pos - loopEnd) % len;
-                    }
-                } else if (pos >= <f64>bufferFrames) {
-                    finished = true;
-                }
-            } else {
-                // Oscillators (naive waveforms, phase in turns).
-                const ph = <f32>pos;
-                let s: f32 = 0;
-                if (source == SOURCE_SINE) s = Mathf.sin(ph * <f32>(2 * Math.PI));
-                else if (source == SOURCE_SQUARE) s = ph < 0.5 ? 1 : -1;
-                else if (source == SOURCE_SAWTOOTH) s = 2 * ph - 1;
-                else s = ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph;
-                inL = s; inR = s;
-                pos += frequency * rate / sr;
-                pos -= Math.floor(pos);
-            }
-
-            // Filters (on each input channel).
-            for (let f = 0; f < filters; f++) {
-                const c = f * 5, st = f * 4;
-                const b0 = voice.coefficients[c], b1 = voice.coefficients[c + 1], b2 = voice.coefficients[c + 2];
-                const a1 = voice.coefficients[c + 3], a2 = voice.coefficients[c + 4];
-                const yl = b0 * inL + voice.biquad[st];
-                voice.biquad[st] = b1 * inL - a1 * yl + voice.biquad[st + 1];
-                voice.biquad[st + 1] = b2 * inL - a2 * yl;
-                inL = yl;
-                if (channels > 1) {
-                    const yr = b0 * inR + voice.biquad[st + 2];
-                    voice.biquad[st + 2] = b1 * inR - a1 * yr + voice.biquad[st + 3];
-                    voice.biquad[st + 3] = b2 * inR - a2 * yr;
-                    inR = yr;
-                } else {
-                    inR = inL;
-                }
-            }
-
-            // Panning, distance and cone.
-            let l = (ll * inL + lr * inR) * env;
-            let r = (rl * inL + rr * inR) * env;
-            ll += dll; lr += dlr; rl += drl; rr += drr;
-
-            // Interaural delay.
-            if (useDelay) {
-                delayL[dw] = l;
-                delayR[dw] = r;
-                l = readDelay(delayL, dw, itdL);
-                r = readDelay(delayR, dw, itdR);
-                dw = (dw + 1) & DELAY_MASK;
-                itdL += ditdL; itdR += ditdR;
-            }
-            // Head shadow.
-            if (useLpf) {
-                yL += lpfL * (l - yL);
-                yR += lpfR * (r - yR);
-                l = yL; r = yR;
-                lpfL += dlpfL; lpfR += dlpfR;
-            }
-
-            if (hasTap) {
-                tapBuffer[tapW] = (l + r) * 0.5 * tap;
+        // Keep tap buffer and tapWritten aligned with the full block when starting mid-block.
+        if (hasTap && from > 0) {
+            for (let j = 0; j < from; j++) {
+                tapBuffer[tapW] = 0;
                 tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
-                tap += dtap;
-            }
-            const g = gain * master;
-            gain += dgain;
-            master += dmaster;
-            const o = i * outChannels;
-            if (outChannels >= 2) {
-                out[o] += l * g;
-                out[o + 1] += r * g;
-            } else {
-                out[o] += (l + r) * 0.5 * g;
-            }
-            rate += drate;
-            if (finished) {
-                // Played to the end: the rest of the block is silence.
-                if (hasTap) {
-                    for (let j = i + 1; j < frames; j++) {
-                        tapBuffer[tapW] = 0;
-                        tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
-                    }
-                }
-                break;
-            }
-            if (env <= 0 && target <= 0) {
-                if (hasTap) {
-                    for (let j = i + 1; j < frames; j++) {
-                        tapBuffer[tapW] = 0;
-                        tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
-                    }
-                }
-                break;
             }
         }
-        made = true;
 
-        voice.ll = tLL - (tLL - voice.ll) * (1 - k); voice.lr = tLR - (tLR - voice.lr) * (1 - k);
-        voice.rl = tRL - (tRL - voice.rl) * (1 - k); voice.rr = tRR - (tRR - voice.rr) * (1 - k);
-        voice.gain = tGain - (tGain - voice.gain) * (1 - k);
-        voice.tap = tTap - (tTap - voice.tap) * (1 - k);
-        voice.itdL = tItdL - (tItdL - voice.itdL) * (1 - k);
-        voice.itdR = tItdR - (tItdR - voice.itdR) * (1 - k);
-        voice.lpfL = tLpfL - (tLpfL - voice.lpfL) * (1 - k);
-        voice.lpfR = tLpfR - (tLpfR - voice.lpfR) * (1 - k);
-        voice.rate = tRate - (tRate - voice.rate) * <f64>(1 - k);
-        voice.pos = pos;
+        if (finished) {
+            if (hasTap) {
+                for (let j = from; j < frames; j++) {
+                    tapBuffer[tapW] = 0;
+                    tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
+                }
+            }
+        } else {
+            for (let i = from; i < frames; i++) {
+                // Envelope.
+                if (env < target) env = min<f32>(target, env + fadeIn);
+                else if (env > target) env = max<f32>(target, env - fadeOut);
+
+                let inL: f32 = 0, inR: f32 = 0;
+                if (isBuffer) {
+                    const i0 = <i32>Math.floor(pos);
+                    const frac = <f32>(pos - <f64>i0);
+                    let i1 = i0 + 1;
+                    let wrapped = false;
+                    if (loop && i1 >= loopEndI) {
+                        i1 = loopStartI + (i1 - loopEndI);
+                        wrapped = true;
+                    }
+                    const o0 = this.fetch(voice, source, i0, channels, bufferFrames);
+                    const a0 = o0 >= 0 ? voice.window[o0] : <f32>0;
+                    const a1 = o0 >= 0 && channels > 1 ? voice.window[o0 + 1] : a0;
+                    let b0: f32 = 0, b1: f32 = 0;
+                    if (wrapped && (voice.winSlot != source || i1 < voice.winStart || i1 >= voice.winStart + voice.winCount)) {
+                        if (voice.loopCacheSlot != source || voice.loopCacheIndex != i1) {
+                            const blob = this.blobs[source];
+                            if (blob != null && i1 >= 0 && i1 < bufferFrames) {
+                                const got = <i32>blob.readInto(<u32>i1 * <u32>channels * 4, voice.loopFrame, 0, channels);
+                                if (got >= channels) {
+                                    voice.loopCacheL = voice.loopFrame[0];
+                                    voice.loopCacheR = channels > 1 ? voice.loopFrame[1] : voice.loopFrame[0];
+                                } else {
+                                    voice.loopCacheL = 0;
+                                    voice.loopCacheR = 0;
+                                }
+                            } else {
+                                voice.loopCacheL = 0;
+                                voice.loopCacheR = 0;
+                            }
+                            voice.loopCacheSlot = source;
+                            voice.loopCacheIndex = i1;
+                        }
+                        b0 = voice.loopCacheL;
+                        b1 = voice.loopCacheR;
+                    } else {
+                        const o1 = this.fetch(voice, source, i1, channels, bufferFrames);
+                        b0 = o1 >= 0 ? voice.window[o1] : <f32>0;
+                        b1 = o1 >= 0 && channels > 1 ? voice.window[o1 + 1] : b0;
+                    }
+                    inL = a0 + (b0 - a0) * frac;
+                    inR = a1 + (b1 - a1) * frac;
+                    const step = rate * ratio;
+                    pos += step;
+                    if (remaining >= 0) {
+                        remaining -= step;
+                        if (remaining <= 0 && !voice.ending) { voice.ending = true; voice.target = 0; target = 0; }
+                    }
+                    if (loop) {
+                        if (pos >= loopEnd) {
+                            const len = loopEnd - loopStart;
+                            pos = loopStart + (pos - loopEnd) % len;
+                        }
+                    } else if (pos >= <f64>bufferFrames) {
+                        finished = true;
+                    }
+                } else {
+                    // Oscillators (naive waveforms, phase in turns).
+                    const ph = <f32>pos;
+                    let s: f32 = 0;
+                    if (source == SOURCE_SINE) s = Mathf.sin(ph * <f32>(2 * Math.PI));
+                    else if (source == SOURCE_SQUARE) s = ph < 0.5 ? 1 : -1;
+                    else if (source == SOURCE_SAWTOOTH) s = 2 * ph - 1;
+                    else s = ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph;
+                    inL = s; inR = s;
+                    pos += frequency * rate / sr;
+                    pos -= Math.floor(pos);
+                    if (!isFinite(pos)) pos = 0;
+                }
+
+                if (!isFinite(<f64>inL)) inL = 0;
+                if (!isFinite(<f64>inR)) inR = 0;
+
+                // Filters (on each input channel), with NaN recovery and denormal flush.
+                for (let f = 0; f < filters; f++) {
+                    const c = f * 5, st = f * 4;
+                    const b0 = voice.coefficients[c], b1 = voice.coefficients[c + 1], b2 = voice.coefficients[c + 2];
+                    const a1 = voice.coefficients[c + 3], a2 = voice.coefficients[c + 4];
+                    let z1 = voice.biquad[st], z2 = voice.biquad[st + 1];
+                    let yl = b0 * inL + z1;
+                    if (!isFinite(<f64>yl)) {
+                        yl = 0; z1 = 0; z2 = 0;
+                    } else {
+                        z1 = flushDenormal(b1 * inL - a1 * yl + z2);
+                        z2 = flushDenormal(b2 * inL - a2 * yl);
+                    }
+                    voice.biquad[st] = z1;
+                    voice.biquad[st + 1] = z2;
+                    inL = yl;
+                    if (channels > 1) {
+                        let zr1 = voice.biquad[st + 2], zr2 = voice.biquad[st + 3];
+                        let yr = b0 * inR + zr1;
+                        if (!isFinite(<f64>yr)) {
+                            yr = 0; zr1 = 0; zr2 = 0;
+                        } else {
+                            zr1 = flushDenormal(b1 * inR - a1 * yr + zr2);
+                            zr2 = flushDenormal(b2 * inR - a2 * yr);
+                        }
+                        voice.biquad[st + 2] = zr1;
+                        voice.biquad[st + 3] = zr2;
+                        inR = yr;
+                    } else {
+                        inR = inL;
+                    }
+                }
+
+                // Panning, distance and cone.
+                let l = (ll * inL + lr * inR) * env;
+                let r = (rl * inL + rr * inR) * env;
+                if (!isFinite(<f64>l)) l = 0;
+                if (!isFinite(<f64>r)) r = 0;
+                ll += dll; lr += dlr; rl += drl; rr += drr;
+
+                // Interaural delay.
+                if (useDelay) {
+                    if (initDelay) {
+                        for (let d = 0; d < DELAY_LENGTH; d++) { delayL[d] = l; delayR[d] = r; }
+                        initDelay = false;
+                    }
+                    delayL[dw] = l;
+                    delayR[dw] = r;
+                    l = readDelay(delayL, dw, itdL);
+                    r = readDelay(delayR, dw, itdR);
+                    if (!isFinite(<f64>l)) l = 0;
+                    if (!isFinite(<f64>r)) r = 0;
+                    dw = (dw + 1) & DELAY_MASK;
+                    itdL += ditdL; itdR += ditdR;
+                }
+                // Head shadow.
+                if (useLpf) {
+                    if (initLpf) {
+                        yL = flushDenormal(l);
+                        yR = flushDenormal(r);
+                        initLpf = false;
+                    }
+                    yL = flushDenormal(yL + lpfL * (l - yL));
+                    yR = flushDenormal(yR + lpfR * (r - yR));
+                    l = yL; r = yR;
+                    lpfL += dlpfL; lpfR += dlpfR;
+                }
+
+                if (hasTap) {
+                    const ts = (l + r) * 0.5 * tap;
+                    tapBuffer[tapW] = isFinite(<f64>ts) ? ts : 0;
+                    tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
+                    tap += dtap;
+                }
+                const g = gain * master;
+                gain += dgain;
+                master += dmaster;
+                const o = i * outChannels;
+                if (outChannels >= 2) {
+                    const ol = l * g, or = r * g;
+                    if (isFinite(<f64>ol)) out[o] += ol;
+                    if (isFinite(<f64>or)) out[o + 1] += or;
+                } else {
+                    const om = (l + r) * 0.5 * g;
+                    if (isFinite(<f64>om)) out[o] += om;
+                }
+                rate += drate;
+                if (finished) {
+                    // Played to the end: the rest of the block is silence.
+                    if (hasTap) {
+                        for (let j = i + 1; j < frames; j++) {
+                            tapBuffer[tapW] = 0;
+                            tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
+                        }
+                    }
+                    break;
+                }
+                if (env <= 0 && target <= 0) {
+                    if (hasTap) {
+                        for (let j = i + 1; j < frames; j++) {
+                            tapBuffer[tapW] = 0;
+                            tapW = (tapW + 1) & (MIX_MAX_FFT - 1);
+                        }
+                    }
+                    break;
+                }
+            }
+            made = true;
+        }
+
+        voice.ll = finiteF32(tLL - (tLL - voice.ll) * (1 - k));
+        voice.lr = finiteF32(tLR - (tLR - voice.lr) * (1 - k));
+        voice.rl = finiteF32(tRL - (tRL - voice.rl) * (1 - k));
+        voice.rr = finiteF32(tRR - (tRR - voice.rr) * (1 - k));
+        voice.gain = finiteF32(tGain - (tGain - voice.gain) * (1 - k));
+        voice.tap = finiteF32(tTap - (tTap - voice.tap) * (1 - k));
+        let nextItdL = finiteF32(tItdL - (tItdL - voice.itdL) * (1 - k));
+        let nextItdR = finiteF32(tItdR - (tItdR - voice.itdR) * (1 - k));
+        if (tItdL == 0 && nextItdL < <f32>1e-5) nextItdL = 0;
+        if (tItdR == 0 && nextItdR < <f32>1e-5) nextItdR = 0;
+        voice.itdL = nextItdL;
+        voice.itdR = nextItdR;
+        let nextLpfL = finiteF32(tLpfL - (tLpfL - voice.lpfL) * (1 - k), 1);
+        let nextLpfR = finiteF32(tLpfR - (tLpfR - voice.lpfR) * (1 - k), 1);
+        if (tLpfL == 1 && <f32>1 - nextLpfL < <f32>1e-5) nextLpfL = 1;
+        if (tLpfR == 1 && <f32>1 - nextLpfR < <f32>1e-5) nextLpfR = 1;
+        voice.lpfL = nextLpfL;
+        voice.lpfR = nextLpfR;
+        voice.wasDelay = useDelay;
+        voice.wasLpf = useLpf;
+        voice.rate = Math.max(0, finiteF64(tRate - (tRate - voice.rate) * <f64>(1 - k), 1));
+        voice.pos = Math.max(0, finiteF64(pos));
         voice.remaining = remaining;
-        voice.env = env;
+        voice.env = finiteF32(env);
         voice.delayWrite = dw;
-        voice.yL = yL; voice.yR = yR;
+        voice.yL = flushDenormal(yL);
+        voice.yR = flushDenormal(yR);
         if (hasTap) {
             this.tapWrite[analyser] = tapW;
             this.tapWritten[analyser] += <f64>frames;
@@ -650,10 +834,16 @@ export class MixCore {
         if (finished || (voice.ending && env <= 0)) {
             voice.endedGen = voice.gen;
             voice.state = VOICE_IDLE;
+            voice.source = SOURCE_NONE;
             voice.ending = false;
             voice.env = 0;
         } else if (env <= 0 && target <= 0 && !voice.pending) {
-            voice.state = VOICE_HELD;   // paused or stopped: keep the position
+            if (<i32>p[base + P_SOURCE] == SOURCE_NONE) {
+                voice.state = VOICE_IDLE;
+                voice.source = SOURCE_NONE;
+            } else {
+                voice.state = VOICE_HELD;   // paused or stopped: keep the position
+            }
         }
         return made;
     }
@@ -662,19 +852,41 @@ export class MixCore {
     /// window around it when needed), or -1 outside the buffer.
     @inline
     private fetch(voice: MixVoice, slot: i32, index: i32, channels: i32, frames: i32): i32 {
-        if (index < 0 || index >= frames) return -1;
+        if (index < 0 || index >= frames || channels < 1 || channels > 2) return -1;
         if (voice.winSlot != slot || index < voice.winStart || index >= voice.winStart + voice.winCount) {
             const blob = this.blobs[slot];
             if (blob == null) return -1;
-            const count = min<i32>(WINDOW_FRAMES, frames - index);
-            const got = <i32>blob.readInto(<u32>index * <u32>channels * 4, voice.window, 0, count * channels);
+            // Overlap by one frame when advancing across a window boundary so
+            // low playback rates don't thrash between i0 and i1 = i0 + 1.
+            const start = index > 0 ? index - 1 : 0;
+            const count = min<i32>(WINDOW_FRAMES, frames - start);
+            const got = <i32>blob.readInto(<u32>start * <u32>channels * 4, voice.window, 0, count * channels);
             voice.winSlot = slot;
-            voice.winStart = index;
+            voice.winStart = start;
             voice.winCount = got / channels;
-            if (voice.winCount <= 0) { voice.winSlot = -1; return -1; }
+            if (voice.winCount <= 0 || index < voice.winStart || index >= voice.winStart + voice.winCount) {
+                voice.winSlot = -1;
+                return -1;
+            }
         }
         return (index - voice.winStart) * channels;
     }
+}
+
+@inline
+function finiteF64(x: f64, fallback: f64 = 0): f64 {
+    return isFinite(x) ? x : fallback;
+}
+
+@inline
+function finiteF32(x: f32, fallback: f32 = 0): f32 {
+    return isFinite(<f64>x) ? x : fallback;
+}
+
+@inline
+function flushDenormal(x: f32): f32 {
+    if (!isFinite(<f64>x)) return 0;
+    return Mathf.abs(x) < <f32>1e-20 ? <f32>0 : x;
 }
 
 @inline
@@ -688,7 +900,7 @@ function readDelay(line: StaticArray<f32>, write: i32, delay: f32): f32 {
 }
 
 function onePole(cutoff: f64, sampleRate: f64): f64 {
-    if (cutoff <= 0 || cutoff >= sampleRate / 2) return 1;
+    if (!isFinite(cutoff) || cutoff <= 0 || cutoff >= sampleRate / 2) return 1;
     return 1 - Math.exp(-2 * Math.PI * cutoff / sampleRate);
 }
 

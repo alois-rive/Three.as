@@ -14,6 +14,7 @@ import { Promise } from "rive/promise";
 import { blackman, fft, biquadCoefficients } from "./AudioMath";
 import { MixAnalyserFrame, MIX_MAX_FFT, SOURCE_SINE, SOURCE_SQUARE, SOURCE_SAWTOOTH, SOURCE_TRIANGLE } from "./AudioMixer";
 import { Audio } from "./Audio";
+import { AudioContext } from "./AudioContext";
 
 /// A Web Audio AudioParam: a value. Automation sets it now (the mixer ramps
 /// it over about 10 ms); the times are ignored.
@@ -160,6 +161,10 @@ export class AnalyserNode extends AudioNode {
     smoothingTimeConstant: f64 = 0.8;
     /// The mixer's analyser slot, -1 while not listening to anything.
     slot: i32 = -1;
+    /// The AudioContext owning this analyser's slot (cleared on release/close).
+    _context: AudioContext? = null;
+    /// Last snapshot sequence number pulled from the audio thread.
+    _lastSeq: f64 = 0;
     /// The latest samples (the mixer's frame) and how many were written.
     frame: MixAnalyserFrame = new MixAnalyserFrame();
     private smoothed: Float64Array = new Float64Array(1024);
@@ -213,8 +218,15 @@ export class AnalyserNode extends AudioNode {
         }
     }
 
+    /// Pulls fresh samples from the audio thread when bound to an AudioContext slot.
+    private pull(): void {
+        const ctx = this._context;
+        if (ctx != null && this.slot >= 0) ctx.readAnalyser(this);
+    }
+
     /// Decibels per bin into `array` (-Infinity for silence).
     getFloatFrequencyData(array: Float32Array): void {
+        this.pull();
         this.compute();
         const count = min<i32>(array.length, this._fftSize / 2);
         for (let k = 0; k < count; k++) {
@@ -225,9 +237,14 @@ export class AnalyserNode extends AudioNode {
 
     /// Bytes per bin: 0 at minDecibels, 255 at maxDecibels.
     getByteFrequencyData(array: Uint8Array): void {
+        this.pull();
         this.compute();
         const count = min<i32>(array.length, this._fftSize / 2);
         const range = this.maxDecibels - this.minDecibels;
+        if (!(range > 0)) {
+            for (let k = 0; k < count; k++) array[k] = 0;
+            return;
+        }
         for (let k = 0; k < count; k++) {
             const v = this.smoothed[k];
             const db = v > 0 ? 20 * Math.log10(v) : -Infinity;
@@ -240,6 +257,7 @@ export class AnalyserNode extends AudioNode {
 
     /// The latest fftSize samples.
     getFloatTimeDomainData(array: Float32Array): void {
+        this.pull();
         const n = this._fftSize;
         const count = min<i32>(array.length, n);
         for (let i = 0; i < count; i++) array[i] = this.frame.samples[MIX_MAX_FFT - n + i];
@@ -247,11 +265,12 @@ export class AnalyserNode extends AudioNode {
 
     /// The latest fftSize samples as bytes (128 is silence).
     getByteTimeDomainData(array: Uint8Array): void {
+        this.pull();
         const n = this._fftSize;
         const count = min<i32>(array.length, n);
         for (let i = 0; i < count; i++) {
             let b = Math.floor(128 * (1 + <f64>this.frame.samples[MIX_MAX_FFT - n + i]));
-            if (b < 0) b = 0;
+            if (!(b > 0)) b = 0;
             if (b > 255) b = 255;
             array[i] = <u8>b;
         }

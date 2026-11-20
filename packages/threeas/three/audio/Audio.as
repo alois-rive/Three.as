@@ -17,7 +17,7 @@ import { computedPlaybackRate } from "./AudioMath";
 import {
     MIX_MAX_FILTERS, P_SOURCE, P_GEN, P_PLAYING, P_OFFSET, P_DELAY, P_DURATION, P_LOOP, P_LOOP_START, P_LOOP_END,
     P_RATE, P_LL, P_LR, P_RL, P_RR, P_GAIN, P_MASTER, P_TAP_PRE, P_ITD_L, P_ITD_R, P_LPF_L, P_LPF_R, P_ANALYSER,
-    P_STOP_GEN, P_STOP_DELAY, P_FREQUENCY, P_FILTERS, P_FILTER0, S_POSITION, SOURCE_NONE,
+    P_STOP_GEN, P_STOP_DELAY, P_FREQUENCY, P_FILTERS, P_FILTER0, S_POSITION, S_GEN, SOURCE_NONE,
 } from "./AudioMixer";
 
 export class Audio extends Object3D {
@@ -78,6 +78,9 @@ export class Audio extends Object3D {
     /// Plays an OscillatorNode (it sounds between its start() and stop();
     /// play/pause/stop do not apply, as three.js).
     setNodeSource(audioNode: OscillatorNode): Audio {
+        this.releaseFallbackSound();
+        const prev = this.source;
+        if (prev != null && prev !== audioNode && prev._audio === this) prev._audio = null;
         this.hasPlaybackControl = false;
         this.sourceType = "audioNode";
         this.source = audioNode;
@@ -98,6 +101,10 @@ export class Audio extends Object3D {
     setBuffer(audioBuffer: AudioBuffer): Audio {
         this.buffer = audioBuffer;
         this.sourceType = "buffer";
+        this.hasPlaybackControl = true;
+        const prev = this.source;
+        if (prev != null && prev._audio === this) prev._audio = null;
+        this.source = null;
         if (this.autoplay) this.play();
         return this;
     }
@@ -134,8 +141,9 @@ export class Audio extends Object3D {
             return this;
         }
         if (this.isPlaying) {
-            // The mixer's position (three.js estimates it from the clock).
-            if (this.voice >= 0) {
+            // The mixer's position (three.js estimates it from the clock); only
+            // trust it when the audio thread is reporting the current generation.
+            if (this.voice >= 0 && this.playGen > 0 && this.context.voiceStatus(this.voice, S_GEN) == this.playGen) {
                 this._progress = Math.max(0, this.context.voiceStatus(this.voice, S_POSITION) - this.offset);
             }
             this.isPlaying = false;
@@ -189,6 +197,7 @@ export class Audio extends Object3D {
             this.stopDelay = 0;
         }
         this._connected = false;
+        this.releaseFallbackSound();
         const analyser = this.analyser;
         if (analyser != null) {
             this.context.releaseAnalyser(analyser);
@@ -380,20 +389,52 @@ export class Audio extends Object3D {
         p[base + P_LPF_R] = 0;
     }
 
+    /// Spatial gain (distance x cone) for fallback playback without panning loss.
+    fallbackSpatialGain(): f64 { return 1; }
+
     /// Whether a fallback sound is playing or held.
     hasFallbackSound(): bool { return this.sound != null; }
+
+    /// Stops and releases any fallback AudioSound handle.
+    releaseFallbackSound(): void {
+        const sound = this.sound;
+        if (sound != null) {
+            const sr = RiveAudio.sampleRate();
+            sound.stop(sr > 0 ? sr * 0.01 : 0);
+            sound.release();
+            this.sound = null;
+            this.soundPaused = false;
+        }
+    }
 
     /// Fallback playback through Rive's Audio.play (no processors): the
     /// voice's gain as the sound's volume, loops replayed from loopStart,
     /// no panning, rate, filters or analyser.
     updateFallback(context: AudioContext, p: StaticArray<f64>, base: i32): void {
+        if (context.state == "closed") {
+            this.releaseFallbackSound();
+            return;
+        }
         const buffer = this.buffer;
         const source = buffer != null ? buffer.source : null;
-        if (source == null || this.isNodeSource()) return;
+        if (source == null || this.isNodeSource()) {
+            this.releaseFallbackSound();
+            return;
+        }
         let sound = this.sound;
+        if (context.state == "suspended") {
+            if (sound != null && !this.soundPaused) {
+                sound.pause();
+                this.soundPaused = true;
+            }
+            return;
+        }
         const fade = RiveAudio.sampleRate() * 0.01;
         if (this.isPlaying && (sound == null || this.soundGen != this.playGen)) {
-            if (sound != null) sound.stop(fade);
+            if (sound != null) {
+                sound.stop(fade);
+                sound.release();
+            }
             sound = this.startDelay > 0 ? RiveAudio.playInTime(source, this.startDelay) : RiveAudio.play(source);
             if (sound != null && this.startOffset > 0) sound.seek(this.startOffset);
             this.sound = sound;
@@ -409,6 +450,7 @@ export class Audio extends Object3D {
                 sound.stop(fade);
                 sound.release();
                 this.sound = null;
+                this.soundPaused = false;
             }
             return;
         }
@@ -416,8 +458,12 @@ export class Audio extends Object3D {
             sound.resume();
             this.soundPaused = false;
         }
-        const g = 0.5 * (Math.abs(p[base + P_LL]) + Math.abs(p[base + P_LR]) + Math.abs(p[base + P_RL]) + Math.abs(p[base + P_RR]));
-        sound.volume = g * p[base + P_GAIN] * p[base + P_MASTER];
+        if (!this._connected) {
+            sound.volume = 0;
+        } else {
+            const vol = this.fallbackSpatialGain() * p[base + P_GAIN] * p[base + P_MASTER];
+            sound.volume = isFinite(vol) && vol > 0 ? vol : 0;
+        }
         if (sound.completed()) {
             if (this.loop) {
                 sound.seek(this.loopStart);
@@ -425,6 +471,7 @@ export class Audio extends Object3D {
             } else {
                 sound.release();
                 this.sound = null;
+                this.soundPaused = false;
                 this.endedByMixer();
             }
         }

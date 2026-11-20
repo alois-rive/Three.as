@@ -8,12 +8,13 @@ import { Blob } from "rive/shared";
 import { clock } from "rive/os";
 import {
     distanceGain, coneGain, azimuthElevation, equalPowerMatrix, interauralDelay, headShadowCutoffs,
-    biquadCoefficients, fft, toDecibels, computedPlaybackRate,
+    biquadCoefficients, BIQUAD_TYPES, fft, toDecibels, computedPlaybackRate,
 } from "../three/audio/AudioMath";
 import {
-    MixCore, P_STRIDE, P_SOURCE, P_GEN, P_PLAYING, P_LOOP, P_RATE, P_LL, P_RR, P_LR, P_RL, P_GAIN,
-    P_MASTER, P_ANALYSER, P_DURATION, P_FREQUENCY, P_STOP_GEN, P_ITD_L, P_ITD_R, P_LPF_L, P_LPF_R, S_ENDED,
-    S_POSITION, S_STATE, VOICE_HELD, VOICE_PLAYING, SOURCE_SINE, MixAnalyserFrame,
+    MixCore, MIX_MAX_BUFFERS, MIX_MAX_FFT, P_STRIDE, P_SOURCE, P_GEN, P_PLAYING, P_DELAY, P_LOOP, P_RATE,
+    P_LL, P_RR, P_LR, P_RL, P_GAIN, P_MASTER, P_ANALYSER, P_DURATION, P_FREQUENCY, P_STOP_GEN, P_STOP_DELAY,
+    P_ITD_L, P_ITD_R, P_LPF_L, P_LPF_R, P_FILTERS, P_FILTER0, S_STRIDE, S_ENDED, S_POSITION, S_STATE, S_GEN,
+    S_SOURCE, VOICE_IDLE, VOICE_HELD, VOICE_PLAYING, SOURCE_SINE, MixAnalyserFrame,
 } from "../three/audio/AudioMixer";
 import { AnalyserNode, AudioBuffer, BiquadFilterNode } from "../three/audio/AudioNodes";
 import { AudioListener } from "../three/audio/AudioListener";
@@ -199,6 +200,63 @@ export class AudioTests extends Tests {
                 const node = new BiquadFilterNode();
                 expect.that(node.type).is("lowpass");
                 near(expect, node.frequency.value, 350);
+            });
+            test("biquad stability at DC, Nyquist, extreme Q and gain", (expect) => {
+                const k = new StaticArray<f64>(5);
+                const g6 = Math.pow(10, 6 / 20);
+                // Exact W3C Web Audio boundary responses at f0 = 0 and f0 >= Nyquist.
+                const dcWant: Array<f64> = [0, 1, 0, 1, g6, 1, 1, 1];
+                const nyqWant: Array<f64> = [1, 0, 0, g6, 1, 1, 1, 1];
+                for (let t = 0; t < BIQUAD_TYPES.length; t++) {
+                    const typ = BIQUAD_TYPES[t];
+                    biquadCoefficients(typ, 0, 1, 6, 0, RATE, k, 0);
+                    near(expect, k[0], dcWant[t], 1e-6);
+                    near(expect, k[1], 0); near(expect, k[2], 0);
+                    near(expect, k[3], 0); near(expect, k[4], 0);
+
+                    biquadCoefficients(typ, RATE / 2, 1, 6, 0, RATE, k, 0);
+                    near(expect, k[0], nyqWant[t], 1e-6);
+                    near(expect, k[1], 0); near(expect, k[2], 0);
+                    near(expect, k[3], 0); near(expect, k[4], 0);
+
+                    biquadCoefficients(typ, RATE, 1, 6, 0, RATE, k, 0);
+                    near(expect, k[0], nyqWant[t], 1e-6);
+                }
+
+                // Extreme / hostile parameter sweeps: every 1000-sample f32 TDF-II
+                // impulse response must stay finite and bounded (zero NaN/Infinity).
+                const freqs: Array<f64> = [-100, 0, 1e-8, 1000, RATE / 2 - 1e-6, RATE / 2, RATE * 2, NaN, Infinity];
+                const qs: Array<f64> = [-1e6, -5, 0, 1e-6, 1, 100, 1e6, NaN];
+                const gains: Array<f64> = [-1000, 0, 1000, NaN];
+                for (let t = 0; t < BIQUAD_TYPES.length; t++) {
+                    const typ = BIQUAD_TYPES[t];
+                    for (let fi = 0; fi < freqs.length; fi++) {
+                        for (let qi = 0; qi < qs.length; qi++) {
+                            for (let gi = 0; gi < gains.length; gi++) {
+                                biquadCoefficients(typ, freqs[fi], qs[qi], gains[gi], 0, RATE, k, 0);
+                                const b0 = <f32>k[0], b1 = <f32>k[1], b2 = <f32>k[2];
+                                const a1 = <f32>k[3], a2 = <f32>k[4];
+                                expect.that(isFinite(<f64>b0) && isFinite(<f64>b1) && isFinite(<f64>b2) &&
+                                    isFinite(<f64>a1) && isFinite(<f64>a2)).is(true);
+                                let z1: f32 = 0, z2: f32 = 0;
+                                let ok = true;
+                                for (let n = 0; n < 1000; n++) {
+                                    const x: f32 = n == 0 ? 1 : 0;
+                                    const y = b0 * x + z1;
+                                    z1 = b1 * x - a1 * y + z2;
+                                    z2 = b2 * x - a2 * y;
+                                    if (!isFinite(<f64>y) || Math.abs(<f64>y) > 1e12) { ok = false; break; }
+                                }
+                                expect.that(ok).is(true);
+                            }
+                        }
+                    }
+                }
+                // Invalid sampleRate falls back to unity bypass.
+                biquadCoefficients("lowpass", 1000, 1, 0, 0, 0, k, 0);
+                near(expect, k[0], 1);
+                near(expect, k[3], 0);
+                near(expect, k[4], 0);
             });
             test("FFT of a sine peaks at its bin", (expect) => {
                 const n = 256;
@@ -404,6 +462,164 @@ export class AudioTests extends Tests {
                 for (let i = 1; i < data.length; i++) if (data[i] > data[peak]) peak = i;
                 expect.that(peak == 42 || peak == 43).is(true);
             });
+            test("NaN samples, params and filter coeffs do not poison the mix bus or latch", (expect) => {
+                const core = new MixCore();
+                core.init(RATE, BLOCK, 2);
+                const bad = new Float32Array(BLOCK);
+                for (let i = 0; i < BLOCK; i++) bad[i] = i == 10 ? <f32>NaN : (i == 20 ? <f32>Infinity : <f32>0.25);
+                core.setBuffer(0, Blob.fromArray(bad), 1, RATE, BLOCK);
+                const clean = new Float32Array(BLOCK);
+                for (let i = 0; i < BLOCK; i++) clean[i] = <f32>(0.5 * Math.sin(2 * Math.PI * 10 * <f64>i / <f64>BLOCK));
+                core.setBuffer(1, Blob.fromArray(clean), 1, RATE, BLOCK);
+
+                // Voice 0 plays buffer with NaN/Inf samples + NaN gain + NaN filter + head shadow.
+                playVoice(core, 0, 1, true);
+                const p = core.params.data;
+                p[P_GAIN] = NaN;
+                p[P_LPF_L] = 3000;
+                p[P_FILTERS] = 1;
+                p[P_FILTER0] = NaN;
+                p[P_FILTER0 + 3] = -2;
+                p[P_FILTER0 + 4] = 1;
+
+                // Voice 1 plays a clean sine on the same bus.
+                playVoice(core, 1, 2, true);
+                p[P_STRIDE + P_SOURCE] = 1;
+
+                const left1 = renderLeft(core, 2);
+                let allFinite = true;
+                let maxErr: f64 = 0;
+                for (let i = 0; i < left1.length; i++) {
+                    if (!isFinite(<f64>left1[i])) allFinite = false;
+                    // Voice 0's NaN gain sanitizes to 0, so voice 1 passes cleanly.
+                    const want = 0.5 * Math.sin(2 * Math.PI * 10 * <f64>(i % BLOCK) / <f64>BLOCK);
+                    maxErr = Math.max(maxErr, Math.abs(<f64>left1[i] - want));
+                }
+                expect.that(allFinite).is(true);
+                expect.that(maxErr).lessThan(1e-5);
+
+                // Restore voice 0's gain & filter and mute voice 1: voice 0 must recover cleanly.
+                p[P_GAIN] = 1;
+                biquadCoefficients("lowpass", 4000, 1, 0, 0, RATE, p, P_FILTER0);
+                p[P_STRIDE + P_GAIN] = 0;
+                const left2 = renderLeft(core, 4);
+                let peak: f64 = 0;
+                allFinite = true;
+                for (let i = 0; i < left2.length; i++) {
+                    if (!isFinite(<f64>left2[i])) allFinite = false;
+                    peak = Math.max(peak, Math.abs(<f64>left2[i]));
+                }
+                expect.that(allFinite).is(true);
+                expect.that(peak).greaterThan(0.1);
+            });
+            test("invalid buffer metadata (channels > 2 or sampleRate <= 0) is rejected safely", (expect) => {
+                const core = new MixCore();
+                core.init(RATE, BLOCK, 2);
+                const data = new Float32Array(256);
+                for (let i = 0; i < 256; i++) data[i] = 0.5;
+                const blob = Blob.fromArray(data);
+                core.setBuffer(0, blob, 4, RATE, 64);      // channels > 2
+                core.setBuffer(1, blob, 0, RATE, 64);      // channels <= 0
+                core.setBuffer(2, blob, 1, 0, 256);        // sampleRate == 0
+                core.setBuffer(3, blob, 1, -48000, 256);   // sampleRate < 0
+                for (let v = 0; v < 4; v++) {
+                    playVoice(core, v, <f64>(v + 1), true);
+                    core.params.data[v * P_STRIDE + P_SOURCE] = <f64>v;
+                }
+                const left = renderLeft(core, 2);
+                let maxAbs: f64 = 0;
+                let allFinite = true;
+                for (let i = 0; i < left.length; i++) {
+                    if (!isFinite(<f64>left[i])) allFinite = false;
+                    maxAbs = Math.max(maxAbs, Math.abs(<f64>left[i]));
+                }
+                expect.that(allFinite).is(true);
+                expect.that(maxAbs).is(0);
+                for (let v = 0; v < 4; v++) {
+                    expect.that(isFinite(core.status.data[v * S_STRIDE + S_POSITION])).is(true);
+                }
+            });
+            test("delayed play followed by immediate stop emits pure silence (no 10 ms burst)", (expect) => {
+                const core = sineCore(4800, 100);
+                playVoice(core, 0, 1, true);
+                core.params.data[P_DELAY] = 0.02;   // 960 frames (~2 blocks)
+                // Render 1 block while still waiting in delay.
+                const b0 = renderLeft(core, 1);
+                let peak: f64 = 0;
+                for (let i = 0; i < b0.length; i++) peak = Math.max(peak, Math.abs(<f64>b0[i]));
+                expect.that(peak).is(0);
+                // Stop before the delay expires.
+                core.params.data[P_PLAYING] = 0;
+                core.params.data[P_STOP_GEN] = 2;
+                core.params.data[P_STOP_DELAY] = 0;
+                const rest = renderLeft(core, 6);
+                for (let i = 0; i < rest.length; i++) peak = Math.max(peak, Math.abs(<f64>rest[i]));
+                expect.that(peak).is(0);
+                expect.that(<i32>core.status.data[S_STATE]).is(VOICE_HELD);
+            });
+            test("toggling useDelay and useLpf from false to true produces no click", (expect) => {
+                const core = sineCore(48000, 200);   // 200 Hz sine, max slope ~0.013/sample
+                playVoice(core, 0, 1, true);
+                const steady = renderLeft(core, 2);
+                const naturalStep = maxStep(steady, 10, steady.length);
+                // Enable ITD and head shadow mid-playback.
+                const p = core.params.data;
+                p[P_ITD_L] = 0.0006;
+                p[P_LPF_L] = 3000;
+                const on = renderLeft(core, 2);
+                const boundaryJump = Math.abs(<f64>on[0] - <f64>steady[steady.length - 1]);
+                expect.that(boundaryJump).lessThan(naturalStep * 2 + 1e-3);
+                expect.that(maxStep(on, 0, on.length)).lessThan(naturalStep * 2 + 1e-3);
+                // Turn off, let settle, then turn back on again.
+                p[P_ITD_L] = 0;
+                p[P_LPF_L] = 0;
+                const off = renderLeft(core, 10);
+                p[P_ITD_L] = 0.0006;
+                p[P_LPF_L] = 3000;
+                const on2 = renderLeft(core, 2);
+                expect.that(Math.abs(<f64>on2[0] - <f64>off[off.length - 1])).lessThan(naturalStep * 2 + 1e-3);
+                expect.that(maxStep(on2, 0, on2.length)).lessThan(naturalStep * 2 + 1e-3);
+            });
+            test("analyser tapWritten stays synchronized when starting mid-block (from > 0)", (expect) => {
+                const core = sineCore(4800, 100);
+                playVoice(core, 0, 1, true);
+                core.params.data[P_DELAY] = 200 / RATE;   // starts at frame 200 inside block 0
+                core.params.data[P_ANALYSER] = 0;
+                renderLeft(core, 2);
+                expect.that(core.tapWritten[0]).is(<f64>(2 * BLOCK));
+                expect.that(core.tapWrite[0]).is((2 * BLOCK) & (MIX_MAX_FFT - 1));
+                const frame = new MixAnalyserFrame();
+                core.fillAnalyserFrame(0, frame);
+                // First 200 frames of block 0 are silence; frames after 200 have signal.
+                const base = MIX_MAX_FFT - 2 * BLOCK;
+                let prePeak: f64 = 0, postPeak: f64 = 0;
+                for (let i = 0; i < 200; i++) prePeak = Math.max(prePeak, Math.abs(<f64>frame.samples[base + i]));
+                for (let i = 200; i < 2 * BLOCK; i++) postPeak = Math.max(postPeak, Math.abs(<f64>frame.samples[base + i]));
+                expect.that(prePeak).is(0);
+                expect.that(postPeak).greaterThan(0.1);
+            });
+            test("low-rate looping interpolates cleanly across window and loop boundaries", (expect) => {
+                // 4096 frames (> WINDOW_FRAMES = 2048), played at 0.25x across loop wrap.
+                const len = 4096;
+                const core = sineCore(len, 16);
+                playVoice(core, 0, 1, true);
+                const p = core.params.data;
+                p[P_RATE] = 0.25;
+                // Start near the loop wrap (frame 4092) to exercise low-rate wrap interpolation.
+                core.voices[0].winSlot = -1;
+                p[3] = 4092 / RATE;   // P_OFFSET
+                const out = renderLeft(core, 2);
+                // After the 5 ms (240-frame) fade-in, sample i reads source position 4092 + 0.25 * i (mod 4096).
+                // At i = 256, pos = 4156 mod 4096 = 60 (past the wrap!).
+                // Verify continuity across the wrap at i = 16 (pos = 4096) and later steady samples.
+                let allFinite = true;
+                for (let i = 0; i < out.length; i++) if (!isFinite(<f64>out[i])) allFinite = false;
+                expect.that(allFinite).is(true);
+                expect.that(maxStep(out, 0, 64)).lessThan(0.05);
+                // Verify exact value post-fade-in (i = 400 -> pos = 4192 mod 4096 = 96).
+                const want = 0.5 * Math.sin(2 * Math.PI * 16 * 96 / <f64>len);
+                near(expect, <f64>out[400], want, 1e-4);
+            });
             test("cost per block", (expect) => {
                 // Eight looping voices, panned, delayed and shadowed, two filtered.
                 const core = sineCore(48000, 1000);
@@ -545,6 +761,124 @@ export class AudioTests extends Tests {
                 sound.setDirectionalCone(90, 90, 0);
                 helper.update();
                 expect.that(helper.outer.visible).is(false);
+            });
+            test("AnalyserNode getFloatFrequencyData / get*TimeDomainData pull live samples from context", (expect) => {
+                const listener = new AudioListener();
+                const ctx = listener.context;
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0;
+                const slot = ctx.analyserSlot(analyser);
+                expect.that(slot).is(0);
+
+                // Simulate the audio thread publishing a 1 kHz sine frame.
+                const frame = new MixAnalyserFrame();
+                frame.written = 4096;
+                for (let i = 0; i < MIX_MAX_FFT; i++) {
+                    frame.samples[i] = <f32>(0.5 * Math.sin(2 * Math.PI * 1000 * <f64>i / RATE));
+                }
+                ctx.inputs.analysers[slot].publish(frame);
+
+                // Direct calls on AnalyserNode must pull without AudioAnalyser.getFrequencyData().
+                const fTime = new Float32Array(2048);
+                analyser.getFloatTimeDomainData(fTime);
+                near(expect, <f64>fTime[10], <f64>frame.samples[MIX_MAX_FFT - 2048 + 10], 1e-6);
+
+                const bTime = new Uint8Array(2048);
+                analyser.getByteTimeDomainData(bTime);
+                let minB: i32 = 255, maxB: i32 = 0;
+                for (let i = 0; i < bTime.length; i++) {
+                    if (<i32>bTime[i] < minB) minB = <i32>bTime[i];
+                    if (<i32>bTime[i] > maxB) maxB = <i32>bTime[i];
+                }
+                expect.that(minB).lessThan(70);
+                expect.that(maxB).greaterThan(185);
+
+                const fFreq = new Float32Array(1024);
+                analyser.getFloatFrequencyData(fFreq);
+                let peak = 0;
+                for (let i = 1; i < fFreq.length; i++) if (fFreq[i] > fFreq[peak]) peak = i;
+                expect.that(peak == 42 || peak == 43).is(true);
+
+                // A second published frame updates subsequent reads.
+                frame.written = 8192;
+                for (let i = 0; i < MIX_MAX_FFT; i++) frame.samples[i] = 0.25;
+                ctx.inputs.analysers[slot].publish(frame);
+                analyser.getFloatTimeDomainData(fTime);
+                near(expect, <f64>fTime[0], 0.25, 1e-6);
+            });
+            test("collectBuffers keeps slots fading out on audio thread and bufferSlot retries after collect", (expect) => {
+                const listener = new AudioListener();
+                const ctx = listener.context;
+                const bufs = new Array<AudioBuffer>();
+                for (let i = 0; i < MIX_MAX_BUFFERS; i++) {
+                    const b = AudioBuffer.fromChannelData([new Float32Array(32)], RATE);
+                    bufs.push(b);
+                    expect.that(ctx.bufferSlot(b)).is(i);
+                }
+                // Simulate voice 0 fading out slot 0 on the audio thread even though no main-lane Audio references it.
+                ctx.status.data[S_STATE] = <f64>VOICE_PLAYING;
+                ctx.status.data[S_SOURCE] = 0;
+                // Keep slots 1..63 referenced by main-lane status/voices? Only voice slots 0..31 exist, so test:
+                // mark voice 0 playing slot 0; leave slots 1..63 free to collect.
+                // After collecting, slot 0 MUST remain untouched (bufs[0]), and buf65 MUST get slot 1 immediately!
+                const extra = AudioBuffer.fromChannelData([new Float32Array(32)], RATE);
+                const got = ctx.bufferSlot(extra);
+                expect.that(got).is(1);
+                expect.that(ctx.buffers[0] === bufs[0]).is(true);
+                expect.that(ctx.buffers[1] === extra).is(true);
+
+                // Once voice 0 finishes fading out (VOICE_IDLE), slot 0 can be reclaimed too.
+                ctx.status.data[S_STATE] = <f64>VOICE_IDLE;
+                ctx.status.data[S_SOURCE] = -1;
+                // Refill slots 2..63 so only slot 0 is collectable when extra2 arrives (hold slots 1..63 via voices? No, just refill slots 2..63 + check slot 0):
+                for (let i = 2; i < MIX_MAX_BUFFERS; i++) {
+                    const b = AudioBuffer.fromChannelData([new Float32Array(32)], RATE);
+                    expect.that(ctx.bufferSlot(b)).is(i);
+                }
+                const extra2 = AudioBuffer.fromChannelData([new Float32Array(32)], RATE);
+                expect.that(ctx.bufferSlot(extra2)).is(0);
+                expect.that(ctx.buffers[0] === extra2).is(true);
+            });
+            test("pause ignores stale S_GEN, setBuffer restores playback control, and close releases slots", (expect) => {
+                const listener = new AudioListener();
+                const ctx = listener.context;
+                const audio = new Audio(listener);
+                const osc = ctx.createOscillator();
+                audio.setNodeSource(osc);
+                expect.that(audio.hasPlaybackControl).is(false);
+                expect.that(audio.source === osc).is(true);
+
+                // Switching from oscillator back to buffer restores playback control and detaches oscillator.
+                audio.setBuffer(AudioBuffer.fromChannelData([new Float32Array(64)], RATE));
+                expect.that(audio.hasPlaybackControl).is(true);
+                expect.that(audio.source == null).is(true);
+                expect.that(osc._audio == null).is(true);
+
+                // Stale audio-thread status from a prior generation must not corrupt pause() progress.
+                audio.play();
+                const v = audio.voice;
+                expect.that(v).greaterThanOrEqual(0);
+                ctx.status.data[v * S_STRIDE + S_POSITION] = 12.5;
+                ctx.status.data[v * S_STRIDE + S_GEN] = audio.playGen - 1;   // stale gen
+                audio.pause();
+                near(expect, audio._progress, 0);
+
+                // Matching S_GEN updates _progress accurately.
+                audio.play();
+                ctx.status.data[v * S_STRIDE + S_POSITION] = 3.25;
+                ctx.status.data[v * S_STRIDE + S_GEN] = audio.playGen;
+                audio.pause();
+                near(expect, audio._progress, 3.25);
+
+                // close() releases voice and analyser slots cleanly.
+                const analyser = new AudioAnalyser(audio, 256);
+                expect.that(analyser.analyser.slot).is(0);
+                ctx.close();
+                expect.that(ctx.state).is("closed");
+                expect.that(audio.voice).is(-1);
+                expect.that(analyser.analyser.slot).is(-1);
+                expect.that(analyser.analyser._context == null).is(true);
             });
         });
     }

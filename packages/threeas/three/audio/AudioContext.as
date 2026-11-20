@@ -23,7 +23,7 @@ import { Jobs } from "rive/jobs";
 import {
     MixInputs, MixParams, MixStatus, MixBuffer, AudioMixProcessor,
     MIX_MAX_VOICES, MIX_MAX_BUFFERS, MIX_MAX_ANALYSERS, P_STRIDE, P_SOURCE, P_PLAYING,
-    S_STRIDE, S_ENDED, S_STATE, VOICE_IDLE, VOICE_HELD, SOURCE_NONE,
+    S_STRIDE, S_ENDED, S_STATE, S_GEN, S_SOURCE, VOICE_IDLE, VOICE_HELD, SOURCE_NONE,
 } from "./AudioMixer";
 import { AudioBuffer, GainNode, BiquadFilterNode, AnalyserNode, OscillatorNode, PannerNode } from "./AudioNodes";
 import { Audio } from "./Audio";
@@ -64,7 +64,11 @@ export class AudioContext {
     private warnedVoices: bool = false;
 
     constructor() {
-        for (let i = 0; i < MIX_MAX_VOICES; i++) this.params.data[i * P_STRIDE + P_SOURCE] = <f64>SOURCE_NONE;
+        for (let i = 0; i < MIX_MAX_VOICES; i++) {
+            this.params.data[i * P_STRIDE + P_SOURCE] = <f64>SOURCE_NONE;
+            this.status.data[i * S_STRIDE + S_GEN] = -1;
+            this.status.data[i * S_STRIDE + S_SOURCE] = <f64>SOURCE_NONE;
+        }
     }
 
     /// The rate the mixer renders at (the processor's, else the engine's).
@@ -92,7 +96,11 @@ export class AudioContext {
 
     createGain(): GainNode { return new GainNode(); }
     createBiquadFilter(): BiquadFilterNode { return new BiquadFilterNode(); }
-    createAnalyser(): AnalyserNode { return new AnalyserNode(); }
+    createAnalyser(): AnalyserNode {
+        const node = new AnalyserNode();
+        node._context = this;
+        return node;
+    }
     createOscillator(): OscillatorNode { return new OscillatorNode(); }
     createPanner(): PannerNode { return new PannerNode(); }
     createBuffer(numberOfChannels: i32, length: i32, sampleRate: f64): AudioBuffer {
@@ -111,12 +119,15 @@ export class AudioContext {
     /// browser, audio itself starts at the page's first click, tap or key
     /// press.
     resume(): void {
+        if (this.closed) return;
         this.suspendedByUser = false;
         this.ensureStarted();
+        if (this.fallback) this.state = "running";
     }
 
     /// Fades every voice out until resume().
     suspend(): void {
+        if (this.closed) return;
         this.suspendedByUser = true;
         this.state = "suspended";
     }
@@ -131,6 +142,17 @@ export class AudioContext {
             h.release();
         }
         this.handle = null;
+        for (let v = 0; v < MIX_MAX_VOICES; v++) {
+            const audio = this.voices[v];
+            if (audio != null) {
+                audio.releaseFallbackSound();
+                this.releaseVoice(audio);
+            }
+        }
+        for (let i = 0; i < MIX_MAX_ANALYSERS; i++) {
+            const node = this.analysers[i];
+            if (node != null) this.releaseAnalyser(node);
+        }
     }
 
     // ------------------------------------------------------ the plumbing
@@ -142,6 +164,7 @@ export class AudioContext {
         if (rate <= 0) {
             // No processors here (tests, a web build without threads).
             this.fallback = true;
+            if (!this.suspendedByUser) this.state = "running";
             return;
         }
         this._sampleRate = rate;
@@ -209,25 +232,35 @@ export class AudioContext {
             if (b === buffer) return i;
             if (b == null && free < 0) free = i;
         }
-        if (!buffer.ready || free < 0) {
-            if (free < 0) this.collectBuffers();
-            return -1;
+        if (!buffer.ready) return -1;
+        if (free < 0) {
+            this.collectBuffers();
+            for (let i = 0; i < MIX_MAX_BUFFERS; i++) {
+                if (this.buffers[i] == null) { free = i; break; }
+            }
+            if (free < 0) return -1;
         }
         if (!this.announce(free, buffer)) return -1;
         this.buffers[free] = buffer;
         return free;
     }
 
-    /// Frees buffer slots no voice uses (the processor keeps reading a slot
-    /// until a new buffer replaces it, so only idle ones go).
+    /// Frees buffer slots no voice uses (neither on the main lane nor still
+    /// active/fading out on the audio thread).
     private collectBuffers(): void {
+        const sdata = this.status.data;
+        const pdata = this.params.data;
+        const hasProcessor = this.handle != null;
         for (let i = 0; i < MIX_MAX_BUFFERS; i++) {
             const b = this.buffers[i];
             if (b == null) continue;
             let used = false;
             for (let v = 0; v < MIX_MAX_VOICES; v++) {
                 const a = this.voices[v];
-                if (a != null && a.buffer === b) used = true;
+                if (a != null && a.buffer === b) { used = true; break; }
+                const state = <i32>sdata[v * S_STRIDE + S_STATE];
+                if (state != VOICE_IDLE && <i32>sdata[v * S_STRIDE + S_SOURCE] == i) { used = true; break; }
+                if (hasProcessor && <i32>pdata[v * P_STRIDE + P_SOURCE] == i) { used = true; break; }
             }
             if (!used) this.buffers[i] = null;
         }
@@ -249,13 +282,18 @@ export class AudioContext {
     /// analyser no voice listens to are freed first (their analysers take
     /// a slot again when their Audio plays).
     analyserSlot(node: AnalyserNode): i32 {
-        if (node.slot >= 0 && node.slot < MIX_MAX_ANALYSERS && this.analysers[node.slot] === node) return node.slot;
+        if (node.slot >= 0 && node.slot < MIX_MAX_ANALYSERS && this.analysers[node.slot] === node) {
+            node._context = this;
+            return node.slot;
+        }
         node.slot = -1;
         for (let pass = 0; pass < 2; pass++) {
             for (let i = 0; i < MIX_MAX_ANALYSERS; i++) {
                 if (this.analysers[i] == null) {
                     this.analysers[i] = node;
                     node.slot = i;
+                    node._context = this;
+                    node._lastSeq = 0;
                     return i;
                 }
             }
@@ -269,6 +307,8 @@ export class AudioContext {
         const slot = node.slot;
         if (slot >= 0 && slot < MIX_MAX_ANALYSERS && this.analysers[slot] === node) this.analysers[slot] = null;
         node.slot = -1;
+        node._context = null;
+        node._lastSeq = 0;
     }
 
     /// Frees analyser slots no voice's Audio listens through.
@@ -297,8 +337,12 @@ export class AudioContext {
     /// The latest samples of analyser `node` into its frame.
     readAnalyser(node: AnalyserNode): void {
         const slot = node.slot;
-        if (slot < 0 || slot >= MIX_MAX_ANALYSERS || this.handle == null) return;
-        this.inputs.analysers[slot].latestInto(node.frame);
+        if (slot < 0 || slot >= MIX_MAX_ANALYSERS) return;
+        const snap = this.inputs.analysers[slot];
+        const seq = snap.seq;
+        if (seq == 0 || seq == node._lastSeq) return;
+        node._lastSeq = seq;
+        snap.latestInto(node.frame);
     }
 
     /// The status of voice `v` (S_POSITION ...).
@@ -324,6 +368,8 @@ export class AudioContext {
             } else if (++this.idleUpdates > 60) {
                 this.state = "suspended";
             }
+        } else if (this.fallback) {
+            this.state = this.suspendedByUser ? "suspended" : "running";
         }
 
         const data = this.params.data;
@@ -349,10 +395,11 @@ export class AudioContext {
             // position) until it plays, stops or is disposed.
             if (audio.isSilenced()) {
                 if (running) {
-                    // (Whatever generation it holds: a stopped play that never
-                    // started, waiting for its buffer, goes too.)
                     const state = <i32>this.status.data[v * S_STRIDE + S_STATE];
-                    if (state == VOICE_IDLE || state == VOICE_HELD) {
+                    const sgen = this.status.data[v * S_STRIDE + S_GEN];
+                    const noSource = <i32>data[base + P_SOURCE] == SOURCE_NONE;
+                    const genDone = this.status.blocks == 0 || audio.playGen <= 0 || sgen == audio.playGen || noSource;
+                    if (genDone && (state == VOICE_IDLE || state == VOICE_HELD)) {
                         this.releaseVoice(audio);
                     }
                 } else if (this.fallback && !audio.hasFallbackSound()) {
