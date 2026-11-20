@@ -304,12 +304,12 @@ async function parseInJob(loader: GLTFLoader, data: ArrayBuffer, base: string): 
         loader.error = decoded.error;
         return await Promise.reject<GLTF>(decoded.error);
     }
-    const gd = new GLTFData(data, loader.meshoptDecoder);
-    gd.draco = draco;
-    for (let i = 0; i < externalIndices.length; i++) gd.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
-    gd.externalImages = externalImages;
-    gd.setDecoded(decoded);
-    const gltf = loader.parseData(gd);
+    head.meshoptDecoder = loader.meshoptDecoder;
+    head.draco = draco;
+    for (let i = 0; i < externalIndices.length; i++) head.external.set(externalIndices[i], Uint8Array.wrap(externalBuffers[i]));
+    head.externalImages = externalImages;
+    head.setDecoded(decoded);
+    const gltf = loader.parseData(head);
     if (gltf == null) return await Promise.reject<GLTF>(loader.error);
     return gltf!;
 }
@@ -909,8 +909,13 @@ class GLTFParser {
         }
         node.name = this.uniqueName(str(def, "name", ""), index);
         if (objects.length > 1 || this.joints.has(index)) {
-            // Name the parts too (three.js names multi-primitive meshes the same).
-            for (let i = 0; i < objects.length; i++) if (objects[i].name.length == 0) objects[i].name = node.name;
+            // Give child primitives/attachments unique names so PropertyBinding
+            // can target each child Mesh directly (e.g. morph target weights).
+            for (let i = 0; i < objects.length; i++) {
+                if (objects[i].name.length == 0) {
+                    objects[i].name = this.uniqueName(node.name + "_" + i.toString(), index);
+                }
+            }
         }
 
         const matrix = Dynamic.asNumbersOrNull(dget(def, "matrix"));
@@ -1075,6 +1080,12 @@ class GLTFParser {
         g.setAttribute("position", posAttr);
         const normals = this.attributeFloats(attrs, "NORMAL", draco);
         if (normals != null) g.setAttribute("normal", new BufferAttribute(normals, 3));
+        const tangents = this.attributeFloats(attrs, "TANGENT", draco);
+        if (tangents != null) {
+            const tanAttr = new BufferAttribute(tangents, 4);
+            if (draco == null) this.gd.attachBlob(tanAttr, <i32>num(attrs, "TANGENT", -1));
+            g.setAttribute("tangent", tanAttr);
+        }
         const uvs = this.attributeFloats(attrs, "TEXCOORD_0", draco);
         if (uvs != null) {
             const uvAttr = new BufferAttribute(uvs, 2);
@@ -1472,22 +1483,22 @@ class GLTFParser {
         if (keys == 0) return;
         const perKey = interpolation == InterpolateGLTFCubicSpline ? 3 : 1;
         const targets = values.length / (keys * perKey);
-        // The node may be a group of primitives: bind on each mesh's own name.
+        // Bind directly to each primitive Mesh (when the node is a Group or Bone,
+        // the child meshes have their own unique names).
         const meshes = this.meshesOf[nodeIndex];
         for (let t = 0; t < targets; t++) {
             const v: Array<f64> = [];
             for (let k = 0; k < keys; k++) {
                 for (let e = 0; e < perKey; e++) v.push(values[(k * perKey + e) * targets + t]);
             }
-            const track = name + ".morphTargetInfluences[" + t.toString() + "]";
-            tracks.push(new NumberKeyframeTrack(track, times, v, interpolation));
-            if (meshes.length > 1) {
+            if (meshes.length > 0) {
                 for (let m = 0; m < meshes.length; m++) {
-                    if (meshes[m].name != name) {
-                        tracks.push(new NumberKeyframeTrack(meshes[m].name + ".morphTargetInfluences[" + t.toString() + "]",
-                            times, v, interpolation));
-                    }
+                    tracks.push(new NumberKeyframeTrack(meshes[m].name + ".morphTargetInfluences[" + t.toString() + "]",
+                        times, v, interpolation));
                 }
+            } else {
+                tracks.push(new NumberKeyframeTrack(name + ".morphTargetInfluences[" + t.toString() + "]",
+                    times, v, interpolation));
             }
         }
     }

@@ -209,6 +209,7 @@ class SVGParser {
     paths: Array<SVGShapePath> = [];
     stylesheets: Map<string, Map<string, string>> = new Map<string, Map<string, string>>();
     transformStack: Array<Matrix3> = [];
+    activeUseIds: Array<string> = [];
     tempTransform0: Matrix3 = new Matrix3();
     tempTransform1: Matrix3 = new Matrix3();
     tempTransform2: Matrix3 = new Matrix3();
@@ -274,7 +275,13 @@ class SVGParser {
             const viewport = node.viewportElement;
             const usedNode = viewport != null ? viewport.getElementById(usedNodeId) : null;
             if (usedNode != null && !usedNode.contains(node)) {
-                this.parseNode(usedNode, style);
+                if (this.activeUseIds.indexOf(usedNodeId) < 0) {
+                    this.activeUseIds.push(usedNodeId);
+                    this.parseNode(usedNode, style);
+                    this.activeUseIds.pop();
+                } else {
+                    console.warn("SVGLoader: cyclic 'use node' reference to id: " + usedNodeId);
+                }
             } else {
                 console.warn("SVGLoader: 'use node' references non-existent node id: " + usedNodeId);
             }
@@ -1781,6 +1788,8 @@ class StrokeBuilder {
     u0: f64 = 0;
     u1: f64 = 0;
     numVertices: i32 = 0;
+    startCoordinate: i32 = 0;
+    startCoordinateUV: i32 = 0;
     currentCoordinate: i32 = 0;
     currentCoordinateUV: i32 = 0;
 
@@ -1818,8 +1827,10 @@ class StrokeBuilder {
         let isMiter = false;
         let initialJoinIsOnLeftSide = false;
         this.numVertices = 0;
-        this.currentCoordinate = vertexOffset * 3;
-        this.currentCoordinateUV = vertexOffset * 2;
+        this.startCoordinate = vertexOffset * 3;
+        this.startCoordinateUV = vertexOffset * 2;
+        this.currentCoordinate = this.startCoordinate;
+        this.currentCoordinateUV = this.startCoordinateUV;
 
         // Get the initial left and right stroke points.
         getNormal(points[0], points[1], tempV2_1).multiplyScalar(strokeWidth2);
@@ -2024,17 +2035,18 @@ class StrokeBuilder {
                 lastOuter = innerPoint;
                 lastInner = outerPoint;
             }
+            const base = this.startCoordinate;
             if (joinIsOnLeftSide) {
                 if (isMiter || initialJoinIsOnLeftSide) {
-                    writeVec2(lastInner, vertices, 0 * 3);
-                    writeVec2(lastInner, vertices, 3 * 3);
-                    if (isMiter) writeVec2(lastOuter, vertices, 1 * 3);
+                    writeVec2(lastInner, vertices, base + 0 * 3);
+                    writeVec2(lastInner, vertices, base + 3 * 3);
+                    if (isMiter) writeVec2(lastOuter, vertices, base + 1 * 3);
                 }
             } else {
                 if (isMiter || !initialJoinIsOnLeftSide) {
-                    writeVec2(lastInner, vertices, 1 * 3);
-                    writeVec2(lastInner, vertices, 3 * 3);
-                    if (isMiter) writeVec2(lastOuter, vertices, 0 * 3);
+                    writeVec2(lastInner, vertices, base + 1 * 3);
+                    writeVec2(lastInner, vertices, base + 3 * 3);
+                    if (isMiter) writeVec2(lastOuter, vertices, base + 0 * 3);
                 }
             }
         }
@@ -2189,19 +2201,24 @@ class StrokeBuilder {
                 tempV2_3.addVectors(tempV2_1, tempV2_2).add(center);
                 tempV2_4.subVectors(tempV2_2, tempV2_1).add(center);
                 if (vertices == null) return;
+                const base = this.startCoordinate;
+                const baseUV = this.startCoordinateUV;
                 // Modify already existing vertices.
                 if (joinIsOnLeftSide) {
-                    writeVec2(tempV2_3, vertices, 1 * 3);
-                    writeVec2(tempV2_4, vertices, 0 * 3);
-                    writeVec2(tempV2_4, vertices, 3 * 3);
+                    writeVec2(tempV2_3, vertices, base + 1 * 3);
+                    writeVec2(tempV2_4, vertices, base + 0 * 3);
+                    writeVec2(tempV2_4, vertices, base + 3 * 3);
                 } else {
-                    writeVec2(tempV2_3, vertices, 1 * 3);
+                    writeVec2(tempV2_3, vertices, base + 1 * 3);
                     // Using tempV2_4 to update the 3rd vertex if the uv.y of
                     // the 3rd vertex is 1.
                     const uvs = this.uvs;
-                    if (uvs != null && uvs.length > 3 * 2 + 1 && uvs[3 * 2 + 1] == 1) writeVec2(tempV2_4, vertices, 3 * 3);
-                    else writeVec2(tempV2_3, vertices, 3 * 3);
-                    writeVec2(tempV2_4, vertices, 0 * 3);
+                    if (uvs != null && uvs.length > baseUV + 3 * 2 + 1 && uvs[baseUV + 3 * 2 + 1] == 1) {
+                        writeVec2(tempV2_4, vertices, base + 3 * 3);
+                    } else {
+                        writeVec2(tempV2_3, vertices, base + 3 * 3);
+                    }
+                    writeVec2(tempV2_4, vertices, base + 0 * 3);
                 }
             } else {
                 tempV2_1.subVectors(p2, center);
@@ -2209,7 +2226,7 @@ class StrokeBuilder {
                 tempV2_3.addVectors(tempV2_1, tempV2_2).add(center);
                 tempV2_4.subVectors(tempV2_2, tempV2_1).add(center);
                 if (vertices == null) return;
-                const vl = vertices.length;
+                const vl = this.currentCoordinate;
                 // Modify already existing vertices.
                 if (joinIsOnLeftSide) {
                     writeVec2(tempV2_3, vertices, vl - 1 * 3);

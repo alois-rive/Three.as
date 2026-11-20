@@ -59,12 +59,16 @@ export class PostProcessingEffects2Tests extends Tests {
                 const r = new LUT3dlLoader().parse(DL3)!;
                 expect.that(<f64>r.size).is(2);
                 const d = r.texture3D.data as Uint8Array;
-                // File entry 1 (b = 1) lands at texel (r 0, g 0, b 1) = index 4.
-                expect.that(<f64>d[4 * 4 + 2]).is(254);
-                // File entry 4 (r = 512) lands at texel index 1: 512 / 1024 * 255.
+                // File entry 1 (b = 1023) lands at texel (r 0, g 0, b 1) = index 4: 1023 / 1023 * 255 = 255.
+                expect.that(<f64>d[4 * 4 + 2]).is(255);
+                // File entry 4 (r = 512) lands at texel index 1: floor(512 / 1023 * 255) = 127.
                 expect.that(<f64>d[1 * 4]).is(127);
                 expect.that(<f64>d[3]).is(255);
                 expect.that(<f64>r.texture3D.type).is(<f64>UnsignedByteType);
+                // FloatType: max 10-bit value (1023) normalizes to exact 1.0.
+                const rf = new LUT3dlLoader().setType(FloatType).parse(DL3)!;
+                const df = rf.texture3D.data as Float32Array;
+                expect.that(<f64>df[4 * 4 + 2]).is(1.0);
             });
             test("grid errors", (expect) => {
                 const loader = new LUT3dlLoader();

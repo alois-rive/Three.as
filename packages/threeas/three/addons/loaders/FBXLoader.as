@@ -311,6 +311,7 @@ async function fetchTextureInto(loader: FBXLoader, url: string, texture: DataTex
 /// An empty texture to be filled by a decode, set up as TextureLoader's.
 function pendingTexture(): DataTexture {
     const texture = new DataTexture(new Uint8Array(0), 0, 0);
+    texture.flipY = true;
     texture.premultiplyAlpha = true;   // decoded images are premultiplied
     texture.generateMipmaps = true;
     texture.magFilter = LinearFilter;
@@ -1704,76 +1705,84 @@ class GeometryParser {
     genFace(buffers: FBXBuffers, geoInfo: FBXGeoInfo, facePositionIndexes: Array<i32>, materialIndex: i32,
             faceNormals: Array<f64>, faceColors: Array<f64>, faceUVs: Array<Array<f64>>, faceWeights: Array<f64>,
             faceWeightIndices: Array<f64>, faceLength: i32): void {
-        let triangles: Array<Array<i32>>;
-        if (faceLength > 3) {
-            const vertices: Array<Vector3> = [];
-            // in morphing scenario vertexPositions represent morphPositions
-            // while baseVertexPositions represent the original geometry's positions
-            const base = geoInfo.baseVertexPositions;
-            const positions = base != null ? base! : geoInfo.vertexPositions;
-            for (let i = 0; i < facePositionIndexes.length; i += 3) {
-                vertices.push(new Vector3(
-                    at(positions, facePositionIndexes[i]),
-                    at(positions, facePositionIndexes[i + 1]),
-                    at(positions, facePositionIndexes[i + 2])));
-            }
-            const frame = this.getNormalTangentAndBitangent(vertices);
-            const tangent = frame[1], bitangent = frame[2];
-            const triangulationInput: Array<Vector2> = [];
-            for (let i = 0; i < vertices.length; i++) triangulationInput.push(this.flattenVertex(vertices[i], tangent, bitangent));
-            // Faces not taking part in a morph flatten to points at the
-            // origin and give no triangles: hence baseVertexPositions above.
-            triangles = ShapeUtils.triangulateShape(triangulationInput, []);
-        } else {
-            // Regular triangle, skip earcut triangulation step
-            triangles = [[0, 1, 2]];
+        if (faceLength < 3) return;
+        if (faceLength == 3) {
+            // Regular triangle: emit directly without earcut or per-triangle array allocation.
+            this.emitTriangle(buffers, geoInfo, facePositionIndexes, materialIndex, faceNormals, faceColors, faceUVs,
+                faceWeights, faceWeightIndices, 0, 1, 2);
+            return;
         }
-        const positions = geoInfo.vertexPositions;
+        const vertices: Array<Vector3> = [];
+        // in morphing scenario vertexPositions represent morphPositions
+        // while baseVertexPositions represent the original geometry's positions
+        const base = geoInfo.baseVertexPositions;
+        const basePos = base != null ? base! : geoInfo.vertexPositions;
+        for (let i = 0; i < facePositionIndexes.length; i += 3) {
+            vertices.push(new Vector3(
+                at(basePos, facePositionIndexes[i]),
+                at(basePos, facePositionIndexes[i + 1]),
+                at(basePos, facePositionIndexes[i + 2])));
+        }
+        const frame = this.getNormalTangentAndBitangent(vertices);
+        const tangent = frame[1], bitangent = frame[2];
+        const triangulationInput: Array<Vector2> = [];
+        for (let i = 0; i < vertices.length; i++) triangulationInput.push(this.flattenVertex(vertices[i], tangent, bitangent));
+        // Faces not taking part in a morph flatten to points at the
+        // origin and give no triangles: hence baseVertexPositions above.
+        const triangles = ShapeUtils.triangulateShape(triangulationInput, []);
         for (let t = 0; t < triangles.length; t++) {
             const tri = triangles[t];
+            this.emitTriangle(buffers, geoInfo, facePositionIndexes, materialIndex, faceNormals, faceColors, faceUVs,
+                faceWeights, faceWeightIndices, tri[0], tri[1], tri[2]);
+        }
+    }
+
+    private emitTriangle(buffers: FBXBuffers, geoInfo: FBXGeoInfo, facePositionIndexes: Array<i32>, materialIndex: i32,
+                         faceNormals: Array<f64>, faceColors: Array<f64>, faceUVs: Array<Array<f64>>,
+                         faceWeights: Array<f64>, faceWeightIndices: Array<f64>, v0: i32, v1: i32, v2: i32): void {
+        const positions = geoInfo.vertexPositions;
+        for (let k = 0; k < 3; k++) {
+            const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+            buffers.vertex.push(at(positions, facePositionIndexes[v * 3]));
+            buffers.vertex.push(at(positions, facePositionIndexes[v * 3 + 1]));
+            buffers.vertex.push(at(positions, facePositionIndexes[v * 3 + 2]));
+        }
+        if (geoInfo.skeleton != null) {
             for (let k = 0; k < 3; k++) {
-                const v = tri[k];
-                buffers.vertex.push(at(positions, facePositionIndexes[v * 3]));
-                buffers.vertex.push(at(positions, facePositionIndexes[v * 3 + 1]));
-                buffers.vertex.push(at(positions, facePositionIndexes[v * 3 + 2]));
+                const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+                for (let c = 0; c < 4; c++) buffers.vertexWeights.push(faceWeights[v * 4 + c]);
             }
-            if (geoInfo.skeleton != null) {
-                for (let k = 0; k < 3; k++) {
-                    const v = tri[k];
-                    for (let c = 0; c < 4; c++) buffers.vertexWeights.push(faceWeights[v * 4 + c]);
-                }
-                for (let k = 0; k < 3; k++) {
-                    const v = tri[k];
-                    for (let c = 0; c < 4; c++) buffers.weightsIndices.push(faceWeightIndices[v * 4 + c]);
-                }
+            for (let k = 0; k < 3; k++) {
+                const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+                for (let c = 0; c < 4; c++) buffers.weightsIndices.push(faceWeightIndices[v * 4 + c]);
             }
-            if (geoInfo.color != null) {
-                for (let k = 0; k < 3; k++) {
-                    const v = tri[k];
-                    for (let c = 0; c < 3; c++) buffers.colors.push(faceColors[v * 3 + c]);
-                }
+        }
+        if (geoInfo.color != null) {
+            for (let k = 0; k < 3; k++) {
+                const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+                for (let c = 0; c < 3; c++) buffers.colors.push(faceColors[v * 3 + c]);
             }
-            const material = geoInfo.material;
-            if (material != null && material.mappingType != "AllSame") {
-                buffers.materialIndex.push(materialIndex);
-                buffers.materialIndex.push(materialIndex);
-                buffers.materialIndex.push(materialIndex);
+        }
+        const material = geoInfo.material;
+        if (material != null && material.mappingType != "AllSame") {
+            buffers.materialIndex.push(materialIndex);
+            buffers.materialIndex.push(materialIndex);
+            buffers.materialIndex.push(materialIndex);
+        }
+        if (geoInfo.normal != null) {
+            for (let k = 0; k < 3; k++) {
+                const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+                for (let c = 0; c < 3; c++) buffers.normal.push(faceNormals[v * 3 + c]);
             }
-            if (geoInfo.normal != null) {
-                for (let k = 0; k < 3; k++) {
-                    const v = tri[k];
-                    for (let c = 0; c < 3; c++) buffers.normal.push(faceNormals[v * 3 + c]);
-                }
-            }
-            for (let j = 0; j < geoInfo.uv.length; j++) {
-                while (buffers.uvs.length <= j) buffers.uvs.push([]);
-                const uvs = buffers.uvs[j];
-                const face = faceUVs[j];
-                for (let k = 0; k < 3; k++) {
-                    const v = tri[k];
-                    uvs.push(face[v * 2]);
-                    uvs.push(face[v * 2 + 1]);
-                }
+        }
+        for (let j = 0; j < geoInfo.uv.length; j++) {
+            while (buffers.uvs.length <= j) buffers.uvs.push([]);
+            const uvs = buffers.uvs[j];
+            const face = faceUVs[j];
+            for (let k = 0; k < 3; k++) {
+                const v = k == 0 ? v0 : k == 1 ? v1 : v2;
+                uvs.push(face[v * 2]);
+                uvs.push(face[v * 2 + 1]);
             }
         }
     }
@@ -2570,8 +2579,8 @@ export class TextParser {
             return;
         }
         if (propName == "a") {
-            // a string until it no longer ends with ",", then an array
-            if (propValue.endsWith(",")) currentNode.aText = propValue;
+            // accumulated in aLines until a line no longer ends with ",", then parsed
+            if (propValue.endsWith(",")) currentNode.aLines = [propValue];
             else currentNode.a = parseNumberArray(propValue);
         } else {
             const property = new FBXNode();
@@ -2586,11 +2595,16 @@ export class TextParser {
     parseNodePropertyContinued(line: string): void {
         const currentNode = this.getCurrentNode();
         if (currentNode == null) return;
-        currentNode.aText += line;
+        let lines = currentNode.aLines;
+        if (lines == null) {
+            lines = [];
+            currentNode.aLines = lines;
+        }
+        lines.push(line);
         // the value ends on the first line not ending in ","
         if (!line.endsWith(",")) {
-            currentNode.a = parseNumberArray(currentNode.aText);
-            currentNode.aText = "";
+            currentNode.a = parseNumberArray(lines.join(""));
+            currentNode.aLines = null;
         }
     }
 
@@ -3159,7 +3173,7 @@ export class FBXNode {
     properties: Map<string, FBXProperty> = new Map<string, FBXProperty>();
     connections: Array<FBXConnection> = [];
     /// An ASCII array still being read.
-    aText: string = "";
+    aLines: Array<string>? = null;
 
     /// The first sub node named `name`.
     node(name: string): FBXNode? {

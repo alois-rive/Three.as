@@ -60,11 +60,11 @@ export function ansReadInit(ans: AnsDecoder, data: Uint8Array, base: i32, offset
 export function rabsRead(ans: AnsDecoder, p0: u32): i32 {
     const p = ANS_P8_PRECISION - p0;
     if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-        ans.state = ans.state * ANS_IO_BASE + <u32>ans.data[ans.base + --ans.bufOffset];
+        ans.state = (ans.state << 8) | <u32>ans.data[ans.base + --ans.bufOffset];
     }
     const x = ans.state;
-    const quot = x / ANS_P8_PRECISION;
-    const rem = x % ANS_P8_PRECISION;
+    const quot = x >> 8;
+    const rem = x & 255;
     const xn = quot * p;
     const val = rem < p;
     if (val) ans.state = xn + rem;
@@ -74,7 +74,9 @@ export function rabsRead(ans: AnsDecoder, p0: u32): i32 {
 
 /// RAnsDecoder<precision_bits>: the multi-symbol rANS decoder.
 export class RAnsDecoder {
+    precisionBits: u32;
     precision: u32;
+    precisionMask: u32;
     lRansBase: u32;
     lutTable: Uint32Array = new Uint32Array(0);
     probs: Uint32Array = new Uint32Array(0);
@@ -85,7 +87,9 @@ export class RAnsDecoder {
     state: u32 = 0;
 
     constructor(precisionBits: i32) {
-        this.precision = <u32>1 << <u32>precisionBits;
+        this.precisionBits = <u32>precisionBits;
+        this.precision = <u32>1 << this.precisionBits;
+        this.precisionMask = this.precision - 1;
         this.lRansBase = this.precision * 4;
     }
 
@@ -121,10 +125,10 @@ export class RAnsDecoder {
     ransRead(): u32 {
         const d = this.data;
         while (this.state < this.lRansBase && this.bufOffset > 0) {
-            this.state = this.state * ANS_IO_BASE + <u32>d[this.base + --this.bufOffset];
+            this.state = (this.state << 8) | <u32>d[this.base + --this.bufOffset];
         }
-        const quo = this.state / this.precision;
-        const rem = this.state % this.precision;
+        const quo = this.state >> this.precisionBits;
+        const rem = this.state & this.precisionMask;
         const symbol = this.lutTable[rem];
         this.state = quo * this.probs[symbol] + rem - this.cumProbs[symbol];
         return symbol;

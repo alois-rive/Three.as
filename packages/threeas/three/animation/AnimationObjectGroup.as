@@ -55,10 +55,17 @@ export class AnimationObjectGroup extends Object3D {
 
     /// Animates `object` too (or again, if it was removed).
     override add(object: Object3D): Object3D {
+        let changed = false;
         const cached = this.cachedObjects.indexOf(object);
-        if (cached >= 0) this.cachedObjects.splice(cached, 1);
-        if (this.activeObjects.indexOf(object) < 0) this.activeObjects.push(object);
-        this.version++;
+        if (cached >= 0) {
+            this.cachedObjects.splice(cached, 1);
+            changed = true;
+        }
+        if (this.activeObjects.indexOf(object) < 0) {
+            this.activeObjects.push(object);
+            changed = true;
+        }
+        if (changed) this.version++;
         return this;
     }
 
@@ -75,11 +82,18 @@ export class AnimationObjectGroup extends Object3D {
 
     /// Forgets `object` and its bindings.
     uncache(object: Object3D): void {
+        let changed = false;
         let i = this.activeObjects.indexOf(object);
-        if (i >= 0) this.activeObjects.splice(i, 1);
+        if (i >= 0) {
+            this.activeObjects.splice(i, 1);
+            changed = true;
+        }
         i = this.cachedObjects.indexOf(object);
-        if (i >= 0) this.cachedObjects.splice(i, 1);
-        this.version++;
+        if (i >= 0) {
+            this.cachedObjects.splice(i, 1);
+            changed = true;
+        }
+        if (changed) this.version++;
     }
 
     /// Bumped on every add / remove / uncache (bindings rebuild their lists).

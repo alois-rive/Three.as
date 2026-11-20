@@ -122,8 +122,8 @@ export class LUT3dlLoader extends Loader {
             index++;
         }
         // The bit depth scales the values to [0, 1].
-        const bits = Math.ceil(Math.log2(maxValue));
-        const maxBitValue = Math.pow(2, bits);
+        const bits = maxValue > 1 ? Math.ceil(Math.log2(maxValue)) : 1;
+        const maxBitValue = Math.pow(2, bits) - 1;
         const result = new LUT3dlResult(makeTexture(points, size, this.type, maxBitValue));
         result.size = size;
         return result;

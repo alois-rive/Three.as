@@ -4,6 +4,7 @@
 import { Tests } from "rive/test";
 import * as THREE from "../three/Three";
 import { GLTFLoader, GLTFData, decodeGLTF } from "../three/addons/loaders/GLTFLoader";
+import { base64Encode } from "../three/addons/exporters/GLTFExporter";
 import { MeshoptDecoder, MeshoptDecoderModule } from "../three/addons/libs/meshopt_decoder";
 
 function find(root: THREE.Object3D, name: string): THREE.Object3D? {
@@ -187,6 +188,86 @@ export class GLTFTests extends Tests {
                 expect.that(p.getX(1)).is(1);
                 expect.that(p.getY(2)).is(1);
                 expect.that(tri.geometry.getAttribute("color")!.getZ(2)).is(1);
+            });
+            test("multi-primitive and joint-attached morph target animations bind and TANGENT attribute loads", (expect) => {
+                // Pack 3 positions (36 B), 3 morph deltas (36 B), 3 tangents VEC4 (48 B),
+                // 2 anim times [0, 1] (8 B), 2 anim weights [0, 1] (8 B) = 136 bytes.
+                const f = new Float32Array(34);
+                // positions (0..8): triangle (0,0,0), (1,0,0), (0,1,0)
+                f[3] = 1; f[7] = 1;
+                // morph delta (9..17): +1 on Z for all 3 vertices
+                f[11] = 1; f[14] = 1; f[17] = 1;
+                // tangents (18..29): (1,0,0,1), (0,1,0,-1), (0,0,1,1)
+                f[18] = 1; f[21] = 1;
+                f[23] = 1; f[25] = -1;
+                f[28] = 1; f[29] = 1;
+                // anim times (30..31): 0, 1
+                f[30] = 0; f[31] = 1;
+                // anim weights (32..33): 0, 1
+                f[32] = 0; f[33] = 1;
+                const uri = "data:application/octet-stream;base64," + base64Encode(Uint8Array.wrap(f.buffer));
+                const doc = '{"asset":{"version":"2.0"},'
+                    + '"buffers":[{"uri":"' + uri + '","byteLength":136}],'
+                    + '"bufferViews":['
+                    + '{"buffer":0,"byteOffset":0,"byteLength":36},'
+                    + '{"buffer":0,"byteOffset":36,"byteLength":36},'
+                    + '{"buffer":0,"byteOffset":72,"byteLength":48},'
+                    + '{"buffer":0,"byteOffset":120,"byteLength":8},'
+                    + '{"buffer":0,"byteOffset":128,"byteLength":8}],'
+                    + '"accessors":['
+                    + '{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},'
+                    + '{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},'
+                    + '{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"},'
+                    + '{"bufferView":3,"componentType":5126,"count":2,"type":"SCALAR"},'
+                    + '{"bufferView":4,"componentType":5126,"count":2,"type":"SCALAR"}],'
+                    + '"meshes":['
+                    + '{"primitives":['
+                    + '{"attributes":{"POSITION":0,"TANGENT":2},"targets":[{"POSITION":1}]},'
+                    + '{"attributes":{"POSITION":0},"targets":[{"POSITION":1}]}]},'
+                    + '{"primitives":[{"attributes":{"POSITION":0},"targets":[{"POSITION":1}]}]}],'
+                    + '"skins":[{"joints":[1]}],'
+                    + '"nodes":['
+                    + '{"name":"MultiFace","mesh":0},'
+                    + '{"name":"JointFace","mesh":1}],'
+                    + '"scenes":[{"nodes":[0,1]}],"scene":0,'
+                    + '"animations":[{"name":"MorphAll",'
+                    + '"samplers":[{"input":3,"output":4}],'
+                    + '"channels":['
+                    + '{"sampler":0,"target":{"node":0,"path":"weights"}},'
+                    + '{"sampler":0,"target":{"node":1,"path":"weights"}}]}]}';
+                const loader = new GLTFLoader();
+                const gltf = loader.parse(String.UTF8.encode(doc));
+                expect.that(loader.error).is("");
+                expect.that(gltf != null).is(true);
+                if (gltf == null) return;
+                // Node 0: Group holding 2 uniquely-named Mesh primitives.
+                const multi = find(gltf.scene, "MultiFace")!;
+                expect.that(multi.children.length).is(2);
+                const m0 = multi.children[0] as THREE.Mesh;
+                const m1 = multi.children[1] as THREE.Mesh;
+                expect.that(m0.name != multi.name && m1.name != multi.name && m0.name != m1.name).is(true);
+                // TANGENT attribute loaded on primitive 0.
+                const tan = m0.geometry.getAttribute("tangent");
+                expect.that(tan != null).is(true);
+                if (tan != null) {
+                    expect.that(tan.itemSize).is(4);
+                    expect.that(tan.count).is(3);
+                    expect.that(tan.getX(0) == 1 && tan.getW(0) == 1).is(true);
+                    expect.that(tan.getY(1) == 1 && tan.getW(1) == -1).is(true);
+                }
+                // Node 1: Bone (joint) holding 1 uniquely-named Mesh child.
+                const joint = find(gltf.scene, "JointFace")!;
+                expect.that(joint instanceof THREE.Bone).is(true);
+                expect.that(joint.children.length).is(1);
+                const jm = joint.children[0] as THREE.Mesh;
+                expect.that(jm.name != joint.name).is(true);
+                // Playing the clip animates BOTH multi-primitive meshes AND the joint-attached mesh!
+                const mixer = new THREE.AnimationMixer(gltf.scene);
+                mixer.clipAction(gltf.animations[0]).play();
+                mixer.update(0.5);
+                expect.that(Math.abs(m0.morphTargetInfluences[0] - 0.5) < 1e-4).is(true);
+                expect.that(Math.abs(m1.morphTargetInfluences[0] - 0.5) < 1e-4).is(true);
+                expect.that(Math.abs(jm.morphTargetInfluences[0] - 0.5) < 1e-4).is(true);
             });
         });
     }

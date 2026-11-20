@@ -143,8 +143,9 @@ export class MeshPredictionSchemeTexCoordsDecoder extends PredictionSchemeDecode
             return true;
         }
         let dataOffset = 0;
-        if (prevDataId < dataId) dataOffset = prevDataId * 2;
-        if (nextDataId < dataId) {
+        if (prevDataId < dataId) {
+            dataOffset = prevDataId * 2;
+        } else if (nextDataId < dataId) {
             dataOffset = nextDataId * 2;
         } else {
             if (dataId > 0) {

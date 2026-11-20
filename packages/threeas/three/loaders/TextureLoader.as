@@ -15,7 +15,7 @@ import { Loader } from "./Loader";
 import { LoadingManager } from "./LoadingManager";
 import { LoaderUtils } from "./LoaderUtils";
 import { fetchBytes } from "./FileLoader";
-import { LinearFilter, LinearMipmapLinearFilter } from "../constants";
+import { LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace } from "../constants";
 
 /// Fills a texture when its image decodes, and settles a promise.
 export class TextureDecodeListener extends ImageDecodeListener {
@@ -76,6 +76,7 @@ export class TextureLoader extends Loader {
         const texture = new Texture(context.image(this.path + name));
         texture.name = name;
         texture.source.url = this.path + name;
+        texture.colorSpace = SRGBColorSpace;
         if (texture.image == null) context.log("three: TextureLoader: no image asset named '" + this.path + name + "'");
         return texture;
     }
@@ -95,5 +96,6 @@ async function loadTextureAsync(loader: TextureLoader, url: string): Promise<Tex
     const texture = await decodeTexture(context, bytes, true).promise;
     texture.name = url;
     texture.source.url = resolved;
+    texture.colorSpace = SRGBColorSpace;
     return texture;
 }

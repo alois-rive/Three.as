@@ -419,6 +419,72 @@ export class GLTFExporterTests extends Tests {
                 expect.that(<i32>raw[2]).is(200);
                 expect.that(<i32>raw[3 + 4]).is(60);
                 expect.that(<i32>raw[1 + 9 + 4 + 2]).is(180);
+                // BufferView byteLength for images is unpadded (ends exactly on PNG IEND CRC).
+                expect.that(u32BE(png, png.length - 4)).is(0xAE426082);
+                // Subsequent bufferView (url image) is still 4-byte aligned.
+                const urlView = jat(jget(gltf, "bufferViews"), <i32>jnum(url, "bufferView", -1));
+                expect.that(<i32>jnum(urlView, "byteOffset", 1) % 4).is(0);
+            });
+            test("buildMetalRoughTexture honors flipY, premultiplyAlpha and /255; OrthographicCamera and insertKeyframe edge cases", (expect) => {
+                // 1x2 metalnessMap: flipY=true, premultiplyAlpha=true.
+                // Row 0: blue=255, alpha=255; Row 1: blue=64, alpha=128 (unpremultiplied => 128).
+                const mPx = new Uint8Array(8);
+                mPx[2] = 255; mPx[3] = 255;
+                mPx[6] = 64; mPx[7] = 128;
+                const metalMap = new THREE.DataTexture(mPx, 1, 2);
+                metalMap.flipY = true;
+                metalMap.premultiplyAlpha = true;
+                // 1x2 roughnessMap: flipY=false. Row 0: green=255 (exact /255 => 255), Row 1: green=100.
+                const rPx = new Uint8Array(8);
+                rPx[1] = 255; rPx[3] = 255;
+                rPx[5] = 100; rPx[7] = 255;
+                const roughMap = new THREE.DataTexture(rPx, 1, 2);
+                const mat = new THREE.MeshStandardMaterial();
+                mat.metalnessMap = metalMap;
+                mat.roughnessMap = roughMap;
+                const scene = new THREE.Scene();
+                scene.add(new THREE.Mesh(quadGeometry(), mat));
+                // OrthographicCamera with explicit name.
+                const ortho = new THREE.OrthographicCamera(-4, 4, 3, -3, 0.5, 50);
+                ortho.name = "OrthoCam";
+                scene.add(ortho);
+                const res = new GLTFExporter().parse(scene, { binary: true });
+                const gltf = res.gltf;
+                const mrInfo = jget(jget(jat(jget(gltf, "materials"), 0), "pbrMetallicRoughness"), "metallicRoughnessTexture");
+                const img = jat(jget(gltf, "images"), <i32>jnum(jat(jget(gltf, "textures"), <i32>jnum(mrInfo, "index", -1)), "source", -1));
+                const png = viewBytes(res.glb!, gltf, <i32>jnum(img, "bufferView", -1));
+                expect.that(u32BE(png, png.length - 4)).is(0xAE426082);
+                const raw = unzlibSync(png.subarray(41, 41 + <i32>u32BE(png, 33)));
+                // Row 0 of PNG (top): metalness from flipped row 1 (unpremul 128), roughness from row 0 (255).
+                expect.that(<i32>raw[1 + 1]).is(255);
+                expect.that(<i32>raw[1 + 2]).is(128);
+                // Row 1 of PNG (bottom): metalness from flipped row 0 (255), roughness from row 1 (100).
+                expect.that(<i32>raw[6 + 1]).is(100);
+                expect.that(<i32>raw[6 + 2]).is(255);
+
+                // OrthographicCamera xmag/ymag and name.
+                const cam = jat(jget(gltf, "cameras"), 0);
+                expect.that(jstr(cam, "name", "")).is("OrthoCam");
+                expect.that(jnum(jget(cam, "orthographic"), "xmag", 0)).is(4);
+                expect.that(jnum(jget(cam, "orthographic"), "ymag", 0)).is(3);
+                const reloaded = reload(res)!;
+                const rOrtho = reloaded.cameras[0] as THREE.OrthographicCamera;
+                expect.that(rOrtho.name).is("OrthoCam");
+                expect.that(rOrtho.left == -4 && rOrtho.right == 4 && rOrtho.top == 3 && rOrtho.bottom == -3).is(true);
+
+                // insertKeyframe on duplicate, unsorted, and NaN timestamps never zeroes out the track.
+                const dupTrack = new THREE.NumberKeyframeTrack("x", [0, 1, 1, 2], [10, 20, 20, 30]);
+                expect.that(GLTFExporter.Utils.insertKeyframe(dupTrack, 1.0)).is(1);
+                expect.that(dupTrack.times.length).is(4);
+                expect.that(GLTFExporter.Utils.insertKeyframe(dupTrack, NaN)).is(-1);
+                expect.that(dupTrack.times.length).is(4);
+                expect.that(<f64>dupTrack.values[3]).is(30);
+                const unsTrack = new THREE.NumberKeyframeTrack("x", [0, 2, 1], [10, 30, 20]);
+                const idx = GLTFExporter.Utils.insertKeyframe(unsTrack, 0.5);
+                expect.that(idx).is(1);
+                expect.that(unsTrack.times.length).is(4);
+                expect.that(<f64>unsTrack.values[0]).is(10);
+                expect.that(<f64>unsTrack.values[2]).is(30);
             });
             test("userData as extras, custom extensions and plugins", (expect) => {
                 const scene = new THREE.Scene();
