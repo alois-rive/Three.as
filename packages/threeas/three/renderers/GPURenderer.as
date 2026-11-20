@@ -45,6 +45,7 @@ import { clock } from "rive/os";
 
 import { Object3D } from "../core/Object3D";
 import { BufferGeometry, GeometryGroup, disposedGeometries } from "../core/BufferGeometry";
+import { disposedMaterials } from "../materials/Material";
 import { BufferAttribute } from "../core/BufferAttribute";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
@@ -731,12 +732,12 @@ export class GPURenderer {
     private arenaU32: Uint32Array = new Uint32Array(0);
     private arenaCapacity: i32 = 0;
     private slotCount: i32 = 0;
-    // Draw states and material entries that have not been drawn for a while
-    // are evicted (sweepStale): their bind groups are released and their
-    // arena slots reused. Without it every object and material ever drawn
-    // kept its state, bind groups and arena slot, so a scene that keeps
-    // making new objects (clones, per-level copies) leaked GPU handles and
-    // memory.
+    // Per-object draw states (an arena slot, and a bind group for skinned
+    // draws) are freed by releaseObject, or else once the object has not
+    // been drawn for STALE_RENDERS render calls (sweepStale): three.js keeps
+    // that state in WeakMaps that garbage collection clears, and AnimaScript
+    // has no weak references. Freed arena slots are reused. Materials are
+    // freed by Material.dispose(), as three.js.
     private freeSlots: Array<i32> = [];
     private lastSweep: i32 = 0;
     private slotDirty: Uint8Array = new Uint8Array(0);
@@ -2391,32 +2392,48 @@ export class GPURenderer {
         return s;
     }
 
-    /// Evicts draw states and material entries unused for STALE_FRAMES render
-    /// calls (render calls, not display frames: each pass counts).
+    /// Frees per-object draw states not drawn for STALE_RENDERS render calls
+    /// (render calls, not displayed frames: each pass counts).
     private sweepStale(frame: i32): void {
         if (frame - this.lastSweep < 600) return;
         this.lastSweep = frame;
-        const STALE_FRAMES = 4000;
+        const STALE_RENDERS = 4000;
         const keys = this.states.keys();
         for (let i = 0; i < keys.length; i++) {
             const st = this.states.get(keys[i]);
-            if (st.frame < 0 || frame - st.frame < STALE_FRAMES) continue;
-            if (st.slot >= 0) this.freeSlots.push(st.slot);
-            const og = st.objGroup;
-            if (og != null && og !== this.arenaGroup) og.release();
-            st.objGroup = null;
-            st.entry = null;
-            this.states.delete(keys[i]);
+            if (st.frame < 0 || frame - st.frame < STALE_RENDERS) continue;
+            this.freeState(keys[i], st);
         }
-        const ids = this.materialEntries.keys();
-        for (let i = 0; i < ids.length; i++) {
-            const entry = this.materialEntries.get(ids[i]);
-            let latest = -1;
-            for (let v = 0; v < 8; v++) {
-                const b = unchecked(entry.blocks[v]);
-                if (b != null && b.frame > latest) latest = b.frame;
-            }
-            if (latest < 0 || frame - latest < STALE_FRAMES) continue;
+    }
+
+    private freeState(key: i32, st: DrawState): void {
+        if (st.slot >= 0) this.freeSlots.push(st.slot);
+        const og = st.objGroup;
+        if (og != null && og !== this.arenaGroup) og.release();
+        st.objGroup = null;
+        st.entry = null;
+        this.states.delete(key);
+    }
+
+    /// Rive-only: frees the draw state of `object` (and, with `recursive`, of
+    /// its descendants) now, for code that drops objects it will not draw
+    /// again; it is rebuilt if the object is drawn later. Without it the
+    /// state goes once the object has not been drawn for a while.
+    releaseObject(object: Object3D, recursive: bool = true): void {
+        const base = object.id * 64;
+        for (let part = 0; part < 64; part++) {
+            const key = base + part;
+            if (this.states.has(key)) this.freeState(key, this.states.get(key));
+        }
+        if (!recursive) return;
+        const children = object.children;
+        for (let i = 0; i < children.length; i++) this.releaseObject(children[i], true);
+    }
+
+    /// Frees what the renderer holds for disposed materials.
+    private releaseMaterial(id: i32): void {
+        if (this.materialEntries.has(id)) {
+            const entry = this.materialEntries.get(id);
             for (let v = 0; v < 8; v++) {
                 const b = unchecked(entry.blocks[v]);
                 if (b == null) continue;
@@ -2428,13 +2445,15 @@ export class GPURenderer {
                 b.samplerGroup = null;
                 unchecked(entry.blocks[v] = null);
             }
-            this.materialEntries.delete(ids[i]);
+            this.materialEntries.delete(id);
         }
-        // Live states must not keep an evicted entry.
-        const live = this.states.values();
-        for (let i = 0; i < live.length; i++) {
-            const e = live[i].entry;
-            if (e != null && !this.materialEntries.has(e.material.id)) live[i].entry = null;
+        if (this.customUniforms.has(id)) {
+            const cu = this.customUniforms.get(id);
+            const g = cu.group;
+            if (g != null) g.release();
+            const b = cu.buffer;
+            if (b != null) b.release();
+            this.customUniforms.delete(id);
         }
     }
 
@@ -2454,6 +2473,16 @@ export class GPURenderer {
         disposedGeometries.length = 0;
         for (let i = 0; i < disposedTextures.length; i++) this.textures.dispose(disposedTextures[i]);
         disposedTextures.length = 0;
+        if (disposedMaterials.length > 0) {
+            for (let i = 0; i < disposedMaterials.length; i++) this.releaseMaterial(disposedMaterials[i]);
+            // Draw states must not keep a freed entry.
+            const states = this.states.values();
+            for (let i = 0; i < states.length; i++) {
+                const e = states[i].entry;
+                if (e != null && !this.materialEntries.has(e.material.id)) states[i].entry = null;
+            }
+            disposedMaterials.length = 0;
+        }
     }
 
     // ---------------------------------------------------------------- collect

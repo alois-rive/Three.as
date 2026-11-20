@@ -20,6 +20,10 @@ import {
 let _materialId: i32 = 0;
 const _scratch = new MaterialUniforms();
 
+
+/// Materials disposed since the last render (ids), drained by GPURenderer.
+export const disposedMaterials: Array<i32> = [];
+
 export class MaterialParameters {
     name: string = "";
     side: i32 = FrontSide;
@@ -306,8 +310,12 @@ export class Material extends EventDispatcher {
         return this;
     }
 
-    /// Nothing to free: pipelines are shared by the renderer.
+    /// Frees the renderer's state for this material (its bind groups and,
+    /// for a ShaderMaterial, its uniform buffer) at the next render, as
+    /// three.js. Pipelines are shared and stay. A disposed material that is
+    /// drawn again is prepared again.
     dispose(): void {
+        disposedMaterials.push(this.id);
         if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }
