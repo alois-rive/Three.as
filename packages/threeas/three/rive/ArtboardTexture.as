@@ -140,6 +140,7 @@ export class ArtboardTexture extends Texture {
             this.drawnVersion = -1;
         } else if (canvas.width != w || canvas.height != h) {
             if (!canvas.resize(w, h)) return;
+            this.image = canvas.image;
             this.drawnVersion = -1;
         }
         if (this.drawnVersion == this.version) return;

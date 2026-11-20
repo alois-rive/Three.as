@@ -41,8 +41,8 @@ export class Object3D extends EventDispatcher {
     readonly quaternion: Quaternion;
     readonly scale: Vector3 = new Vector3(1, 1, 1);
 
-    readonly modelViewMatrix: Matrix4 = new Matrix4();
-    readonly normalMatrix: Matrix3 = new Matrix3();
+    private _cachedModelViewMatrix: Matrix4? = null;
+    private _cachedNormalMatrix: Matrix3? = null;
     /// The local transform (position, quaternion, scale while
     /// matrixAutoUpdate).
     matrix: Matrix4 = new Matrix4();
@@ -90,6 +90,24 @@ export class Object3D extends EventDispatcher {
         return this._uuid;
     }
     set uuid(value: string) { this._uuid = value; }
+
+    get modelViewMatrix(): Matrix4 {
+        let m = this._cachedModelViewMatrix;
+        if (m == null) {
+            m = new Matrix4();
+            this._cachedModelViewMatrix = m;
+        }
+        return m!;
+    }
+
+    get normalMatrix(): Matrix3 {
+        let m = this._cachedNormalMatrix;
+        if (m == null) {
+            m = new Matrix3();
+            this._cachedNormalMatrix = m;
+        }
+        return m!;
+    }
 
     /// Anything JSON can hold, as three.js's userData: a `Dynamic` table
     /// (`object.userData.set("hp", Dynamic.fromNumber(3))`), written by
@@ -195,6 +213,7 @@ export class Object3D extends EventDispatcher {
 
     /// Adds `object` as a child, keeping its world transform.
     attach(object: Object3D): Object3D {
+        if (object === this) return this;
         this.updateWorldMatrix(true, false);
         _m1.copy(this.matrixWorld).invert();
         const p = object.parent;
@@ -427,6 +446,7 @@ export class Object3D extends EventDispatcher {
         this.name = source.name;
         this.up.copy(source.up);
         this.position.copy(source.position);
+        if (this.rotation.order != source.rotation.order) this.rotation.order = source.rotation.order;
         this.quaternion.copy(source.quaternion);
         this.scale.copy(source.scale);
         this.matrix.copy(source.matrix);

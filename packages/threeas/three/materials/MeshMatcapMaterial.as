@@ -89,4 +89,28 @@ export class MeshMatcapMaterial extends Material {
         u.displacementBias = this.displacementBias;
         u.normalMapType = this.normalMapType;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshMatcapMaterial) {
+            const s = source as MeshMatcapMaterial;
+            this.color.copy(s.color);
+            this.matcap = s.matcap;
+            this.map = s.map;
+            this.normalMap = s.normalMap;
+            this.normalScale.copy(s.normalScale);
+            this.alphaMap = s.alphaMap;
+            this.bumpMap = s.bumpMap;
+            this.bumpScale = s.bumpScale;
+            this.displacementMap = s.displacementMap;
+            this.displacementScale = s.displacementScale;
+            this.displacementBias = s.displacementBias;
+            this.normalMapType = s.normalMapType;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshMatcapMaterial().copy(this);
+    }
 }

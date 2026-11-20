@@ -16,6 +16,14 @@ export class MeshDistanceMaterialParameters extends MaterialParameters {
     displacementMap: Texture? = null;
     displacementScale: f64 = 1;
     displacementBias: f64 = 0;
+    referencePosition: Vector3 = new Vector3();
+    nearDistance: f64 = 1;
+    farDistance: f64 = 1000;
+
+    constructor() {
+        super();
+        this.fog = false;
+    }
 }
 
 export class MeshDistanceMaterial extends Material {
@@ -42,6 +50,7 @@ export class MeshDistanceMaterial extends Material {
     constructor(parameters: MeshDistanceMaterialParameters? = null) {
         super();
         this.type = "MeshDistanceMaterial";
+        this.fog = false;
         if (parameters != null) {
             this.setValues(parameters);
             this.map = parameters.map;
@@ -49,12 +58,16 @@ export class MeshDistanceMaterial extends Material {
             this.displacementMap = parameters.displacementMap;
             this.displacementScale = parameters.displacementScale;
             this.displacementBias = parameters.displacementBias;
+            this.referencePosition.copy(parameters.referencePosition);
+            this.nearDistance = parameters.nearDistance;
+            this.farDistance = parameters.farDistance;
         }
     }
 
     override fillUniforms(u: MaterialUniforms): void {
         super.fillUniforms(u);
         u.kind = KIND_DISTANCE;
+        u.fog = false;
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_ALPHA] = this.alphaMap;
         u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
@@ -65,5 +78,25 @@ export class MeshDistanceMaterial extends Material {
         u.referenceZ = this.referencePosition.z;
         u.nearDistance = this.nearDistance;
         u.farDistance = this.farDistance;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshDistanceMaterial) {
+            const s = source as MeshDistanceMaterial;
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+            this.displacementMap = s.displacementMap;
+            this.displacementScale = s.displacementScale;
+            this.displacementBias = s.displacementBias;
+            this.referencePosition.copy(s.referencePosition);
+            this.nearDistance = s.nearDistance;
+            this.farDistance = s.farDistance;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshDistanceMaterial().copy(this);
     }
 }

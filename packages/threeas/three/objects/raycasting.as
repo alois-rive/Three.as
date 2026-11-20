@@ -15,6 +15,7 @@ import { Sprite } from "./Sprite";
 import { SkinnedMesh } from "./SkinnedMesh";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
 import { Ray } from "../math/Ray";
+import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
 import { Matrix4 } from "../math/Matrix4";
 import { Vector2 } from "../math/Vector2";
@@ -45,28 +46,37 @@ export function raycastAnyHit(): bool { return _anyHit; }
 // ----------------------------------------------------------------- meshes
 
 export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<Intersection>,
-                            matrixWorld: Matrix4, instanceId: i32): void {
+                            matrixWorld: Matrix4, instanceId: i32,
+                            boundingSphere: Sphere? = null, boundingBox: Box3? = null,
+                            useBVH: bool = true, skipSphere: bool = false): void {
     const geometry = mesh.geometry;
     const skinned = mesh instanceof SkinnedMesh;
-    if (skinned) {
-        const sm = mesh as SkinnedMesh;
-        if (sm.boundingSphere == null) sm.computeBoundingSphere();
-        _sphere.copy(sm.boundingSphere!).applyMatrix4(matrixWorld);
-    } else {
-        if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
-        _sphere.copy(geometry.boundingSphere!).applyMatrix4(matrixWorld);
-    }
-    _ray.copy(raycaster.ray).recast(raycaster.near);
-    if (!_sphere.containsPoint(_ray.origin)) {
-        if (_ray.intersectSphere(_sphere, _hitAt) == null) return;
-        const range = raycaster.far - raycaster.near;
-        if (_ray.origin.distanceToSquared(_hitAt) > range * range) return;
+    if (!skipSphere) {
+        if (boundingSphere != null) {
+            if (boundingSphere.isEmpty()) return;
+            _sphere.copy(boundingSphere).applyMatrix4(matrixWorld);
+        } else if (skinned) {
+            const sm = mesh as SkinnedMesh;
+            if (sm.boundingSphere == null) sm.computeBoundingSphere();
+            if (sm.boundingSphere!.isEmpty()) return;
+            _sphere.copy(sm.boundingSphere!).applyMatrix4(matrixWorld);
+        } else {
+            if (geometry.boundingSphere == null) geometry.computeBoundingSphere();
+            if (geometry.boundingSphere!.isEmpty()) return;
+            _sphere.copy(geometry.boundingSphere!).applyMatrix4(matrixWorld);
+        }
+        _ray.copy(raycaster.ray).recast(raycaster.near);
+        if (!_sphere.containsPoint(_ray.origin)) {
+            if (_ray.intersectSphere(_sphere, _hitAt) == null) return;
+            const range = raycaster.far - raycaster.near;
+            if (_ray.origin.distanceToSquared(_hitAt) > range * range) return;
+        }
     }
     _inverse.copy(matrixWorld).invert();
     _ray.copy(raycaster.ray).applyMatrix4(_inverse);
     // A skinned mesh's own (posed) box when computed, as three.js.
-    const box = skinned ? (mesh as SkinnedMesh).boundingBox : geometry.boundingBox;
-    if ((skinned || mesh.morphTargetInfluences.length == 0) && box != null && !_ray.intersectsBox(box)) return;
+    const box = boundingBox != null ? boundingBox : skinned ? (mesh as SkinnedMesh).boundingBox : geometry.boundingBox;
+    if ((boundingBox != null || skinned || mesh.morphTargetInfluences.length == 0) && box != null && !_ray.intersectsBox(box)) return;
 
     const position = geometry.getAttribute("position");
     if (position == null) return;
@@ -81,7 +91,7 @@ export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<
     const deforming = skinned || mesh.morphTargetInfluences.length > 0;
     let tree: GeometryBVH? = null;
     let treeCount = 0;
-    if (!deforming && rangeStart % 3 == 0 && (mesh.materials.length == 0 || groupsAligned(groups))) {
+    if (useBVH && !deforming && rangeStart % 3 == 0 && (mesh.materials.length == 0 || groupsAligned(groups))) {
         tree = GeometryBVH.forRaycast(geometry, count);
         if (tree != null) treeCount = tree.query(_ray);
         else if (_anyHit && GeometryBVH.pending(geometry)) {

@@ -151,4 +151,41 @@ export class MeshPhongMaterial extends Material {
         u.reflectivity = this.reflectivity;
         u.refractionRatio = this.refractionRatio;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshPhongMaterial) {
+            const s = source as MeshPhongMaterial;
+            this.color.copy(s.color);
+            this.specular.copy(s.specular);
+            this.shininess = s.shininess;
+            this.map = s.map;
+            this.specularMap = s.specularMap;
+            this.emissive.copy(s.emissive);
+            this.emissiveIntensity = s.emissiveIntensity;
+            this.emissiveMap = s.emissiveMap;
+            this.normalMap = s.normalMap;
+            this.normalScale.copy(s.normalScale);
+            this.aoMap = s.aoMap;
+            this.aoMapIntensity = s.aoMapIntensity;
+            this.alphaMap = s.alphaMap;
+            this.lightMap = s.lightMap;
+            this.lightMapIntensity = s.lightMapIntensity;
+            this.bumpMap = s.bumpMap;
+            this.bumpScale = s.bumpScale;
+            this.displacementMap = s.displacementMap;
+            this.displacementScale = s.displacementScale;
+            this.displacementBias = s.displacementBias;
+            this.normalMapType = s.normalMapType;
+            this.envMap = s.envMap;
+            this.combine = s.combine;
+            this.reflectivity = s.reflectivity;
+            this.refractionRatio = s.refractionRatio;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshPhongMaterial().copy(this);
+    }
 }

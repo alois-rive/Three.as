@@ -439,7 +439,7 @@ export class ObjectLoaderTests extends Tests {
                 expect.that(quad.name).is("quad");
                 expect.that(quad.morphAttributes.get("position").length).is(1);
                 expect.that(quad.morphAttributes.get("position")[0].name).is("bulge");
-                expect.that(near(quad.boundingSphere!.radius, Math.SQRT2 / 2)).is(true);
+                expect.that(near(quad.boundingSphere!.radius, Math.sqrt(3) / 2)).is(true);
                 expect.that(multi.morphTargetInfluences.length).is(1);
                 expect.that(multi.materials.length).is(2);
                 expect.that(multi.materials[1] instanceof THREE.MeshLambertMaterial).is(true);

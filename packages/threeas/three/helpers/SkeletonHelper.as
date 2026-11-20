@@ -20,6 +20,7 @@ function collectBones(o: Object3D, out: Array<Bone>): void {
 }
 
 export class SkeletonHelper extends LineSegments {
+    readonly isSkeletonHelper: bool = true;
     root: Object3D;
     bones: Array<Bone> = [];
 
@@ -46,6 +47,7 @@ export class SkeletonHelper extends LineSegments {
         this.bones = bones;
         this.matrix = object.matrixWorld;
         this.matrixAutoUpdate = false;
+        this.frustumCulled = false;
     }
 
     override updateMatrixWorld(force: bool = false): void {

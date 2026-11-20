@@ -133,11 +133,10 @@ export function decodeCompressed(format: i32, data: Uint8Array, width: i32, heig
     return out;
 }
 
-/// What decodeCompressedJob hands back: every level's RGBA back to back.
+/// What decodeCompressedJob hands back: one RGBA buffer per mip level.
 export class DecodedLevels {
     error: string = "";
-    data: Uint8Array = new Uint8Array(0);
-    offsets: Int32Array = new Int32Array(0);
+    levels: Array<Uint8Array> = [];
 }
 
 /// The job behind CompressedTexture's CPU fallback for large textures:
@@ -148,26 +147,16 @@ export class DecodedLevels {
     const result = new DecodedLevels();
     const bytes = Uint8Array.wrap(data);
     const n = offsets.length;
-    const parts: Array<Uint8Array> = [];
-    let total = 0;
     for (let i = 0; i < n; i++) {
         const end = i + 1 < n ? offsets[i + 1] : bytes.length;
         const level = decodeCompressed(format, bytes.subarray(offsets[i], max<i32>(offsets[i], end)), widths[i],
             heights[i], srgb);
         if (level == null) {
             result.error = "format " + format.toString() + " cannot be decoded";
+            result.levels = [];
             return result;
         }
-        parts.push(level!);
-        total += level!.length;
-    }
-    result.data = new Uint8Array(total);
-    result.offsets = new Int32Array(n);
-    let o = 0;
-    for (let i = 0; i < n; i++) {
-        result.offsets[i] = o;
-        result.data.set(parts[i], o);
-        o += parts[i].length;
+        result.levels.push(level!);
     }
     return result;
 }

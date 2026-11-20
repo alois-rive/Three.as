@@ -4,9 +4,11 @@ import { Expect, Tests } from "rive/test";
 import { Vector3 } from "../three/math/Vector3";
 import { Quaternion } from "../three/math/Quaternion";
 import { Euler } from "../three/math/Euler";
+import { Matrix3 } from "../three/math/Matrix3";
 import { Matrix4 } from "../three/math/Matrix4";
 import { Color } from "../three/math/Color";
 import { Object3D } from "../three/core/Object3D";
+import { Float32BufferAttribute } from "../three/core/BufferAttribute";
 import { PerspectiveCamera } from "../three/cameras/PerspectiveCamera";
 import { BoxGeometry } from "../three/geometries/BoxGeometry";
 import { SphereGeometry } from "../three/geometries/SphereGeometry";
@@ -142,6 +144,38 @@ export class MathTests extends Tests {
                 expect.that(v.z).lessThan(1);
                 const nearPlane = new Vector3(0, 0, 4).project(camera);
                 near(expect, nearPlane.z, 0);
+            });
+            test("lazy modelViewMatrix/normalMatrix, copyTransform rotation.order, self-attach guard", (expect) => {
+                const a = new Object3D();
+                const mv1 = a.modelViewMatrix, mv2 = a.modelViewMatrix;
+                const nm1 = a.normalMatrix, nm2 = a.normalMatrix;
+                expect.that(mv1 === mv2).is(true);
+                expect.that(nm1 === nm2).is(true);
+                expect.that(<f64>mv1.elements[0]).is(1);
+                expect.that(nm1.elements[0]).is(1);
+
+                a.rotation.set(0.2, 0.5, -0.3, "YXZ");
+                const b = new Object3D();
+                b.copyTransform(a);
+                expect.that(b.rotation.order).is("YXZ");
+                near(expect, b.rotation.x, 0.2);
+                near(expect, b.rotation.y, 0.5);
+                near(expect, b.rotation.z, -0.3);
+
+                a.attach(a);
+                expect.that(a.parent == null).is(true);
+                expect.that(<f64>a.children.length).is(0);
+            });
+            test("BufferAttribute.applyMatrix3 transforms 2D UV attributes without OOB", (expect) => {
+                const uv = new Float32BufferAttribute([0, 0, 1, 0, 0.5, 0.5], 2);
+                const m = new Matrix3().setUvTransform(0.25, 0.5, 2, 3, 0, 0, 0);
+                uv.applyMatrix3(m);
+                near(expect, uv.getX(0), 0.25);
+                near(expect, uv.getY(0), 0.5);
+                near(expect, uv.getX(1), 2.25);
+                near(expect, uv.getY(1), 0.5);
+                near(expect, uv.getX(2), 1.25);
+                near(expect, uv.getY(2), 2.0);
             });
         });
 

@@ -125,9 +125,9 @@ export class ExtrudeGeometry extends BufferGeometry {
         const holes = shapePoints.holes;
         if (!ShapeUtils.isClockWise(vertices)) {
             vertices = vertices.reverse();
-            for (let h = 0; h < holes.length; h++) {
-                if (ShapeUtils.isClockWise(holes[h])) holes[h] = holes[h].reverse();
-            }
+        }
+        for (let h = 0; h < holes.length; h++) {
+            if (ShapeUtils.isClockWise(holes[h])) holes[h] = holes[h].reverse();
         }
         const faces = ShapeUtils.triangulateShape(vertices, holes);
         const contour = vertices;

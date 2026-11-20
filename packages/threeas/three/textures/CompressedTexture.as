@@ -166,9 +166,17 @@ export class CompressedTexture extends Texture {
     /// draw anyway. KTX2Loader calls it for the textures it marks
     /// `cpuDecode`. Does nothing unless `cpuDecode` is set.
     startDecode(): void {
-        if (!this.cpuDecode || this.format == RGBAFormat || this.mipmaps.length == 0) return;
+        if (!this.cpuDecode || this.format == RGBAFormat || this.mipmaps.length == 0
+                || this.dataWidth == 0 || this.dataHeight == 0) return;
         if (this.uploadedVersion == this.version || (this.job != null && this.jobVersion == this.version)) return;
         if (this.texelCount() > CPU_DECODE_SYNC_TEXELS) this.startJob();
+    }
+
+    private cancelJob(): void {
+        const old = this.job;
+        if (old != null) old.release();
+        this.job = null;
+        this.jobVersion = -1;
     }
 
     private texelCount(): i32 {
@@ -178,15 +186,20 @@ export class CompressedTexture extends Texture {
     }
 
     override update(context: Context): void {
-        if (this.mipmaps.length == 0) return;
-        if (this.job != null) this.pollJob(context);
+        if (this.mipmaps.length == 0 || this.dataWidth == 0 || this.dataHeight == 0) return;
         if (this.uploadedVersion == this.version) return;
+        if (this.job != null) {
+            this.pollJob(context);
+            if (this.uploadedVersion == this.version) return;
+        }
         if (this.format == RGBAFormat) {
+            this.cancelJob();
             this.uploadLevels(this.mipmaps, this.type == HalfFloatType);
             return;
         }
         if (!this.cpuDecode && gpuSamplesCompressed(context, this.format)
                 && this.dataWidth % blockWidth(this.format) == 0 && this.dataHeight % blockHeight(this.format) == 0) {
+            this.cancelJob();
             this.uploadBlocks();
             return;
         }
@@ -195,6 +208,7 @@ export class CompressedTexture extends Texture {
             this.startJob();
             return;
         }
+        this.cancelJob();
         const start = clock();
         const levels = this.decompress();
         if (levels.length == 0) {
@@ -242,7 +256,7 @@ export class CompressedTexture extends Texture {
         if (job.running) return;
         const settled = job.peek();
         this.job = null;
-        if (this.jobVersion != this.version) {   // the texture changed meanwhile: decode again
+        if (this.jobVersion != this.version || this.uploadedVersion == this.version) {
             job.release();
             return;
         }
@@ -255,10 +269,8 @@ export class CompressedTexture extends Texture {
         }
         const d = settled.value;
         const levels: Array<CompressedMipmap> = [];
-        for (let l = 0; l < this.mipmaps.length; l++) {
-            const end = l + 1 < d.offsets.length ? d.offsets[l + 1] : d.data.length;
-            levels.push(new CompressedMipmap(d.data.subarray(d.offsets[l], end), this.mipmaps[l].width,
-                this.mipmaps[l].height));
+        for (let l = 0; l < this.mipmaps.length && l < d.levels.length; l++) {
+            levels.push(new CompressedMipmap(d.levels[l], this.mipmaps[l].width, this.mipmaps[l].height));
         }
         this.uploadLevels(levels, decodesToHalfFloat(this.format));
         job.release();

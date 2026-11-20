@@ -61,4 +61,21 @@ export class SpriteMaterial extends Material {
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_ALPHA] = this.alphaMap;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof SpriteMaterial) {
+            const s = source as SpriteMaterial;
+            this.color.copy(s.color);
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+            this.rotation = s.rotation;
+            this.sizeAttenuation = s.sizeAttenuation;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new SpriteMaterial().copy(this);
+    }
 }

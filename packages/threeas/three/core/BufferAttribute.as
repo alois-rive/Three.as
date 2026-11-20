@@ -3,6 +3,7 @@
 
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
+import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
 import { Dynamic } from "rive/dynamic";
 import { Blob } from "rive/shared";
@@ -109,9 +110,16 @@ export class BufferAttribute {
     }
 
     applyMatrix3(m: Matrix3): BufferAttribute {
-        for (let i = 0, l = this.count; i < l; i++) {
-            _v.set(this.getX(i), this.getY(i), this.getZ(i)).applyMatrix3(m);
-            this.setXYZ(i, _v.x, _v.y, _v.z);
+        if (this.itemSize == 2) {
+            for (let i = 0, l = this.count; i < l; i++) {
+                _v2.set(this.getX(i), this.getY(i)).applyMatrix3(m);
+                this.setXY(i, _v2.x, _v2.y);
+            }
+        } else if (this.itemSize == 3) {
+            for (let i = 0, l = this.count; i < l; i++) {
+                _v.set(this.getX(i), this.getY(i), this.getZ(i)).applyMatrix3(m);
+                this.setXYZ(i, _v.x, _v.y, _v.z);
+            }
         }
         return this;
     }
@@ -194,3 +202,4 @@ export class Uint16BufferAttribute extends Uint32BufferAttribute {
 }
 
 const _v: Vector3 = new Vector3();
+const _v2: Vector2 = new Vector2();

@@ -19,6 +19,11 @@ export class MeshNormalMaterialParameters extends MaterialParameters {
     displacementScale: f64 = 1;
     displacementBias: f64 = 0;
     normalMapType: i32 = TangentSpaceNormalMap;
+
+    constructor() {
+        super();
+        this.fog = false;
+    }
 }
 
 export class MeshNormalMaterial extends Material {
@@ -68,5 +73,25 @@ export class MeshNormalMaterial extends Material {
         u.displacementScale = this.displacementScale;
         u.displacementBias = this.displacementBias;
         u.normalMapType = this.normalMapType;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshNormalMaterial) {
+            const s = source as MeshNormalMaterial;
+            this.normalMap = s.normalMap;
+            this.normalScale.copy(s.normalScale);
+            this.bumpMap = s.bumpMap;
+            this.bumpScale = s.bumpScale;
+            this.displacementMap = s.displacementMap;
+            this.displacementScale = s.displacementScale;
+            this.displacementBias = s.displacementBias;
+            this.normalMapType = s.normalMapType;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshNormalMaterial().copy(this);
     }
 }

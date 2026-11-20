@@ -129,6 +129,7 @@ export class RiveRig {
     /// Maps Rive node `name` onto `object`; false when the artboard has no
     /// such (exported) node.
     map(name: string, object: Object3D, mode: i32 = RiveRig.RELATIVE): RiveNodeMapping? {
+        if (this.disposed) return null;
         const node = this.artboard.node(name);
         if (node == null) {
             if (this.missing.indexOf(name) < 0) this.missing.push(name);
@@ -163,6 +164,8 @@ export class RiveRig {
         if (this.disposed) return false;
         const a = this.artboard.animation(name);
         if (a == null) return false;
+        const prev = this.animation;
+        if (prev != null) prev.release();
         this.animation = a;
         this.animationName = name;
         this.time = 0;
@@ -173,6 +176,8 @@ export class RiveRig {
 
     /// Stops a played timeline: the state machine poses the artboard again.
     stop(): void {
+        const prev = this.animation;
+        if (prev != null) prev.release();
         this.animation = null;
         this.animationName = "";
     }
@@ -199,6 +204,7 @@ export class RiveRig {
 
     /// Poses every mapped object from its node as the artboard stands.
     apply(): void {
+        if (this.disposed) return;
         for (let i = 0; i < this.mappings.length; i++) this.applyMapping(this.mappings[i]);
     }
 
@@ -231,7 +237,7 @@ export class RiveRig {
     /// after the object, which needs a name the mixer can find). The rig is
     /// left posed as before. Null when there is no such timeline.
     bake(name: string, fps: f64 = 30, clipName: string = ""): AnimationClip? {
-        if (this.disposed) return null;
+        if (this.disposed || !(fps > 0)) return null;
         const a = this.artboard.animation(name);
         if (a == null) return null;
         const duration = a.duration;

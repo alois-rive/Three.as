@@ -88,13 +88,16 @@ export class Raycaster {
 
     /// A ray from `camera` through `coords` (x and y in [-1, 1], y up).
     setFromCamera(coords: Vector2, camera: Camera): void {
-        camera.updateMatrixWorld();
+        camera.updateWorldMatrix(true, false);
         if (camera instanceof PerspectiveCamera) {
             this.ray.origin.setFromMatrixPosition(camera.matrixWorld);
             this.ray.direction.set(coords.x, coords.y, 0.5).unproject(camera).sub(this.ray.origin).normalize();
         } else if (camera instanceof OrthographicCamera) {
-            // On the near plane (depth 0 in [0, 1] clip space).
-            this.ray.origin.set(coords.x, coords.y, 0).unproject(camera);
+            const o = camera as OrthographicCamera;
+            // Origin in the camera plane (z_cam = 0 in [0, 1] WebGPU depth:
+            // z_ndc = -near / (far - near) = near / (near - far)).
+            const z = o.near != o.far ? o.near / (o.near - o.far) : 0;
+            this.ray.origin.set(coords.x, coords.y, z).unproject(camera);
             this.ray.direction.set(0, 0, -1).transformDirection(camera.matrixWorld);
         }
         this.camera = camera;

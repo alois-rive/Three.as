@@ -17,6 +17,11 @@ export class MeshDepthMaterialParameters extends MaterialParameters {
     displacementMap: Texture? = null;
     displacementScale: f64 = 1;
     displacementBias: f64 = 0;
+
+    constructor() {
+        super();
+        this.fog = false;
+    }
 }
 
 export class MeshDepthMaterial extends Material {
@@ -64,5 +69,23 @@ export class MeshDepthMaterial extends Material {
         u.roles[ROLE_DISPLACEMENT] = this.displacementMap;
         u.displacementScale = this.displacementScale;
         u.displacementBias = this.displacementBias;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshDepthMaterial) {
+            const s = source as MeshDepthMaterial;
+            this.depthPacking = s.depthPacking;
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+            this.displacementMap = s.displacementMap;
+            this.displacementScale = s.displacementScale;
+            this.displacementBias = s.displacementBias;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshDepthMaterial().copy(this);
     }
 }
