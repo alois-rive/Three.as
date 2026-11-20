@@ -157,7 +157,9 @@ export class ObjectLoader extends Loader {
     parse<T>(json: T): Object3D? {
         const data = this.document<T>(json);
         if (data == null) return null;
-        return this.parseDocument(data!, this.parseImages(jget(data, "images")));
+        const object = this.parseDocument(data!, this.parseImages(jget(data, "images")));
+        this.decodes = [];
+        return object;
     }
 
     /// As parse, resolving once every image is decoded.
@@ -189,7 +191,18 @@ export class ObjectLoader extends Loader {
         const skeletons = this.parseSkeletons(jget(json, "skeletons"), object);
         this.bindSkeletons(object, skeletons);
         this.bindLightTargets(object);
+        this.clearTransient();
         return object;
+    }
+
+    private clearTransient(): void {
+        this.objects.clear();
+        this.targetLights.length = 0;
+        this.targetUuids.length = 0;
+        this.skinnedMeshes.length = 0;
+        this.skeletonUuids.length = 0;
+        this.lodLevels.length = 0;
+        this.lodJSON.length = 0;
     }
 
     parseShapes(json: Dynamic?): Map<string, Shape> {
@@ -760,6 +773,7 @@ async function parseObjectAsync(loader: ObjectLoader, data: Dynamic, base: strin
     const object = loader.parseDocument(data, images);
     if (object == null) return await Promise.reject<Object3D>(loader.error);
     const decodes = loader.decodes;
+    loader.decodes = [];
     for (let i = 0; i < decodes.length; i++) {
         const outcome = await decodes[i].settled();
         if (!outcome.ok) loader.warn("image decode failed: " + outcome.error);

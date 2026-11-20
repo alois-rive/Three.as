@@ -20,6 +20,9 @@
 import { Object3D } from "../core/Object3D";
 import { Mesh } from "../objects/Mesh";
 import { SkinnedMesh } from "../objects/SkinnedMesh";
+import { Line } from "../objects/Line";
+import { Points } from "../objects/Points";
+import { Sprite } from "../objects/Sprite";
 import { Light } from "../lights/Light";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
@@ -181,7 +184,13 @@ export class PropertyBinding {
         if (node == null) return;
         const name = p.propertyName;
         if (p.objectName == "material") {
-            this.materialIndex = p.objectIndex.length > 0 ? I32.parseInt(p.objectIndex) : -1;
+            if (p.objectIndex.length > 0) {
+                const idx = parseNonNegativeInt(p.objectIndex);
+                if (idx < 0) return;
+                this.materialIndex = idx;
+            } else {
+                this.materialIndex = -1;
+            }
             const m = this.material();
             if (m == null) return;
             if (name == "color" && colorOf(m) != null) this.kind = P_COLOR;
@@ -190,7 +199,10 @@ export class PropertyBinding {
             else if (name == "emissiveIntensity" && emissiveOf(m) != null) this.kind = P_EMISSIVE_INTENSITY;
             else if (name == "roughness" && m instanceof MeshStandardMaterial) this.kind = P_ROUGHNESS;
             else if (name == "metalness" && m instanceof MeshStandardMaterial) this.kind = P_METALNESS;
-            if (this.isColor) this.component = componentIndex(p.propertyIndex, true);
+            if (this.isColor && p.propertyIndex.length > 0) {
+                this.component = componentIndex(p.propertyIndex, true);
+                if (this.component < 0 || this.component >= 3) this.kind = P_NONE;
+            }
             return;
         }
         if (p.objectName.length > 0) return;
@@ -206,7 +218,7 @@ export class PropertyBinding {
             const idx = p.propertyIndex;
             let index = -1;
             if (mesh.morphTargetDictionary.has(idx)) index = mesh.morphTargetDictionary.get(idx);
-            else if (idx.length > 0) index = I32.parseInt(idx);
+            else if (idx.length > 0) index = parseNonNegativeInt(idx);
             if (index >= 0) {
                 this.morphIndex = index;
                 this.kind = P_MORPH;
@@ -230,11 +242,18 @@ export class PropertyBinding {
 
     private material(): Material? {
         const node = this.node;
-        if (node == null || !(node instanceof Mesh)) return null;
-        const mesh = node as Mesh;
+        if (node == null) return null;
         const i = this.materialIndex;
-        if (i >= 0) return i < mesh.materials.length ? mesh.materials[i] : (i == 0 ? mesh.material : null);
-        return mesh.material;
+        if (node instanceof Mesh) {
+            const mesh = node as Mesh;
+            if (i >= 0) return i < mesh.materials.length ? mesh.materials[i] : (i == 0 ? mesh.material : null);
+            return mesh.material;
+        }
+        if (i > 0) return null;
+        if (node instanceof Line) return (node as Line).material;
+        if (node instanceof Points) return (node as Points).material;
+        if (node instanceof Sprite) return (node as Sprite).material;
+        return null;
     }
 
     getValue(out: Float64Array): void {
@@ -319,6 +338,8 @@ export class PropertyBinding {
 export class PropertyBindingComposite extends PropertyBinding {
     readonly group: AnimationObjectGroup;
     private bindings: Map<i32, PropertyBinding> = new Map<i32, PropertyBinding>();
+    private activeBindings: Array<PropertyBinding> = [];
+    private syncedVersion: i32 = -1;
     private size: i32 = 0;
     private quaternion: bool = false;
     private boolean: bool = false;
@@ -327,17 +348,7 @@ export class PropertyBindingComposite extends PropertyBinding {
     constructor(group: AnimationObjectGroup, path: string) {
         super(group, path);
         this.group = group;
-        const objects = group.activeObjects;
-        for (let i = 0; i < objects.length && this.size == 0; i++) {
-            const b = this.bindingOf(objects[i]);
-            if (b.isBound) {
-                this.size = b.valueSize;
-                this.quaternion = b.isQuaternion;
-                this.boolean = b.isBoolean;
-                this.color = b.isColor;
-            }
-        }
-        if (this.size > 0 && group.paths.indexOf(path) < 0) group.paths.push(path);
+        this.sync();
     }
 
     override get isBound(): bool { return this.size > 0; }
@@ -346,6 +357,9 @@ export class PropertyBindingComposite extends PropertyBinding {
     override get isBoolean(): bool { return this.boolean; }
     override get isColor(): bool { return this.color; }
 
+    /// Number of per-object bindings currently held in the cache.
+    get cachedBindingCount(): i32 { return this.bindings.size; }
+
     private bindingOf(object: Object3D): PropertyBinding {
         if (this.bindings.has(object.id)) return this.bindings.get(object.id);
         const b = new PropertyBinding(object, this.path);
@@ -353,23 +367,46 @@ export class PropertyBindingComposite extends PropertyBinding {
         return b;
     }
 
-    override getValue(out: Float64Array): void {
-        const objects = this.group.activeObjects;
+    private sync(): void {
+        const g = this.group;
+        if (this.syncedVersion == g.version) return;
+        this.syncedVersion = g.version;
+        this.prune();
+        const active = this.activeBindings;
+        active.length = 0;
+        const objects = g.activeObjects;
         for (let i = 0; i < objects.length; i++) {
             const b = this.bindingOf(objects[i]);
-            if (b.isBound) {
-                b.getValue(out);
-                return;
-            }
+            if (b.isBound) active.push(b);
+        }
+        if (this.size == 0 && active.length > 0) {
+            const first = active[0];
+            this.size = first.valueSize;
+            this.quaternion = first.isQuaternion;
+            this.boolean = first.isBoolean;
+            this.color = first.isColor;
+            if (this.size > 0 && g.paths.indexOf(this.path) < 0) g.paths.push(this.path);
         }
     }
 
+    override getValue(out: Float64Array): void {
+        this.sync();
+        if (this.activeBindings.length > 0) this.activeBindings[0].getValue(out);
+    }
+
     override setValue(v: Float64Array): void {
-        const objects = this.group.activeObjects;
-        for (let i = 0; i < objects.length; i++) {
-            const b = this.bindingOf(objects[i]);
-            if (b.isBound) b.setValue(v);
-        }
+        this.sync();
+        const active = this.activeBindings;
+        for (let i = 0; i < active.length; i++) active[i].setValue(v);
+    }
+
+    override unbind(): void {
+        this.bindings.clear();
+        this.activeBindings.length = 0;
+        this.syncedVersion = -1;
+        const i = this.group.paths.indexOf(this.path);
+        if (i >= 0) this.group.paths.splice(i, 1);
+        super.unbind();
     }
 
     /// Drops the bindings of objects the group has uncached.
@@ -386,6 +423,18 @@ export class PropertyBindingComposite extends PropertyBinding {
         }
         this.bindings = keep;
     }
+}
+
+function parseNonNegativeInt(s: string): i32 {
+    if (s.length == 0) return -1;
+    let v: i64 = 0;
+    for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        if (c < 48 || c > 57) return -1;
+        v = v * 10 + <i64>(c - 48);
+        if (v > 2147483647) return -1;
+    }
+    return <i32>v;
 }
 
 /// "x"/"y"/"z"/"w" (or "r"/"g"/"b" for colours), or a digit; -1 otherwise.

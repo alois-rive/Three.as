@@ -3,7 +3,14 @@
 import { Expect, Tests } from "rive/test";
 import { Object3D } from "../three/core/Object3D";
 import { Mesh } from "../three/objects/Mesh";
+import { Line } from "../three/objects/Line";
+import { Points } from "../three/objects/Points";
+import { Sprite } from "../three/objects/Sprite";
 import { MeshStandardMaterial } from "../three/materials/MeshStandardMaterial";
+import { LineBasicMaterial } from "../three/materials/LineBasicMaterial";
+import { PointsMaterial } from "../three/materials/PointsMaterial";
+import { SpriteMaterial } from "../three/materials/SpriteMaterial";
+import { BufferGeometry } from "../three/core/BufferGeometry";
 import { Quaternion } from "../three/math/Quaternion";
 import { Vector3 } from "../three/math/Vector3";
 import {
@@ -12,13 +19,14 @@ import {
 } from "../three/animation/KeyframeTrack";
 import { AnimationClip } from "../three/animation/AnimationClip";
 import { AnimationMixer } from "../three/animation/AnimationMixer";
-import { PropertyBinding } from "../three/animation/PropertyBinding";
+import { PropertyBinding, PropertyBindingComposite } from "../three/animation/PropertyBinding";
 import { AnimationObjectGroup } from "../three/animation/AnimationObjectGroup";
 import { AnimationUtils } from "../three/animation/AnimationUtils";
 import { PointLight } from "../three/lights/PointLight";
 import { Float32BufferAttribute } from "../three/core/BufferAttribute";
 import {
-    InterpolateDiscrete, InterpolateSmooth, LoopOnce, LoopPingPong, AdditiveAnimationBlendMode,
+    InterpolateDiscrete, InterpolateSmooth, LoopOnce, LoopRepeat, LoopPingPong,
+    NormalAnimationBlendMode, AdditiveAnimationBlendMode,
 } from "../three/constants";
 
 const EPS: f64 = 1e-4;
@@ -79,6 +87,19 @@ export class AnimationTests extends Tests {
                 const q = at(t, 0.5);
                 near(expect, q[1], Math.sin(Math.PI / 8));
                 near(expect, q[3], Math.cos(Math.PI / 8));
+            });
+            test("smooth guards duplicate timestamps and optimize preserves glTF cubic splines", (expect) => {
+                const dup = new NumberKeyframeTrack(".x", [0, 0, 1, 1, 2], [0, 0, 5, 5, 10], InterpolateSmooth);
+                expect.that(isFinite(at(dup, 0.5)[0])).is(true);
+                expect.that(isFinite(at(dup, 1.5)[0])).is(true);
+                expect.that(isFinite(at(dup, 1.0)[0])).is(true);
+                // Cubic spline with equal key values but non-zero tangents must not be collapsed by optimize().
+                const cubic = new NumberKeyframeTrack(".x", [0, 1, 2],
+                    [2, 0, 2,  2, 0, 2,  2, 0, 2], InterpolateGLTFCubicSpline);
+                const before = at(cubic, 0.5)[0];
+                cubic.optimize();
+                expect.that(cubic.times.length).is(3);
+                near(expect, at(cubic, 0.5)[0], before);
             });
         });
 
@@ -190,6 +211,92 @@ export class AnimationTests extends Tests {
                 mixer.update(0.5);
                 expect.that(mesh.visible).is(false);
             });
+            test("reverse playback and LoopPingPong final frames", (expect) => {
+                const root = moving();
+                const box = root.getObjectByName("Box")!;
+                const clip = new AnimationClip("move", -1, [new VectorKeyframeTrack("Box.position", [0, 1], [0, 0, 0, 10, 0, 0])]);
+                // Infinite reverse playback must not trap on Infinity -> i64.
+                const mixer = new AnimationMixer(root);
+                const rev = mixer.clipAction(clip).setLoop(LoopRepeat, Infinity);
+                rev.timeScale = -1;
+                rev.play();
+                mixer.update(0.25); // wraps from -0.25 -> 0.75
+                near(expect, box.position.x, 7.5);
+                mixer.update(0.5);  // 0.25
+                near(expect, box.position.x, 2.5);
+
+                // Finite reverse playback: 2 reps starting at duration, clamps at 0.
+                const root2 = moving();
+                const box2 = root2.getObjectByName("Box")!;
+                const m2 = new AnimationMixer(root2);
+                const rev2 = m2.clipAction(clip).setLoop(LoopRepeat, 2);
+                rev2.time = 1;
+                rev2.timeScale = -1;
+                rev2.clampWhenFinished = true;
+                rev2.play();
+                m2.update(0.4); // 0.6, still running
+                near(expect, box2.position.x, 6);
+                expect.that(rev2.isRunning()).is(true);
+                m2.update(2.0); // finishes both reps -> clamped at 0
+                near(expect, box2.position.x, 0);
+                expect.that(rev2.paused).is(true);
+
+                // Even-repetition LoopPingPong (2 reps: 0->1->0) ends and holds at 0.
+                const rootEven = moving();
+                const boxEven = rootEven.getObjectByName("Box")!;
+                const mEven = new AnimationMixer(rootEven);
+                const ppEven = mEven.clipAction(clip).setLoop(LoopPingPong, 2);
+                ppEven.clampWhenFinished = true;
+                ppEven.play();
+                mEven.update(2.5);
+                near(expect, boxEven.position.x, 0);
+                mEven.update(0.5);
+                near(expect, boxEven.position.x, 0);
+
+                // Odd-repetition LoopPingPong (3 reps: 0->1->0->1) ends and holds at duration.
+                const rootOdd = moving();
+                const boxOdd = rootOdd.getObjectByName("Box")!;
+                const mOdd = new AnimationMixer(rootOdd);
+                const ppOdd = mOdd.clipAction(clip).setLoop(LoopPingPong, 3);
+                ppOdd.clampWhenFinished = true;
+                ppOdd.play();
+                mOdd.update(3.5);
+                near(expect, boxOdd.position.x, 10);
+                mOdd.update(0.5);
+                near(expect, boxOdd.position.x, 10);
+            });
+            test("startAt does not overwrite pose before startTime; setTime honors timeScale != 1; clipAction deduplicates blendModes", (expect) => {
+                const root = moving();
+                const box = root.getObjectByName("Box")!;
+                box.position.x = 42;
+                const clip = new AnimationClip("move", -1, [new VectorKeyframeTrack("Box.position", [0, 1], [0, 0, 0, 10, 0, 0])]);
+                const mixer = new AnimationMixer(root);
+                const action = mixer.clipAction(clip);
+                action.startAt(2.0).play();
+                mixer.update(1.0);
+                near(expect, box.position.x, 42); // untouched before startTime
+                mixer.update(1.5); // mixer.time = 2.5 -> 0.5s into clip
+                near(expect, box.position.x, 5);
+
+                // setTime works when mixer.timeScale != 1 (and preserves timeScale).
+                mixer.timeScale = 0.25;
+                mixer.setTime(0.8);
+                near(expect, mixer.time, 0.8);
+                near(expect, box.position.x, 8);
+                near(expect, mixer.timeScale, 0.25);
+
+                // clipAction deduplicates across blend modes.
+                const norm1 = mixer.clipAction(clip, null, NormalAnimationBlendMode);
+                const norm2 = mixer.clipAction(clip, null, NormalAnimationBlendMode);
+                const add1 = mixer.clipAction(clip, null, AdditiveAnimationBlendMode);
+                const add2 = mixer.clipAction(clip, null, AdditiveAnimationBlendMode);
+                expect.that(norm1 === norm2).is(true);
+                expect.that(add1 === add2).is(true);
+                expect.that(norm1 !== add1).is(true);
+                expect.that(mixer.stats.actions.total).is(2);
+                mixer.uncacheAction(clip);
+                expect.that(mixer.stats.actions.total).is(0);
+            });
         });
 
         group("AnimationUtils", () => {
@@ -286,32 +393,61 @@ export class AnimationTests extends Tests {
                 near(expect, box.quaternion.y, want.y);
                 near(expect, box.quaternion.w, want.w);
             });
+            test("makeClipAdditive + additive quaternion blend recovers target on non-commuting axes", (expect) => {
+                const root = moving();
+                const box = root.getObjectByName("Box")!;
+                const qRef = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2);
+                const qTarget = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI / 2);
+                const refClip = new AnimationClip("ref", 1, [new QuaternionKeyframeTrack("Box.quaternion", [0],
+                    [qRef.x, qRef.y, qRef.z, qRef.w])]);
+                const addClip = new AnimationClip("add", 1, [new QuaternionKeyframeTrack("Box.quaternion", [0],
+                    [qTarget.x, qTarget.y, qTarget.z, qTarget.w])]);
+                AnimationUtils.makeClipAdditive(addClip, 0, refClip);
+                const mixer = new AnimationMixer(root);
+                mixer.clipAction(refClip).play();
+                mixer.clipAction(addClip).play();
+                mixer.update(0.1);
+                // Must recover qTarget (90 deg around Y), not qRef * qDelta (90 deg around Z).
+                const dot = box.quaternion.x * qTarget.x + box.quaternion.y * qTarget.y
+                    + box.quaternion.z * qTarget.z + box.quaternion.w * qTarget.w;
+                near(expect, Math.abs(dot), 1.0);
+                near(expect, Math.abs(box.quaternion.y), Math.abs(qTarget.y));
+                near(expect, Math.abs(box.quaternion.z), 0);
+            });
         });
 
         group("AnimationObjectGroup", () => {
-            test("one action drives every object", (expect) => {
+            test("one action drives every object and prunes uncached bindings", (expect) => {
                 const a = new Object3D(), b = new Object3D(), c = new Object3D();
                 const group = new AnimationObjectGroup([a, b]);
                 group.add(c);
                 const clip = new AnimationClip("rise", -1, [new NumberKeyframeTrack(".position[y]", [0, 1], [0, 2])]);
                 const mixer = new AnimationMixer(group);
-                mixer.clipAction(clip).play();
+                const action = mixer.clipAction(clip).play();
+                const comp = action.getPropertyMixers()[0]!.binding as PropertyBindingComposite;
                 mixer.update(0.5);
                 near(expect, a.position.y, 1);
                 near(expect, c.position.y, 1);
                 expect.that(a.parent == null).is(true);   // not parented
+                expect.that(comp.cachedBindingCount).is(3);
                 group.remove(b);
                 mixer.update(0.25);
                 near(expect, a.position.y, 1.5);
                 near(expect, b.position.y, 1);
-                expect.that(group.stats.objects.total).is(3);
+                expect.that(comp.cachedBindingCount).is(3); // cached until uncache
+                group.uncache(b);
+                mixer.update(0.125);
+                near(expect, a.position.y, 1.75);
+                near(expect, b.position.y, 1);
+                expect.that(comp.cachedBindingCount).is(2); // pruned on version bump!
+                expect.that(group.stats.objects.total).is(2);
                 expect.that(group.stats.objects.inUse).is(2);
                 expect.that(group.stats.bindingsPerObject).is(1);
             });
         });
 
         group("PropertyBinding paths", () => {
-            test("components, lights and material numbers", (expect) => {
+            test("components, lights, Line/Points/Sprite materials and invalid index rejection", (expect) => {
                 const root = new Object3D();
                 const lamp = new PointLight(0xffffff, 2);
                 lamp.name = "Lamp";
@@ -320,6 +456,16 @@ export class AnimationTests extends Tests {
                 mesh.name = "M";
                 mesh.material = new MeshStandardMaterial({ roughness: 0.3 });
                 root.add(mesh);
+                const line = new Line(new BufferGeometry(), new LineBasicMaterial({ color: 0xff0000 }));
+                line.name = "L";
+                root.add(line);
+                const pts = new Points(new BufferGeometry(), new PointsMaterial({ color: 0x00ff00 }));
+                pts.name = "P";
+                root.add(pts);
+                const spr = new Sprite(new SpriteMaterial({ color: 0x0000ff }));
+                spr.name = "S";
+                root.add(spr);
+
                 const v = new Float64Array(4);
                 const i = new PropertyBinding(root, "Lamp.intensity");
                 expect.that(i.valueSize).is(1);
@@ -336,8 +482,26 @@ export class AnimationTests extends Tests {
                 const lc = new PropertyBinding(root, "Lamp.color");
                 expect.that(lc.valueSize).is(3);
                 expect.that(lc.isColor).is(true);
-                const bad = new PropertyBinding(root, "M.position[q]");
-                expect.that(bad.isBound).is(false);
+
+                // Line, Points and Sprite material bindings.
+                const lb = new PropertyBinding(root, "L.material.opacity");
+                expect.that(lb.isBound).is(true);
+                v[0] = 0.4; lb.setValue(v);
+                near(expect, line.material.opacity, 0.4);
+                const pb = new PropertyBinding(root, "P.material.color");
+                expect.that(pb.isBound).is(true);
+                v[0] = 0.2; v[1] = 0.4; v[2] = 0.6; pb.setValue(v);
+                near(expect, (pts.material as PointsMaterial).color.b, 0.6);
+                const sb = new PropertyBinding(root, "S.material.opacity");
+                expect.that(sb.isBound).is(true);
+                v[0] = 0.7; sb.setValue(v);
+                near(expect, spr.material.opacity, 0.7);
+
+                // Reject non-numeric indices rather than silently parsing as 0.
+                expect.that(new PropertyBinding(root, "M.position[q]").isBound).is(false);
+                expect.that(new PropertyBinding(root, "M.material[foo].color").isBound).is(false);
+                expect.that(new PropertyBinding(root, "M.material.color[foo]").isBound).is(false);
+                expect.that(new PropertyBinding(root, "M.morphTargetInfluences[nonexistent]").isBound).is(false);
             });
         });
     }

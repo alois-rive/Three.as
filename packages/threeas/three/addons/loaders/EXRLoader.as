@@ -198,7 +198,6 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
     const channels: Array<EXRChannel> = [];
     let compression = -1;
     let x0 = 0, y0 = 0, x1 = -1, y1 = -1;
-    let lineOrder = 0;
     // Attributes, up to an empty name.
     while (!reader.reachedEnd && !reader.didOverflow) {
         const name = readCString(reader, buffer);
@@ -224,13 +223,11 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
         } else if (name == "dataWindow" && size >= 16) {
             x0 = reader.read<i32>(); y0 = reader.read<i32>();
             x1 = reader.read<i32>(); y1 = reader.read<i32>();
-        } else if (name == "lineOrder" && size >= 1) {
-            lineOrder = <i32>reader.readByte();
         }
         reader.position = start + <u32>size;
     }
     const width = x1 - x0 + 1, height = y1 - y0 + 1;
-    if (width <= 0 || height <= 0 || channels.length == 0) {
+    if (width <= 0 || height <= 0 || channels.length == 0 || <i64>width * <i64>height > 67108864) {
         res.error = "missing channels or dataWindow";
         return res;
     }
@@ -243,13 +240,13 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
         res.error = "compression " + compression.toString() + " is not supported (NO, RLE, ZIPS, ZIP are)";
         return res;
     }
-    // Skip the offset table; chunks follow in file order.
+    // Skip the offset table; chunks follow in file order (each carries its own y).
     const blocks = (height + linesPerBlock - 1) / linesPerBlock;
-    reader.skip(<u32>(blocks * 8));
-    if (reader.didOverflow) {
+    if (blocks <= 0 || <u64>blocks * 8 > <u64>reader.remaining) {
         res.error = "truncated";
         return res;
     }
+    reader.skip(<u32>(blocks * 8));
     // Channel slots: R G B A, or Y for luminance.
     let ri = -1, gi = -1, bi = -1, ai = -1, yi = -1;
     for (let i = 0; i < channels.length; i++) {
@@ -259,8 +256,16 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
     }
     let lineBytes = 0;
     for (let i = 0; i < channels.length; i++) lineBytes += channels[i].bytes * width;
-    const rgba = new Float32Array(width * height * 4);
-    for (let i = 3; i < rgba.length; i += 4) rgba[i] = 1;
+    const outType = targetType == FloatType ? FloatType : HalfFloatType;
+    const isFloat = outType == FloatType;
+    const pixelCount = width * height * 4;
+    const rgba = isFloat ? new Float32Array(pixelCount) : new Float32Array(0);
+    const half = isFloat ? new Uint16Array(0) : new Uint16Array(pixelCount);
+    if (isFloat) {
+        for (let i = 3; i < rgba.length; i += 4) rgba[i] = 1;
+    } else {
+        for (let i = 3; i < half.length; i += 4) half[i] = 0x3c00;
+    }
     for (let b = 0; b < blocks; b++) {
         if (reader.remaining < 8) {
             res.error = "truncated";
@@ -295,20 +300,38 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
         const rr = new BinaryReader(raw.buffer, raw.byteOffset, raw.byteLength);
         for (let l = 0; l < lines; l++) {
             const y = yStart + l;
+            const rowOff = y * width * 4;
             for (let c = 0; c < channels.length; c++) {
                 const ch = channels[c];
                 let slot = -1;
                 if (c == ri) slot = 0; else if (c == gi) slot = 1; else if (c == bi) slot = 2; else if (c == ai) slot = 3;
                 const lum = c == yi;
-                for (let x = 0; x < width; x++) {
-                    let v: f32;
-                    if (ch.pixelType == HALF) v = fromHalf(rr.readUint16());
-                    else if (ch.pixelType == FLOAT) v = rr.readFloat32();
-                    else if (ch.pixelType == UINT) v = <f32>rr.readUint32();
-                    else { rr.skip(<u32>ch.bytes); v = 0; }
-                    const o = (y * width + x) * 4;
-                    if (slot >= 0) rgba[o + slot] = v;
-                    else if (lum) { rgba[o] = v; rgba[o + 1] = v; rgba[o + 2] = v; }
+                if (slot < 0 && !lum) {
+                    rr.skip(<u32>(ch.bytes * width));
+                    continue;
+                }
+                if (isFloat) {
+                    for (let x = 0; x < width; x++) {
+                        let v: f32;
+                        if (ch.pixelType == HALF) v = fromHalf(rr.readUint16());
+                        else if (ch.pixelType == FLOAT) v = rr.readFloat32();
+                        else if (ch.pixelType == UINT) v = <f32>rr.readUint32();
+                        else { rr.skip(<u32>ch.bytes); v = 0; }
+                        const o = rowOff + x * 4;
+                        if (slot >= 0) rgba[o + slot] = v;
+                        else { rgba[o] = v; rgba[o + 1] = v; rgba[o + 2] = v; }
+                    }
+                } else {
+                    for (let x = 0; x < width; x++) {
+                        let hv: u16;
+                        if (ch.pixelType == HALF) hv = rr.readUint16();
+                        else if (ch.pixelType == FLOAT) hv = toHalf(rr.readFloat32());
+                        else if (ch.pixelType == UINT) hv = toHalf(<f32>rr.readUint32());
+                        else { rr.skip(<u32>ch.bytes); hv = 0; }
+                        const o = rowOff + x * 4;
+                        if (slot >= 0) half[o + slot] = hv;
+                        else { half[o] = hv; half[o + 1] = hv; half[o + 2] = hv; }
+                    }
                 }
             }
         }
@@ -317,15 +340,8 @@ function parseEXRCore(buffer: Uint8Array, targetType: i32): EXRParseResult {
     out.width = width;
     out.height = height;
     out.compression = compression;
-    out.type = targetType == FloatType ? FloatType : HalfFloatType;
-    if (lineOrder == 1) flipRows(rgba, width, height);   // DECREASING_Y
-    if (out.type == FloatType) {
-        out.data = rgba;
-    } else {
-        const h = new Uint16Array(rgba.length);
-        for (let i = 0; i < rgba.length; i++) h[i] = toHalf(rgba[i]);
-        out.data = h;
-    }
+    out.type = outType;
+    out.data = isFloat ? <ArrayBufferView>rgba : <ArrayBufferView>half;
     res.data = out;
     return res;
 }
@@ -368,16 +384,4 @@ function unpredictAndInterleave(t: Uint8Array): Uint8Array {
         if (o < t.length) out[o++] = t[b++];
     }
     return out;
-}
-
-function flipRows(rgba: Float32Array, width: i32, height: i32): void {
-    const row = width * 4;
-    for (let y = 0; y < height / 2; y++) {
-        const a = y * row, b = (height - 1 - y) * row;
-        for (let i = 0; i < row; i++) {
-            const t = rgba[a + i];
-            rgba[a + i] = rgba[b + i];
-            rgba[b + i] = t;
-        }
-    }
 }

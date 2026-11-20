@@ -3,7 +3,7 @@
 import { Tests } from "rive/test";
 import { RGBELoader, decodeRGBE, buildRGBEData } from "../three/addons/loaders/RGBELoader";
 import { EXRLoader, decodeEXR, buildEXRData } from "../three/addons/loaders/EXRLoader";
-import { unzlibSync } from "../three/addons/libs/fflate";
+import { unzlibSync, inflateSync } from "../three/addons/libs/fflate";
 import { toHalf, fromHalf } from "../three/textures/DataUpload";
 import { FloatType, HalfFloatType } from "../three/constants";
 
@@ -29,6 +29,35 @@ export class HDRTests extends Tests {
             test("inflates stored blocks", (expect) => {
                 const out = unzlibSync(bytesOf(STORED));
                 expect.that(String.UTF8.decode(out.buffer)).is("stored block test");
+            });
+            test("rewinds buffered bits before stored block and guards EOF on truncated streams", (expect) => {
+                // Multi-block raw deflate:
+                // Block 1 (BFINAL=0, BTYPE=01 fixed): 3 bits (0, 1, 0) + 7-bit EOB (0000000) = 10 bits -> 2 bytes
+                // Wait: emit literal 'A' (65 -> 8-bit fixed code 0x30+65=0x71=01110001 -> MSB-first 10001110) then EOB (7 zeros):
+                // Simpler: empty fixed block (BFINAL=0, BTYPE=01, EOB=0000000) = 10 bits:
+                //   byte 0 = 0b00000_01_0 = 0x02, byte 1 = 0b000000_00 = 0x00 (bits 0..1 are last 2 bits of EOB,
+                //   bits 2..4 are block 2 header: BFINAL=1, BTYPE=00 => 0b00_1 << 2 = 0x04! So byte 1 = 0x04!).
+                //   Wait: to ensure bitCount >= 8 BEFORE storedBlock, block 1 ends with 0 bits left, and block 2 reads
+                //   1 bit (BFINAL=1) then 2 bits (BTYPE=00) -> 5 bits left; to get >= 8 bits left we need a previous
+                //   bits(n) call with n > 8, e.g. dynamic block with 7-bit repeat or a fixed match with 5 extra bits
+                //   Wait: fixed block emitting "AB" (2 literals) + back-ref (length 3, dist 1): let's build a block
+                //   where EOB ends at bit 0 of a byte, then storedBlock aligns; even better, test BOTH:
+                //   (a) empty fixed block followed by stored block "OK" (byte 0 = 0x02, byte 1 = 0x04, then LEN=2, NLEN=~2, 'O', 'K')
+                const multi: StaticArray<u8> = [0x02, 0x04, 2, 0, 253, 255, 79, 75];
+                const out = inflateSync(bytesOf(multi));
+                expect.that(String.UTF8.decode(out.buffer)).is("OK");
+                // (b) Truncated fixed-Huffman block (no EOB) must terminate without hanging!
+                const truncFixed: StaticArray<u8> = [0x03];   // BFINAL=1, BTYPE=01, truncated immediately
+                const tfOut = inflateSync(bytesOf(truncFixed));
+                expect.that(tfOut.length >= 0).is(true);
+                // (c) Truncated dynamic-Huffman block header must terminate cleanly.
+                const truncDyn: StaticArray<u8> = [0x05, 0x00];
+                const tdOut = inflateSync(bytesOf(truncDyn));
+                expect.that(tdOut.length).is(0);
+                // (d) Stored block with invalid NLEN must terminate cleanly.
+                const badStored: StaticArray<u8> = [0x01, 5, 0, 0, 0, 65, 66];
+                const bsOut = inflateSync(bytesOf(badStored));
+                expect.that(bsOut.length).is(0);
             });
         });
         group("half floats", () => {
@@ -110,6 +139,96 @@ export class HDRTests extends Tests {
                 const badDec = decodeEXR(bad.buffer, HalfFloatType);
                 expect.that(badDec.error.length > 0).is(true);
                 expect.that(buildEXRData(badDec) == null).is(true);
+            });
+            test("EXRLoader DECREASING_Y does not double-flip and HALF->HALF fast path matches FloatType", (expect) => {
+                // Build a minimal 2x2 uncompressed HALF RGB EXR with lineOrder = 1 (DECREASING_Y).
+                // Row y=0 (top): (R=10, G=0, B=0); Row y=1 (bottom): (R=0, G=20, B=0).
+                // In DECREASING_Y, chunk for y=1 appears first in file, then chunk for y=0.
+                const b: Array<u8> = [];
+                const pushU32 = (v: u32): void => {
+                    b.push(<u8>(v & 255)); b.push(<u8>((v >> 8) & 255));
+                    b.push(<u8>((v >> 16) & 255)); b.push(<u8>((v >> 24) & 255));
+                };
+                const pushU16 = (v: u16): void => {
+                    b.push(<u8>(v & 255)); b.push(<u8>((v >> 8) & 255));
+                };
+                const pushCStr = (s: string): void => {
+                    for (let i = 0; i < s.length; i++) b.push(<u8>s.charCodeAt(i));
+                    b.push(0);
+                };
+                pushU32(20000630); pushU32(2); // magic + version 2
+                // channels attribute: B, G, R (alphabetical, HALF=1)
+                pushCStr("channels"); pushCStr("chlist");
+                const chSizePos = b.length; pushU32(0);
+                const chStart = b.length;
+                const chNames: StaticArray<string> = ["B", "G", "R"];
+                for (let c = 0; c < 3; c++) {
+                    pushCStr(chNames[c]); pushU32(1); // HALF
+                    pushU32(0); pushU32(1); pushU32(1);
+                }
+                b.push(0); // end of chlist
+                const chSize = <u32>(b.length - chStart);
+                b[chSizePos] = <u8>(chSize & 255); b[chSizePos + 1] = <u8>((chSize >> 8) & 255);
+                // compression = NO_COMPRESSION (0)
+                pushCStr("compression"); pushCStr("compression"); pushU32(1); b.push(0);
+                // dataWindow = (0, 0) to (1, 1) -> 2x2
+                pushCStr("dataWindow"); pushCStr("box2i"); pushU32(16);
+                pushU32(0); pushU32(0); pushU32(1); pushU32(1);
+                // lineOrder = DECREASING_Y (1)
+                pushCStr("lineOrder"); pushCStr("lineOrder"); pushU32(1); b.push(1);
+                b.push(0); // end of header
+                // offset table: 2 scanline blocks * 8 bytes (zeros, skipped by reader)
+                for (let i = 0; i < 16; i++) b.push(0);
+                const h0 = toHalf(0.0), h10 = toHalf(10.0), h20 = toHalf(20.0);
+                // Chunk 0: y = 1 (bottom row: G=20)
+                pushU32(1); pushU32(12); // y=1, dataSize = 3 channels * 2 pixels * 2 bytes
+                pushU16(h0); pushU16(h0);     // B
+                pushU16(h20); pushU16(h20);   // G
+                pushU16(h0); pushU16(h0);     // R
+                // Chunk 1: y = 0 (top row: R=10)
+                pushU32(0); pushU32(12); // y=0
+                pushU16(h0); pushU16(h0);     // B
+                pushU16(h0); pushU16(h0);     // G
+                pushU16(h10); pushU16(h10);   // R
+
+                const bytes = new Uint8Array(b.length);
+                for (let i = 0; i < b.length; i++) bytes[i] = b[i];
+                // FloatType parse
+                const df = new EXRLoader().setDataType(FloatType).parse(bytes)!;
+                const fa = df.data as Float32Array;
+                // Row 0 (top) must have R=10, G=0; Row 1 (bottom) must have R=0, G=20.
+                expect.that(<f64>fa[0]).is(10.0);
+                expect.that(<f64>fa[1]).is(0.0);
+                expect.that(<f64>fa[3]).is(1.0);
+                expect.that(<f64>fa[2 * 4 + 0]).is(0.0);
+                expect.that(<f64>fa[2 * 4 + 1]).is(20.0);
+                // HalfFloatType parse (direct HALF -> HALF fast path)
+                const dh = new EXRLoader().setDataType(HalfFloatType).parse(bytes)!;
+                const ha = dh.data as Uint16Array;
+                expect.that(<f64>ha[0]).is(<f64>h10);
+                expect.that(<f64>ha[1]).is(<f64>h0);
+                expect.that(<f64>ha[3]).is(<f64>0x3c00);
+                expect.that(<f64>ha[2 * 4 + 0]).is(<f64>h0);
+                expect.that(<f64>ha[2 * 4 + 1]).is(<f64>h20);
+            });
+            test("RGBELoader supports CRLF headers", (expect) => {
+                const hdrHeader = "#?RADIANCE\r\nFORMAT=32-bit_rle_rgbe\r\n\r\n-Y 1 +X 2\r\n";
+                const out = new Uint8Array(hdrHeader.length + 8);
+                for (let i = 0; i < hdrHeader.length; i++) out[i] = <u8>hdrHeader.charCodeAt(i);
+                const o = hdrHeader.length;
+                // Flat pixels (width < 8): pixel 0 = (128, 0, 0, 129) => (1.0, 0, 0); pixel 1 = (0, 128, 0, 130) => (0, 2.0, 0)
+                out[o + 0] = 128; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 129;
+                out[o + 4] = 0; out[o + 5] = 128; out[o + 6] = 0; out[o + 7] = 130;
+                const loader = new RGBELoader().setDataType(FloatType);
+                const parsed = loader.parse(out);
+                expect.that(loader.error).is("");
+                expect.that(parsed != null).is(true);
+                if (parsed == null) return;
+                expect.that(parsed.width).is(2);
+                expect.that(parsed.height).is(1);
+                const f = parsed.data as Float32Array;
+                expect.that(Math.abs(<f64>f[0] - 1.0) < 1e-5).is(true);
+                expect.that(Math.abs(<f64>f[5] - 2.0) < 1e-5).is(true);
             });
         });
     }

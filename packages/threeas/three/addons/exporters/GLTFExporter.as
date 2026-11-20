@@ -780,7 +780,7 @@ export class GLTFWriter {
         const bufferViewDef = Dynamic.newTable();
         bufferViewDef.set("buffer", num(<f64>this.processBuffer(buffer)));
         bufferViewDef.set("byteOffset", num(<f64>this.byteOffset));
-        bufferViewDef.set("byteLength", num(<f64>buffer.length));
+        bufferViewDef.set("byteLength", num(<f64>bytes.length));
         this.byteOffset += buffer.length;
         return pushIndex(bufferViews, bufferViewDef);
     }
@@ -1249,8 +1249,8 @@ export class GLTFWriter {
             const o = camera as OrthographicCamera;
             cameraDef.set("type", Dynamic.fromString("orthographic"));
             const def = Dynamic.newTable();
-            def.set("xmag", num(o.right * 2));
-            def.set("ymag", num(o.top * 2));
+            def.set("xmag", num((o.right - o.left) / 2));
+            def.set("ymag", num((o.top - o.bottom) / 2));
             def.set("zfar", num(o.far <= 0 ? 0.001 : o.far));
             def.set("znear", num(o.near < 0 ? 0 : o.near));
             cameraDef.set("orthographic", def);
@@ -1266,8 +1266,7 @@ export class GLTFWriter {
             }
             cameraDef.set("perspective", def);
         }
-        // Question: Is saving "type" as name intentional? (three.js's own note)
-        if (camera.name != "") cameraDef.set("name", Dynamic.fromString(camera.type));
+        if (camera.name != "") cameraDef.set("name", Dynamic.fromString(camera.name));
         return pushIndex(childArray(this.json, "cameras"), cameraDef);
     }
 
@@ -1522,18 +1521,28 @@ function rgba8Of(map: Texture?): DataTexture? {
     return dt;
 }
 
-/// Channel `channel` of `source`, scaled (nearest) to width x height and
-/// converted from sRGB when `srgb`, into `composite`.
+/// Channel `channel` of `source`, scaled (nearest) to width x height,
+/// honouring `source.flipY` and `source.premultiplyAlpha`, and converted
+/// from sRGB when `srgb`, into `composite`.
 function copyChannel(source: DataTexture, srgb: bool, channel: i32, composite: Uint8Array, width: u32, height: u32): void {
     const data = source.data as Uint8Array;
     const sw = <i32>source.dataWidth, sh = <i32>source.dataHeight;
+    const flipY = source.flipY;
+    const premul = source.premultiplyAlpha;
     for (let y = 0; y < <i32>height; y++) {
-        const sy = min<i32>(sh - 1, <i32>(<f64>y * <f64>sh / <f64>height));
+        let sy = min<i32>(sh - 1, <i32>(<f64>y * <f64>sh / <f64>height));
+        if (flipY) sy = sh - 1 - sy;
         for (let x = 0; x < <i32>width; x++) {
             const sx = min<i32>(sw - 1, <i32>(<f64>x * <f64>sw / <f64>width));
-            let c = <f64>data[(sy * sw + sx) * 4 + channel] / 256;
+            const idx = (sy * sw + sx) * 4;
+            let raw = <u32>data[idx + channel];
+            if (premul) {
+                const a = <u32>data[idx + 3];
+                if (a > 0 && a < 255) raw = min<u32>(255, (raw * 255 + a / 2) / a);
+            }
+            let c = <f64>raw / 255.0;
             if (srgb) c = c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4);
-            composite[(y * <i32>width + x) * 4 + channel] = <u8>min<i32>(255, <i32>(c * 256));
+            composite[(y * <i32>width + x) * 4 + channel] = <u8>min<i32>(255, <i32>Math.round(c * 255.0));
         }
     }
 }
@@ -1588,49 +1597,36 @@ export class GLTFExporterUtils {
     /// Adds a key at `time` (the track's value there) unless one is within
     /// 1 ms; returns the key's index.
     insertKeyframe(track: KeyframeTrack, time: f64): i32 {
+        if (!isFinite(time)) return -1;
         const tolerance = 0.001;   // 1ms
         const valueSize = track.getValueSize();
         const n = track.times.length;
+        for (let i = 0; i < n; i++) {
+            if (Math.abs(<f64>track.times[i] - time) < tolerance) return i;
+        }
+        let index = n;
+        for (let i = 0; i < n; i++) {
+            if (<f64>track.times[i] > time) {
+                index = i;
+                break;
+            }
+        }
         const times = new Float32Array(n + 1);
         const values = new Float32Array(track.values.length + valueSize);
         const value = new Float64Array(max<i32>(valueSize, 1));
-        let index = 0;
-        if (n == 0) {
-            times[0] = <f32>time;
-            for (let i = 0; i < valueSize; i++) values[i] = 0;
-            index = 0;
-        } else if (time < <f64>track.times[0]) {
-            if (Math.abs(<f64>track.times[0] - time) < tolerance) return 0;
-            times[0] = <f32>time;
-            times.set(track.times, 1);
+        if (n > 0) {
             track.evaluate(time, value);
-            for (let i = 0; i < valueSize; i++) values[i] = <f32>value[i];
-            values.set(track.values, valueSize);
-            index = 0;
-        } else if (time > <f64>track.times[n - 1]) {
-            if (Math.abs(<f64>track.times[n - 1] - time) < tolerance) return n - 1;
-            times[times.length - 1] = <f32>time;
-            times.set(track.times, 0);
-            values.set(track.values, 0);
-            track.evaluate(time, value);
-            for (let i = 0; i < valueSize; i++) values[track.values.length + i] = <f32>value[i];
-            index = times.length - 1;
-        } else {
-            for (let i = 0; i < n; i++) {
-                if (Math.abs(<f64>track.times[i] - time) < tolerance) return i;
-                if (<f64>track.times[i] < time && i + 1 < n && <f64>track.times[i + 1] > time) {
-                    times.set(track.times.subarray(0, i + 1), 0);
-                    times[i + 1] = <f32>time;
-                    times.set(track.times.subarray(i + 1), i + 2);
-                    values.set(track.values.subarray(0, (i + 1) * valueSize), 0);
-                    track.evaluate(time, value);
-                    for (let k = 0; k < valueSize; k++) values[(i + 1) * valueSize + k] = <f32>value[k];
-                    values.set(track.values.subarray((i + 1) * valueSize), (i + 2) * valueSize);
-                    index = i + 1;
-                    break;
-                }
+            if (index > 0) {
+                times.set(track.times.subarray(0, index), 0);
+                values.set(track.values.subarray(0, index * valueSize), 0);
+            }
+            if (index < n) {
+                times.set(track.times.subarray(index), index + 1);
+                values.set(track.values.subarray(index * valueSize), (index + 1) * valueSize);
             }
         }
+        times[index] = <f32>time;
+        for (let k = 0; k < valueSize; k++) values[index * valueSize + k] = <f32>value[k];
         track.times = times;
         track.values = values;
         return index;
@@ -1712,7 +1708,7 @@ export class GLTFExporterUtils {
             // de-duplicated.
             for (let j = 0; j < sourceTrack.times.length; j++) {
                 const keyframeIndex = this.insertKeyframe(mergedTrack, <f64>sourceTrack.times[j]);
-                mergedTrack.values[keyframeIndex * targetCount + targetIndex] = sourceTrack.values[j];
+                if (keyframeIndex >= 0) mergedTrack.values[keyframeIndex * targetCount + targetIndex] = sourceTrack.values[j];
             }
         }
         clip.tracks = tracks;

@@ -183,8 +183,9 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
     let gamma: f64 = 1, exposure: f64 = 1;
     let first = true;
     while (pos < buffer.length) {
-        const line = readLine(buffer, pos);
-        pos += line.length + 1;
+        const end = lineEnd(buffer, pos);
+        const line = readLineSlice(buffer, pos, end);
+        pos = end < buffer.length ? end + 1 : buffer.length;
         if (first) {
             if (!line.startsWith("#?")) {
                 res.error = "not a Radiance file (no #? magic)";
@@ -207,8 +208,9 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
         }
     }
     // The resolution: -Y height +X width.
-    const resLine = readLine(buffer, pos);
-    pos += resLine.length + 1;
+    const resEnd = lineEnd(buffer, pos);
+    const resLine = readLineSlice(buffer, pos, resEnd);
+    pos = resEnd < buffer.length ? resEnd + 1 : buffer.length;
     const parts = resLine.split(" ");
     if (parts.length != 4 || parts[0] != "-Y" || parts[2] != "+X") {
         res.error = "unsupported resolution line '" + resLine + "'";
@@ -216,7 +218,7 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
     }
     const height = I32.parseInt(parts[1]);
     const width = I32.parseInt(parts[3]);
-    if (width <= 0 || height <= 0) {
+    if (width <= 0 || height <= 0 || <i64>width * <i64>height > 67108864 || pos >= buffer.length) {
         res.error = "bad size";
         return res;
     }
@@ -232,11 +234,19 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
     out.gamma = gamma;
     out.exposure = exposure;
     out.type = targetType == FloatType ? FloatType : HalfFloatType;
+    // Precompute 256-entry 2^(e - 136) LUT (local for @job safety).
+    const scales = new Float64Array(256);
+    scales[0] = 0;
+    let scaleVal: f64 = Math.pow(2, -135);
+    for (let e = 1; e < 256; e++) {
+        scales[e] = scaleVal;
+        scaleVal *= 2.0;
+    }
     const count = width * height;
     if (out.type == FloatType) {
         const f = new Float32Array(count * 4);
         for (let i = 0; i < count; i++) {
-            const s = rgbeScale(rgbe[i * 4 + 3]);
+            const s = scales[rgbe[i * 4 + 3]];
             f[i * 4] = <f32>(<f64>rgbe[i * 4] * s);
             f[i * 4 + 1] = <f32>(<f64>rgbe[i * 4 + 1] * s);
             f[i * 4 + 2] = <f32>(<f64>rgbe[i * 4 + 2] * s);
@@ -246,7 +256,7 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
     } else {
         const h = new Uint16Array(count * 4);
         for (let i = 0; i < count; i++) {
-            const s = rgbeScale(rgbe[i * 4 + 3]);
+            const s = scales[rgbe[i * 4 + 3]];
             h[i * 4] = toHalf(<f32>(<f64>rgbe[i * 4] * s));
             h[i * 4 + 1] = toHalf(<f32>(<f64>rgbe[i * 4 + 1] * s));
             h[i * 4 + 2] = toHalf(<f32>(<f64>rgbe[i * 4 + 2] * s));
@@ -261,13 +271,14 @@ function parseRGBECore(buffer: Uint8Array, targetType: i32): RGBEParseResult {
 /// three.js's HDRLoader is the same loader.
 export { RGBELoader as HDRLoader };
 
-function rgbeScale(e: u8): f64 {
-    return e == 0 ? 0 : Math.pow(2, <f64>e - 136);   // 2^(e - 128) / 256
-}
-
-function readLine(b: Uint8Array, start: i32): string {
+function lineEnd(b: Uint8Array, start: i32): i32 {
     let end = start;
     while (end < b.length && b[end] != 10) end++;
+    return end;
+}
+
+function readLineSlice(b: Uint8Array, start: i32, end: i32): string {
+    if (end > start && b[end - 1] == 13) end--;   // strip trailing \r (CRLF)
     let s = "";
     for (let i = start; i < end; i++) s += String.fromCharCode(<i32>b[i]);
     return s;

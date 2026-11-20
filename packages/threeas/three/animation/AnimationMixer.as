@@ -111,16 +111,17 @@ export class PropertyMixer {
         }
     }
 
-    // into = into + from x t (numbers); into = slerp(into, into x from, t)
-    // (quaternions); booleans pick.
+    // into = into + from x t (numbers); into = slerp(into, from x into, t)
+    // (quaternions: makeClipAdditive stores q_target * q_ref^-1, so applying
+    // q_delta * q_base recovers q_target); booleans pick.
     private mixAdditive(into: Float64Array, from: Float64Array, t: f64): void {
         const n = this.valueSize;
         if (this.binding.isBoolean) {
             if (t >= 0.5) for (let i = 0; i < n; i++) into[i] = from[i];
         } else if (this.binding.isQuaternion) {
             const w = this.work;
-            const ax = into[0], ay = into[1], az = into[2], aw = into[3];
-            const bx = from[0], by = from[1], bz = from[2], bw = from[3];
+            const ax = from[0], ay = from[1], az = from[2], aw = from[3];
+            const bx = into[0], by = into[1], bz = into[2], bw = into[3];
             w[0] = ax * bw + aw * bx + ay * bz - az * by;
             w[1] = ay * bw + aw * by + az * bx - ax * bz;
             w[2] = az * bw + aw * bz + ax * by - ay * bx;
@@ -303,7 +304,7 @@ export class AnimationAction {
         if (this.startTime >= 0) {
             const running = (mixerTime - this.startTime) * timeDirection;
             if (running < 0 || timeDirection == 0) {
-                deltaTime = 0;
+                return;
             } else {
                 this.startTime = -1;
                 deltaTime = timeDirection * running;
@@ -324,6 +325,11 @@ export class AnimationAction {
                 else pm.accumulate(this.buffers[i], weight);
             }
         }
+    }
+
+    /// Resets loop tracking when jumping directly with `mixer.setTime`.
+    _resetLoopCount(): void {
+        this.loopCount = -1;
     }
 
     private updateWeight(time: f64): f64 {
@@ -351,7 +357,7 @@ export class AnimationAction {
         const pingPong = loop == LoopPingPong;
         if (deltaTime == 0) {
             if (loopCount == -1) return time;
-            return pingPong && (<i64>loopCount & 1) == 1 ? duration - time : time;
+            return pingPong && isFinite(loopCount) && (<i64>loopCount & 1) == 1 ? duration - time : time;
         }
         if (loop == LoopOnce) {
             if (loopCount == -1) this.loopCount = 0;
@@ -364,8 +370,8 @@ export class AnimationAction {
             return time;
         }
         if (loopCount == -1) {
-            loopCount = deltaTime >= 0 ? 0 : this.repetitions;
-            this.loopCount = loopCount;
+            loopCount = 0;
+            this.loopCount = 0;
         }
         if (duration > 0 && (time >= duration || time < 0)) {
             const loopDelta = Math.floor(time / duration);
@@ -376,11 +382,12 @@ export class AnimationAction {
                 if (this.clampWhenFinished) this.paused = true;
                 else this.enabled = false;
                 time = deltaTime > 0 ? duration : 0;
+                loopCount = this.repetitions > 0 && isFinite(this.repetitions) ? this.repetitions - 1 : 0;
             }
             this.loopCount = loopCount;
         }
         this.time = time;
-        if (pingPong && (<i64>loopCount & 1) == 1) return duration - time;
+        if (pingPong && isFinite(loopCount) && (<i64>loopCount & 1) == 1) return duration - time;
         return time;
     }
 }
@@ -418,9 +425,12 @@ export class AnimationMixer {
     /// root), made on first use; `blendMode` -1 takes the clip's.
     clipAction(clip: AnimationClip, optionalRoot: Object3D? = null, blendMode: i32 = -1): AnimationAction {
         const root = optionalRoot != null ? optionalRoot : this.root;
-        const existing = this.existingAction(clip, root);
-        if (existing != null && (blendMode < 0 || existing.blendMode == blendMode)) return existing;
-        const action = new AnimationAction(this, clip, root, blendMode);
+        const resolvedBlendMode = blendMode >= 0 ? blendMode : clip.blendMode;
+        for (let i = 0; i < this.actions.length; i++) {
+            const a = this.actions[i];
+            if (a.clip === clip && a.localRoot === root && a.blendMode == resolvedBlendMode) return a;
+        }
+        const action = new AnimationAction(this, clip, root, resolvedBlendMode);
         this.actions.push(action);
         return action;
     }
@@ -456,8 +466,15 @@ export class AnimationMixer {
     /// Jumps every action to `timeInSeconds`.
     setTime(timeInSeconds: f64): AnimationMixer {
         this.time = 0;
-        for (let i = 0; i < this.actions.length; i++) this.actions[i].time = 0;
-        return this.update(timeInSeconds);
+        for (let i = 0; i < this.actions.length; i++) {
+            this.actions[i].time = 0;
+            this.actions[i]._resetLoopCount();
+        }
+        const savedScale = this.timeScale;
+        this.timeScale = 1;
+        this.update(timeInSeconds);
+        this.timeScale = savedScale;
+        return this;
     }
 
     getRoot(): Object3D { return this.root; }
@@ -496,13 +513,17 @@ export class AnimationMixer {
         }
     }
 
-    /// Forgets the action of `clip` on `optionalRoot` (the mixer's root)
-    /// and the bindings only it used.
+    /// Forgets every action of `clip` on `optionalRoot` (the mixer's root)
+    /// and the bindings only they used.
     uncacheAction(clip: AnimationClip, optionalRoot: Object3D? = null): void {
-        const a = this.existingAction(clip, optionalRoot);
-        if (a == null) return;
-        this.deactivate(a);
-        this.removeInactiveAction(a);
+        const root = optionalRoot != null ? optionalRoot : this.root;
+        for (let i = this.actions.length - 1; i >= 0; i--) {
+            const a = this.actions[i];
+            if (a.clip === clip && a.localRoot === root) {
+                this.deactivate(a);
+                this.removeInactiveAction(a);
+            }
+        }
     }
 
     // Internal.
@@ -589,6 +610,7 @@ export class AnimationMixer {
         if (i >= 0) this.bindingList.splice(i, 1);
         const j = this.activeBindings.indexOf(binding);
         if (j >= 0) this.activeBindings.splice(j, 1);
+        binding.binding.unbind();
         binding.referenceCount = 0;
         binding.useCount = 0;
     }

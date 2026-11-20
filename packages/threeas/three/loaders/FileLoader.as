@@ -63,7 +63,12 @@ export async function fetchBytes(loader: Loader, url: string, path: string? = nu
         manager.itemEnd(resolved);
         return await Promise.reject<ArrayBuffer>(resolved + ": HTTP " + response.status.toString() + " " + response.statusText);
     }
-    const body = await response.arrayBuffer();
+    const bodySettled = await response.arrayBuffer().settled();
+    if (!bodySettled.ok) {
+        manager.itemError(resolved);
+        manager.itemEnd(resolved);
+        return await Promise.reject<ArrayBuffer>(resolved + ": " + bodySettled.error);
+    }
     manager.itemEnd(resolved);
-    return body;
+    return bodySettled.value;
 }

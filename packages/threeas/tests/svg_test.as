@@ -605,10 +605,48 @@ export class SVGTests extends Tests {
                 const def = SVGLoader.getStrokeStyle();
                 expect.that(def.strokeWidth == 1 && def.strokeColor == "#000" && def.strokeLineJoin == "miter"
                     && def.strokeLineCap == "butt" && def.strokeMiterLimit == 4).is(true);
-                // Writing at an offset fills the arrays up to it.
+                // Writing at an offset fills the arrays up to it without overwriting earlier vertices.
                 const v: Array<f64> = [];
                 SVGLoader.pointsToStrokeWithBuffers(straight, def, 12, 0.001, v, null, null, 2);
                 expect.that(v.length).is(3 * 8);
+                // Closed square (miter join) and square cap at vertexOffset > 0 preserve prior vertices.
+                const refClosed: Array<f64> = [];
+                SVGLoader.pointsToStrokeWithBuffers(square, SVGLoader.getStrokeStyle(2, "#000", "miter", "butt"),
+                    12, 0.001, refClosed, [], []);
+                const offClosed: Array<f64> = [999, 999, 999, 888, 888, 888];
+                SVGLoader.pointsToStrokeWithBuffers(square, SVGLoader.getStrokeStyle(2, "#000", "miter", "butt"),
+                    12, 0.001, offClosed, [], [], 2);
+                expect.that(offClosed[0] == 999 && offClosed[3] == 888).is(true);
+                let closedSame = offClosed.length == refClosed.length + 6;
+                for (let i = 0; i < refClosed.length && closedSame; i++) {
+                    if (Math.abs(offClosed[i + 6] - refClosed[i]) > 1e-9) closedSame = false;
+                }
+                expect.that(closedSame).is(true);
+                const refCap: Array<f64> = [];
+                const refCapUV: Array<f64> = [];
+                SVGLoader.pointsToStrokeWithBuffers(ell, SVGLoader.getStrokeStyle(2, "#000", "miter", "square"),
+                    12, 0.001, refCap, [], refCapUV);
+                const offCap: Array<f64> = [777, 777, 777, 666, 666, 666];
+                const offCapUV: Array<f64> = [0, 0, 0, 0];
+                SVGLoader.pointsToStrokeWithBuffers(ell, SVGLoader.getStrokeStyle(2, "#000", "miter", "square"),
+                    12, 0.001, offCap, [], offCapUV, 2);
+                expect.that(offCap[0] == 777 && offCap[3] == 666).is(true);
+                let capSame = offCap.length == refCap.length + 6;
+                for (let i = 0; i < refCap.length && capSame; i++) {
+                    if (Math.abs(offCap[i + 6] - refCap[i]) > 1e-9) capSame = false;
+                }
+                expect.that(capSame).is(true);
+            });
+            test("mutual <use> cycles terminate cleanly", (expect) => {
+                const cyclic = `<svg xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <g id="a"><use href="#b"/><rect width="2" height="2"/></g>
+                        <g id="b"><use href="#a"/><rect width="3" height="3"/></g>
+                    </defs>
+                    <use href="#a"/>
+                </svg>`;
+                const res = new SVGLoader().parse(cyclic);
+                expect.that(res.paths.length).is(2);
             });
         });
 

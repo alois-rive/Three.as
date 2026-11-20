@@ -400,6 +400,60 @@ export class FBXTests extends Tests {
                 expect.that(near(lambert.color.r, srgbToLinear(0.5))).is(true);
                 expect.that(lambert.map != null).is(true);
             });
+            test("multi-line ASCII arrays and URL-fetched texture flipY", (expect) => {
+                // Minimal ASCII FBX 7400 with a multi-line Vertices array and an external texture URL.
+                const ascii = "; FBX 7.4.0 project file\n"
+                    + "; " + "--------------------------------------------------------------------------------"
+                    + "--------------------------------------------------------------------------------"
+                    + "----------------------------------------\n"
+                    + "FBXHeaderExtension:  {\n\tFBXVersion: 7400\n}\n"
+                    + "Objects:  {\n"
+                    + "\tGeometry: 10, \"Geometry::Tri\", \"Mesh\" {\n"
+                    + "\t\tVertices: *9 {\n"
+                    + "\t\t\ta: 0,0,0,\n"
+                    + "1,0,0,\n"
+                    + "0,1,0\n"
+                    + "\t\t}\n"
+                    + "\t\tPolygonVertexIndex: *3 {\n"
+                    + "\t\t\ta: 0,1,-3\n"
+                    + "\t\t}\n"
+                    + "\t}\n"
+                    + "\tModel: 11, \"Model::TriMesh\", \"Mesh\" {\n"
+                    + "\t\tProperties70:  {\n"
+                    + "\t\t}\n"
+                    + "\t}\n"
+                    + "\tMaterial: 12, \"Material::Mat\", \"\" {\n"
+                    + "\t\tShadingModel: \"lambert\"\n"
+                    + "\t\tProperties70:  {\n"
+                    + "\t\t}\n"
+                    + "\t}\n"
+                    + "\tTexture: 13, \"Texture::Tex\", \"\" {\n"
+                    + "\t\tFileName: \"albedo.png\"\n"
+                    + "\t\tRelativeFilename: \"albedo.png\"\n"
+                    + "\t}\n"
+                    + "\tVideo: 14, \"Video::Vid\", \"Clip\" {\n"
+                    + "\t\tRelativeFilename: \"albedo.png\"\n"
+                    + "\t}\n"
+                    + "}\n"
+                    + "Connections:  {\n"
+                    + "\tC: \"OO\",10,11\n"
+                    + "\tC: \"OO\",12,11\n"
+                    + "\tC: \"OP\",13,12, \"DiffuseColor\"\n"
+                    + "\tC: \"OO\",14,13\n"
+                    + "}\n";
+                const loader = new FBXLoader();
+                const obj = loader.parse(String.UTF8.encode(ascii), "https://example.invalid/models/");
+                expect.that(loader.error).is("");
+                expect.that(obj != null).is(true);
+                if (obj == null) return;
+                const mesh = find(obj!, "TriMesh") as THREE.Mesh;
+                expect.that(mesh.geometry.getAttribute("position")!.count).is(3);
+                expect.that(mesh.geometry.getAttribute("position")!.getX(1)).is(1);
+                expect.that(mesh.geometry.getAttribute("position")!.getY(2)).is(1);
+                const mat = mesh.material as THREE.MeshLambertMaterial;
+                expect.that(mat.map != null).is(true);
+                if (mat.map != null) expect.that(mat.map!.flipY).is(true);
+            });
             test("three.js's nurbs.fbx (ASCII 7.2, open, closed and periodic curves)", (expect) => {
                 const bytes = this.blob("fbx_nurbs");
                 if (bytes == null) return;

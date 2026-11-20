@@ -113,6 +113,8 @@ export class BufferGeometryLoader extends Loader {
             if (c != null && c.length >= 3) center.set(c[0], c[1], c[2]);
             geometry.boundingSphere = new Sphere(center, jnum(boundingSphere, "radius", 0));
         }
+        const uuid = jstr(json, "uuid", "");
+        if (uuid.length > 0) geometry.uuid = uuid;
         const name = jstr(json, "name", "");
         if (name.length > 0) geometry.name = name;
         const userData = jget(json, "userData");
@@ -204,7 +206,10 @@ function typedValues(type: string, words: Array<f64>): Array<f64> {
     for (let i = 0; i < words.length; i++) u32[i] = <u32>words[i];
     const bytes = Uint8Array.wrap(u32.buffer);
     const out: Array<f64> = [];
-    if (type == "Float32Array") {
+    if (type == "Float64Array") {
+        const dv = new DataView(u32.buffer);
+        for (let i = 0; i + 8 <= u32.buffer.byteLength; i += 8) out.push(dv.getFloat64(i, true));
+    } else if (type == "Float32Array") {
         const a = Float32Array.wrap(u32.buffer);
         for (let i = 0; i < a.length; i++) out.push(<f64>a[i]);
     } else if (type == "Uint8Array" || type == "Uint8ClampedArray") {

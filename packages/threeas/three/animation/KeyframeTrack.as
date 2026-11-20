@@ -132,6 +132,7 @@ export class KeyframeTrack {
     /// Removes keys that change nothing (repeated values between equal
     /// neighbours, duplicate times), as three.js.
     optimize(): KeyframeTrack {
+        if (this.interpolation == InterpolateGLTFCubicSpline) return this;
         const times = this.times.slice(0);
         const values = this.values.slice(0);
         const stride = this.getKeyStride();
@@ -244,10 +245,18 @@ export class KeyframeTrack {
     protected smooth(i0: i32, i1: i32, t: f64, size: i32, out: Float64Array): void {
         const v = this.values, times = this.times;
         const n = times.length;
-        const iPrev = i0 > 0 ? i0 - 1 : i0, iNext = i1 < n - 1 ? i1 + 1 : i1;
-        const tPrev: f64 = iPrev != i0 ? <f64>times[i0] - <f64>times[iPrev] : <f64>times[i1] - <f64>times[i0];
-        const tNext: f64 = iNext != i1 ? <f64>times[iNext] - <f64>times[i1] : <f64>times[i1] - <f64>times[i0];
         const dt: f64 = <f64>times[i1] - <f64>times[i0];
+        if (dt <= 0) {
+            this.copyKey(i0, size, 0, size, out);
+            return;
+        }
+        const iPrev = i0 > 0 ? i0 - 1 : i0, iNext = i1 < n - 1 ? i1 + 1 : i1;
+        const dPrev: f64 = <f64>times[i0] - <f64>times[iPrev];
+        const dNext: f64 = <f64>times[iNext] - <f64>times[i1];
+        const pIdx = dPrev > 0 ? iPrev : i0;
+        const nIdx = dNext > 0 ? iNext : i1;
+        const tPrev: f64 = dPrev > 0 ? dPrev : dt;
+        const tNext: f64 = dNext > 0 ? dNext : dt;
         const halfDt = dt * 0.5;
         const wP = halfDt / tPrev, wN = halfDt / tNext;
         const pp = t * t, ppp = pp * t;
@@ -256,8 +265,8 @@ export class KeyframeTrack {
         const s1 = (-1 - wN) * ppp + (1.5 + wN) * pp + 0.5 * t;
         const sN = wN * ppp - wN * pp;
         for (let k = 0; k < size; k++) {
-            out[k] = sP * <f64>v[iPrev * size + k] + s0 * <f64>v[i0 * size + k]
-                + s1 * <f64>v[i1 * size + k] + sN * <f64>v[iNext * size + k];
+            out[k] = sP * <f64>v[pIdx * size + k] + s0 * <f64>v[i0 * size + k]
+                + s1 * <f64>v[i1 * size + k] + sN * <f64>v[nIdx * size + k];
         }
     }
 

@@ -686,9 +686,26 @@ export class ObjectLoaderTests extends Tests {
                     '"type":"Float32Array","array":[0,0,0,1,0,0,0,1,0],"normalized":false}},' +
                     '"groups":[{"start":0,"count":3,"materialIndex":0}],' +
                     '"boundingSphere":{"center":[0.5,0.5,0],"radius":0.7}}}')!;
+                expect.that(geometry.uuid).is("g");
                 expect.that(geometry.getAttribute("position")!.count).is(3);
                 expect.that(geometry.groups.length).is(1);
                 expect.that(geometry.boundingSphere!.radius).is(0.7);
+                // Interleaved Float64Array attribute.
+                const f64 = new Float64Array(6);
+                f64[0] = 1.5; f64[1] = 2.5; f64[2] = 3.5;
+                f64[3] = 4.5; f64[4] = 5.5; f64[5] = 6.5;
+                const words = Uint32Array.wrap(f64.buffer);
+                let wordStr = "";
+                for (let i = 0; i < words.length; i++) wordStr += (i > 0 ? "," : "") + words[i].toString();
+                const geo64 = new THREE.BufferGeometryLoader().parse<string>(
+                    '{"uuid":"g64","type":"BufferGeometry","data":{'
+                    + '"arrayBuffers":{"b0":[' + wordStr + ']},'
+                    + '"interleavedBuffers":{"ib0":{"stride":3,"buffer":"b0","type":"Float64Array","uuid":"ib0"}},'
+                    + '"attributes":{"position":{"isInterleavedBufferAttribute":true,"itemSize":3,"data":"ib0","offset":0,"normalized":false}}}}')!;
+                expect.that(geo64.uuid).is("g64");
+                const p64 = geo64.getAttribute("position")!;
+                expect.that(p64.count).is(2);
+                expect.that(near(p64.getX(0), 1.5) && near(p64.getZ(1), 6.5)).is(true);
                 const material = new THREE.MaterialLoader().parse<string>(
                     '{"metadata":{"version":4.6,"type":"Material","generator":"Material.toJSON"},' +
                     '"uuid":"m","type":"MeshLambertMaterial","color":16711680,"emissive":255,' +

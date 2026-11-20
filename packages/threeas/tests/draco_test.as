@@ -26,9 +26,14 @@
 import { Tests, Expect } from "rive/test";
 import * as THREE from "../three/Three";
 import {
-    Decoder, Mesh, PointCloud, POSITION, NORMAL, TEX_COORD, COLOR, GENERIC, TRIANGULAR_MESH,
-    POINT_CLOUD, INVALID_GEOMETRY_TYPE, DT_UINT8,
+    Decoder, Mesh, PointCloud, PointAttribute, POSITION, NORMAL, TEX_COORD, COLOR, GENERIC, TRIANGULAR_MESH,
+    POINT_CLOUD, INVALID_GEOMETRY_TYPE, DT_UINT8, DT_INT32,
 } from "../three/addons/libs/draco/draco_decoder";
+import { CornerTable, MeshAttributeIndicesEncodingData } from "../three/addons/libs/draco/corner_table";
+import {
+    MeshPredictionSchemeData, MeshPredictionSchemeTexCoordsPortableDecoder, PredictionSchemeWrapDecodingTransform,
+} from "../three/addons/libs/draco/prediction_schemes";
+import { MeshPredictionSchemeTexCoordsDecoder } from "../three/addons/libs/draco/tex_coords_deprecated";
 import { DRACOLoader, decodeDraco } from "../three/addons/loaders/DRACOLoader";
 import { GLTFLoader, GLTFData, decodeGLTF } from "../three/addons/loaders/GLTFLoader";
 
@@ -615,6 +620,72 @@ export class DracoTests extends Tests {
                 const att = metadata.getAttributeMetadataByUniqueId(generic.uniqueId);
                 expect.that(att != null).is(true);
                 if (att != null) expect.that(att.getEntryString("name")).is("added_edges");
+            });
+
+            test("tex-coord predictors prefer prevDataId when prevDataId < dataId <= nextDataId", (expect) => {
+                // Single triangle: corners 0->v0, 1->v1, 2->v2.
+                // Data IDs: v0 -> 0, v1 -> 2, v2 -> 3, plus an unrelated dataId 1 on v3.
+                // For dataId = 2 (corner 1): previous corner is 0 (prevDataId = 0 < 2),
+                // next corner is 2 (nextDataId = 3 >= 2). Prediction must copy data[0]
+                // (prevDataId * 2), NOT data[2] ((dataId - 1) * 2).
+                const ct = new CornerTable();
+                ct.reset(2, 4);
+                ct.mapCornerToVertex(0, 0);
+                ct.mapCornerToVertex(1, 1);
+                ct.mapCornerToVertex(2, 2);
+                ct.mapCornerToVertex(3, 3);
+                ct.mapCornerToVertex(4, 2);
+                ct.mapCornerToVertex(5, 0);
+                ct.vertexCount = 4;
+                const enc = new MeshAttributeIndicesEncodingData();
+                enc.encodedAttributeValueIndexToCornerMap = [0, 3, 1, 2]; // v0, v3, v1 (prev=v0->0, next=v2->3), v2
+                enc.vertexToEncodedAttributeValueIndexMap = new Int32Array(4);
+                enc.vertexToEncodedAttributeValueIndexMap[0] = 0;
+                enc.vertexToEncodedAttributeValueIndexMap[1] = 2;
+                enc.vertexToEncodedAttributeValueIndexMap[2] = 3;
+                enc.vertexToEncodedAttributeValueIndexMap[3] = 1;
+                const meshData = new MeshPredictionSchemeData(ct, enc);
+                const posAttr = new PointAttribute();
+                posAttr.attributeType = POSITION;
+                posAttr.numComponents = 3;
+                posAttr.dataType = DT_INT32;
+                posAttr.byteStride = 12;
+                posAttr.buffer = new ArrayBuffer(4 * 12);
+                const uvAttr = new PointAttribute();
+                uvAttr.attributeType = TEX_COORD;
+                uvAttr.numComponents = 2;
+                const entryToPoint = new Int32Array(4);
+                for (let i = 0; i < 4; i++) entryToPoint[i] = i;
+
+                // Portable tex-coord predictor
+                const t1 = new PredictionSchemeWrapDecodingTransform();
+                t1.minValue = -1000; t1.maxValue = 1000; t1.maxDif = 2001;
+                const portable = new MeshPredictionSchemeTexCoordsPortableDecoder(uvAttr, t1, meshData);
+                expect.that(portable.setParentAttribute(posAttr)).is(true);
+                const data1 = new Int32Array(8);
+                // Corrections: dataId 0 -> (10, 20), dataId 1 -> (+90, +80) => (100, 100),
+                // dataId 2 -> (0, 0) => should predict from prevDataId=0 => (10, 20), NOT (100, 100)!
+                data1[0] = 10; data1[1] = 20;
+                data1[2] = 90; data1[3] = 80;
+                data1[4] = 0; data1[5] = 0;
+                data1[6] = 0; data1[7] = 0;
+                expect.that(portable.computeOriginalValues(data1, 8, 2, entryToPoint)).is(true);
+                expect.that(data1[4]).is(10);
+                expect.that(data1[5]).is(20);
+
+                // Deprecated tex-coord predictor
+                const t2 = new PredictionSchemeWrapDecodingTransform();
+                t2.minValue = -1000; t2.maxValue = 1000; t2.maxDif = 2001;
+                const deprecated = new MeshPredictionSchemeTexCoordsDecoder(uvAttr, t2, meshData, 0);
+                expect.that(deprecated.setParentAttribute(posAttr)).is(true);
+                const data2 = new Int32Array(8);
+                data2[0] = 10; data2[1] = 20;
+                data2[2] = 90; data2[3] = 80;
+                data2[4] = 0; data2[5] = 0;
+                data2[6] = 0; data2[7] = 0;
+                expect.that(deprecated.computeOriginalValues(data2, 8, 2, entryToPoint)).is(true);
+                expect.that(data2[4]).is(10);
+                expect.that(data2[5]).is(20);
             });
         });
 
