@@ -731,6 +731,14 @@ export class GPURenderer {
     private arenaU32: Uint32Array = new Uint32Array(0);
     private arenaCapacity: i32 = 0;
     private slotCount: i32 = 0;
+    // Draw states and material entries that have not been drawn for a while
+    // are evicted (sweepStale): their bind groups are released and their
+    // arena slots reused. Without it every object and material ever drawn
+    // kept its state, bind groups and arena slot, so a scene that keeps
+    // making new objects (clones, per-level copies) leaked GPU handles and
+    // memory.
+    private freeSlots: Array<i32> = [];
+    private lastSweep: i32 = 0;
     private slotDirty: Uint8Array = new Uint8Array(0);
     private dirtyLo: i32 = 0x7fffffff;
     private dirtyHi: i32 = -1;
@@ -1421,6 +1429,7 @@ export class GPURenderer {
         const canvas = this.destCanvas!;
         const pw = this.passWidth, ph = this.passHeight;
         this.drainDisposed();
+        this.sweepStale(frame);
 
         // Matrices.
         if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
@@ -2324,6 +2333,9 @@ export class GPURenderer {
         if (hasValues) {
             let buffer = cu.buffer;
             if (buffer == null || buffer.size != <u32>size) {
+                if (buffer != null) buffer.release();
+                const oldGroup = cu.group;
+                if (oldGroup != null) oldGroup.release();
                 buffer = new GPUBuffer(BufferUsage.uniform, <u32>size);
                 cu.buffer = buffer;
                 cu.group = null;
@@ -2342,6 +2354,8 @@ export class GPURenderer {
                 const t = firstTexture!;
                 samplers.push(new GPUBindGroupSampler(<u32>(views.length + 1), this.sampler(t, this.textures.levels(t) > 1)));
             }
+            const oldGroup = cu.group;
+            if (oldGroup != null) oldGroup.release();
             cu.group = new GPUBindGroup(layout, ubos, textures, samplers);
             cu.views = views.slice();
         }
@@ -2375,6 +2389,53 @@ export class GPURenderer {
         const s = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest, WrapMode.clampToEdge, WrapMode.clampToEdge);
         this.samplers.set(key, s);
         return s;
+    }
+
+    /// Evicts draw states and material entries unused for STALE_FRAMES render
+    /// calls (render calls, not display frames: each pass counts).
+    private sweepStale(frame: i32): void {
+        if (frame - this.lastSweep < 600) return;
+        this.lastSweep = frame;
+        const STALE_FRAMES = 4000;
+        const keys = this.states.keys();
+        for (let i = 0; i < keys.length; i++) {
+            const st = this.states.get(keys[i]);
+            if (st.frame < 0 || frame - st.frame < STALE_FRAMES) continue;
+            if (st.slot >= 0) this.freeSlots.push(st.slot);
+            const og = st.objGroup;
+            if (og != null && og !== this.arenaGroup) og.release();
+            st.objGroup = null;
+            st.entry = null;
+            this.states.delete(keys[i]);
+        }
+        const ids = this.materialEntries.keys();
+        for (let i = 0; i < ids.length; i++) {
+            const entry = this.materialEntries.get(ids[i]);
+            let latest = -1;
+            for (let v = 0; v < 8; v++) {
+                const b = unchecked(entry.blocks[v]);
+                if (b != null && b.frame > latest) latest = b.frame;
+            }
+            if (latest < 0 || frame - latest < STALE_FRAMES) continue;
+            for (let v = 0; v < 8; v++) {
+                const b = unchecked(entry.blocks[v]);
+                if (b == null) continue;
+                const mg = b.matGroup;
+                if (mg != null) mg.release();
+                const sg = b.samplerGroup;
+                if (sg != null) sg.release();
+                b.matGroup = null;
+                b.samplerGroup = null;
+                unchecked(entry.blocks[v] = null);
+            }
+            this.materialEntries.delete(ids[i]);
+        }
+        // Live states must not keep an evicted entry.
+        const live = this.states.values();
+        for (let i = 0; i < live.length; i++) {
+            const e = live[i].entry;
+            if (e != null && !this.materialEntries.has(e.material.id)) live[i].entry = null;
+        }
     }
 
     private drainDisposed(): void {
@@ -4122,6 +4183,8 @@ export class GPURenderer {
         let changed = state.objGroup == null || state.arena !== arena || state.bones !== bones || state.morph !== morph;
         for (let i = 0; i < EXTRA_SLOTS && !changed; i++) changed = state.xgroupViews[i] !== state.xviews[i];
         if (changed) {
+            const oldObj = state.objGroup;
+            if (oldObj != null && oldObj !== this.arenaGroup) oldObj.release();
             state.objGroup = new GPUBindGroup(this.objLayout!, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES),
                 new GPUBindGroupUBO(1, bones), new GPUBindGroupUBO(7, morph, 0, <u32>MORPH_BYTES)],
                 extraTextures(state.xviews, this.white!));
@@ -4559,6 +4622,8 @@ export class GPURenderer {
                 entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
                 b.groupViews[s] = views[s];
             }
+            const oldMat = b.matGroup;
+            if (oldMat != null) oldMat.release();
             b.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
         }
         changed = b.samplerGroup == null;
@@ -4569,6 +4634,8 @@ export class GPURenderer {
                 entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
                 b.groupSamplers[s] = samplers[s];
             }
+            const oldSampler = b.samplerGroup;
+            if (oldSampler != null) oldSampler.release();
             b.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
         }
         return b;
@@ -4624,7 +4691,7 @@ export class GPURenderer {
             if (!dirty) continue;
 
             if (state.slot < 0) {
-                state.slot = this.slotCount++;
+                state.slot = this.freeSlots.length > 0 ? this.freeSlots.pop() : this.slotCount++;
                 state.objOffset = <u32>(state.slot * OBJ_BYTES);
             }
             const base = <i32>state.objOffset;

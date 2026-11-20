@@ -105,10 +105,20 @@ class TextureDecode extends ImageDecodeListener {
             t.dataHeight = image.height;
             t.needsUpdate = true;
         }
+        this.done();
     }
 
     override onImageDecodeFailed(message: string): void {
         this.context.log("three: GLTFLoader: an image failed to decode: " + message);
+        this.done();
+    }
+
+    // Once it has reported, the listener (and through it the textures and
+    // their decoded pixels) is no longer kept alive.
+    private done(): void {
+        const i = pendingDecodes.indexOf(this);
+        if (i >= 0) pendingDecodes.splice(i, 1);
+        this.textures = [];
     }
 }
 
