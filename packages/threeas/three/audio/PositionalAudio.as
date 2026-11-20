@@ -42,6 +42,10 @@ export class PositionalAudio extends Audio {
         return this.panner;
     }
 
+    override fallbackSpatialGain(): f64 {
+        return this.distanceGain * this.coneGain;
+    }
+
     getRefDistance(): f64 { return this.panner.refDistance; }
     setRefDistance(value: f64): PositionalAudio { this.panner.refDistance = value; return this; }
     getRolloffFactor(): f64 { return this.panner.rolloffFactor; }

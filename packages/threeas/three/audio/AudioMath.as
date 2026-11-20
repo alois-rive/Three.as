@@ -166,20 +166,62 @@ export function onePoleCoefficient(cutoff: f64, sampleRate: f64): f64 {
 /// BiquadFilterNode's types.
 export const BIQUAD_TYPES: Array<string> = ["lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peaking", "notch", "allpass"];
 
+function writeBiquadConstant(out: StaticArray<f64>, offset: i32, gain: f64): void {
+    out[offset] = gain;
+    out[offset + 1] = 0;
+    out[offset + 2] = 0;
+    out[offset + 3] = 0;
+    out[offset + 4] = 0;
+}
+
 /// Web Audio's biquad coefficients, normalized by a0, into `out` at
 /// `offset`: b0, b1, b2, a1, a2 (y[n] = b0 x[n] + b1 x[n-1] + b2 x[n-2]
 /// - a1 y[n-1] - a2 y[n-2]).
 export function biquadCoefficients(type: string, frequency: f64, Q: f64, gain: f64, detune: f64, sampleRate: f64,
                                    out: StaticArray<f64>, offset: i32 = 0): void {
+    if (!isFinite(sampleRate) || sampleRate <= 0 || isNaN(frequency) || isNaN(detune)) {
+        writeBiquadConstant(out, offset, 1);
+        return;
+    }
     const nyquist = sampleRate / 2;
-    const f0 = Math.min(Math.max(frequency * Math.pow(2, detune / 1200), 0), nyquist);
-    const A = Math.pow(10, gain / 40);
+    let f0: f64 = 0;
+    if (frequency <= 0) {
+        f0 = 0;
+    } else if (frequency >= nyquist && detune >= 0) {
+        f0 = nyquist;
+    } else {
+        const clampedDetune = Math.min(Math.max(detune, -120000), 120000);
+        f0 = Math.min(Math.max(frequency * Math.pow(2, clampedDetune / 1200), 0), nyquist);
+    }
+    const g = isNaN(gain) ? 0 : Math.min(Math.max(gain, -200), 200);
+    const A = Math.pow(10, g / 40);
     const w0 = 2 * Math.PI * f0 / sampleRate;
+
+    // Exact W3C Web Audio boundary behavior at DC (f0 <= 0) and Nyquist (f0 >= nyquist),
+    // avoiding alpha == 0 which produces a double pole on the unit circle.
+    if (f0 <= 0 || w0 <= 1e-7) {
+        if (type == "lowpass" || type == "bandpass") writeBiquadConstant(out, offset, 0);
+        else if (type == "highshelf") writeBiquadConstant(out, offset, A * A);
+        else writeBiquadConstant(out, offset, 1);
+        return;
+    }
+    if (f0 >= nyquist || Math.PI - w0 <= 1e-7) {
+        if (type == "highpass" || type == "bandpass") writeBiquadConstant(out, offset, 0);
+        else if (type == "lowshelf") writeBiquadConstant(out, offset, A * A);
+        else writeBiquadConstant(out, offset, 1);
+        return;
+    }
+
     const cw = Math.cos(w0), sw = Math.sin(w0);
-    const alphaQ = Q != 0 ? sw / (2 * Q) : 1e9;
-    const alphaQdB = sw / (2 * Math.pow(10, Q / 20));
-    const S: f64 = 1;
-    const alphaS = sw / 2 * Math.sqrt((A + 1 / A) * (1 / S - 1) + 2);
+    // For lowpass/highpass, Q is in dB per W3C Web Audio spec; clamp so 10^(Q/20) and alpha stay finite and bounded.
+    const qDb = isNaN(Q) ? 0 : Math.min(Math.max(Q, -100), 100);
+    const alphaQdB = Math.min(Math.max(sw / (2 * Math.pow(10, qDb / 20)), 1e-6), 1e6);
+    // For Q-based filters (bandpass, notch, allpass, peaking), Q must be strictly positive.
+    const qPos = isNaN(Q) ? 1 : Math.min(Math.max(Q, 1e-4), 1e4);
+    const alphaQ = Math.min(Math.max(sw / (2 * qPos), 1e-6), 1e6);
+    // S = 1 shelf slope: sqrt((A + 1/A) * (1/S - 1) + 2) == sqrt(2).
+    const alphaS = sw * Math.SQRT1_2;
+
     let b0: f64 = 1, b1: f64 = 0, b2: f64 = 0, a0: f64 = 1, a1: f64 = 0, a2: f64 = 0;
     if (type == "lowpass") {
         b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2;
@@ -197,8 +239,10 @@ export function biquadCoefficients(type: string, frequency: f64, Q: f64, gain: f
         b0 = 1 - alphaQ; b1 = -2 * cw; b2 = 1 + alphaQ;
         a0 = 1 + alphaQ; a1 = -2 * cw; a2 = 1 - alphaQ;
     } else if (type == "peaking") {
-        b0 = 1 + alphaQ * A; b1 = -2 * cw; b2 = 1 - alphaQ * A;
-        a0 = 1 + alphaQ / A; a1 = -2 * cw; a2 = 1 - alphaQ / A;
+        const alphaNum = alphaQ * A;
+        const alphaDen = Math.min(Math.max(alphaQ / A, 1e-6), 1e6);
+        b0 = 1 + alphaNum; b1 = -2 * cw; b2 = 1 - alphaNum;
+        a0 = 1 + alphaDen; a1 = -2 * cw; a2 = 1 - alphaDen;
     } else if (type == "lowshelf") {
         const s = 2 * Math.sqrt(A) * alphaS;
         b0 = A * ((A + 1) - (A - 1) * cw + s);
@@ -216,11 +260,21 @@ export function biquadCoefficients(type: string, frequency: f64, Q: f64, gain: f
         a1 = 2 * ((A - 1) - (A + 1) * cw);
         a2 = (A + 1) - (A - 1) * cw - s;
     }
-    out[offset] = b0 / a0;
-    out[offset + 1] = b1 / a0;
-    out[offset + 2] = b2 / a0;
-    out[offset + 3] = a1 / a0;
-    out[offset + 4] = a2 / a0;
+    if (!(a0 > 0) || !isFinite(a0)) {
+        writeBiquadConstant(out, offset, 1);
+        return;
+    }
+    const nb0 = b0 / a0, nb1 = b1 / a0, nb2 = b2 / a0, na1 = a1 / a0, na2 = a2 / a0;
+    if (!isFinite(nb0) || !isFinite(nb1) || !isFinite(nb2) || !isFinite(na1) || !isFinite(na2) ||
+        Math.abs(na2) >= 1 || 1 + na1 + na2 <= 0 || 1 - na1 + na2 <= 0) {
+        writeBiquadConstant(out, offset, 1);
+        return;
+    }
+    out[offset] = nb0;
+    out[offset + 1] = nb1;
+    out[offset + 2] = nb2;
+    out[offset + 3] = na1;
+    out[offset + 4] = na2;
 }
 
 /// In-place radix-2 FFT of `re` / `im` (length a power of two).
