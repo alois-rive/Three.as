@@ -52,7 +52,14 @@ engine edit shows in the gallery without publishing:
 - Local engine scripts are all compiled, new ones included. A **new
   engine shader** (a new `.wgsl` under `three/`) does not reach the
   gallery until the library is republished and the gallery updated (baked
-  variants are the gallery's own files, so they do). Until then, an
+  variants are the gallery's own files, so they do). Nor does an **edit
+  to an existing one**: the snapshot's asset of the same name in
+  `.libraries/` wins, so the gallery runs the edited scripts on the
+  published `three.wgsl` (a new entry point the scripts ask for resolves
+  to nothing and the draw vanishes, silently). To preview a three.wgsl
+  change in the gallery, copy it over
+  `.libraries/threeas@*/three_shaders_three.wgsl` for the run and
+  `git checkout` it after. Until then, an
   example that needs it can carry a copy under the engine's asset name
   (`packages/gallery/three/shaders/...`; M16's addon shaders were
   carried that way until library v6), deleted once the library has it.
@@ -112,6 +119,13 @@ engine edit shows in the gallery without publishing:
   share test vectors (`tools/threeas_bake.sh --self-test`): change both or
   neither. The engine ships no variants and no registry.
 - No WGSL identifier named `gl` or starting with `gl_` (WebGL2 reserves them).
+- No WGSL `@builtin(instance_index)` (nor anything else the GL translator
+  emulates with a plain uniform): naga emits `uniform uint
+  naga_vs_first_instance;` for it, and Rive's web runtime queries that
+  uniform with no program bound, so WebGL2's `getUniform` throws for every
+  program carrying it. Feed a per-instance vertex attribute instead (as
+  three.wgsl's `vs_morph_instanced` does). `tools/check_glsl.py` fails on
+  any plain uniform in the GLSL.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
 - A new example is a folder `packages/gallery/examples/<name>/` with
@@ -188,7 +202,8 @@ after a shader change, build release `.riv`s (`tools/release_build.sh
 build/release`) and run `python3 tools/check_glsl.py` on both (needs
 glslangValidator; tools/publish.sh does): WebGL2 rejects what the native
 backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
-`gl_1`). The gallery's release has 114 GLSL shaders (the engine's 108 and the
+`gl_1`), and it fails on naga's emulation uniforms (`naga_vs_first_instance`,
+see Rules), which compile but crash the web runtime. The gallery's release has 114 GLSL shaders (the engine's 108 and the
 examples' 6).
 
 ## Publishing

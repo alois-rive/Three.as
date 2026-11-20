@@ -71,7 +71,7 @@ export class Demo extends Layout {
 | `outputColorSpace` | read-only, always sRGB |
 | `toneMapping`, `toneMappingExposure` | as three.js (Linear, Reinhard, Cineon, ACESFilmic, AgX, Neutral); no CustomToneMapping |
 | output | premultiplied alpha, composited with `srcOver` |
-| custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only) |
+| custom vertex layouts | fixed slots: 0 position, 1 normal (location 1) and tangent (location 12) interleaved, 2 uv, 3 colour, 4 instance matrix (mat4), 5 instance colour (rgb), 6 uv1 (location 11), 7 skin index and weight interleaved (skinned only), or an InstancedMesh with a morphTexture's instance row (location 13, f32, per instance) |
 | `info.render.calls/triangles/lines/points`, `info.memory`, `info.autoReset` / `reset()` | same, plus `info.render.culled` (objects frustum culled); `info.memory` counts `geometries` and `textures` (no `info.programs`) |
 | (none) | `renderer.parallelCulling` (Rive-only, default true): views with 2048 or more frustum-culled candidates test them in a Rive parallel call (`three/renderers/gpu/Culling`), with the same result as on the main lane |
 | (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
@@ -668,7 +668,16 @@ repository commits the gallery unbaked.
 - **InstancedMesh morphs**: `setMorphAt(index, mesh)` / `getMorphAt`,
   `morphTexture` (a FloatType RedFormat DataTexture, a row per instance:
   base influence, then the weights; uploaded as half floats) as three.js;
-  set `morphTexture.needsUpdate = true` after changing it.
+  set `morphTexture.needsUpdate = true` after changing it. Such draws use
+  their own vertex entry points (`vs_morph_instanced`,
+  `vs_morph_instanced_displaced`, also for shadows) that read the
+  instance's row from a per-instance vertex attribute (slot 7, location
+  13: the renderer's shared 0, 1, 2 ... buffer, grown on demand), not
+  `@builtin(instance_index)` as three.js's `gl_InstanceID`: naga emulates
+  that builtin on WebGL2 with a plain uniform (`naga_vs_first_instance`)
+  that Rive's web runtime queries with no program bound, which throws for
+  every program carrying it. No ThreeAS shader reads `instance_index`, and
+  `tools/check_glsl.py` fails on any such emulation uniform.
 - **The vertex textures borrow extra map slots**: the morph texture takes
   extra slot 4, the bone texture slot 3 and an instanced morphTexture
   slot 2 (group 1 bindings 6, 5, 4; the web allows 16 textures a stage

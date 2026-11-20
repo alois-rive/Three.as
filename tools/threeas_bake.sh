@@ -363,7 +363,7 @@ specialize() {   # $1: block file, $2: entry points
             if (!(name in wanted)) { dropping = 1; next }
             print attr; print
             if (attr == "@vertex" && name !~ /skinned/) print "    let keep_bones = B.bones[0][0].x;"
-            if (attr == "@vertex" && name !~ /vs_main|vs_displaced|skinned/) print "    let keep_morph = M.info.x;"
+            if (attr == "@vertex" && name !~ /vs_main|vs_displaced|skinned|morph_instanced/) print "    let keep_morph = M.info.x;"
             next
         }
         dropping { if ($0 == "}") dropping = 0; next }
