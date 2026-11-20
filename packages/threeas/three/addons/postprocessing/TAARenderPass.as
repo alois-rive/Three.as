@@ -70,15 +70,31 @@ export class TAARenderPass extends SSAARenderPass {
         const sampleWeight = 1.0 / <f64>count;
 
         if (this.accumulateIndex >= 0 && this.accumulateIndex < count) {
+            const viewOffset = this.viewOffset;
+            viewOffset.fullWidth = <f64>readBuffer.width;
+            viewOffset.fullHeight = <f64>readBuffer.height;
+            viewOffset.offsetX = 0;
+            viewOffset.offsetY = 0;
+            viewOffset.width = <f64>readBuffer.width;
+            viewOffset.height = <f64>readBuffer.height;
+            const cv = this.camera.view;
+            const original = this.originalViewOffset;
+            original.enabled = cv != null && cv.enabled;
+            if (original.enabled) {
+                original.copy(cv!);
+                viewOffset.copy(cv!);
+            }
+
             this.copyMaterial.uniform<f64>("opacity").value = sampleWeight;
             this.copyMaterial.uniform<Texture>("tDiffuse").value = writeBuffer.texture;
             // Several jittered samples a frame, added into the sample target.
             const numSamplesPerFrame = 1 << <u32>max<i32>(0, min<i32>(this.sampleLevel, 5));
             for (let i = 0; i < numSamplesPerFrame; i++) {
                 const j = this.accumulateIndex;
-                this.camera.setViewOffset(<f64>readBuffer.width, <f64>readBuffer.height,
-                    <f64>jitterOffsets[j * 2] * 0.0625, <f64>jitterOffsets[j * 2 + 1] * 0.0625,   // 0.0625 = 1 / 16
-                    <f64>readBuffer.width, <f64>readBuffer.height);
+                this.camera.setViewOffset(viewOffset.fullWidth, viewOffset.fullHeight,
+                    viewOffset.offsetX + <f64>jitterOffsets[j * 2] * 0.0625,
+                    viewOffset.offsetY + <f64>jitterOffsets[j * 2 + 1] * 0.0625,   // 0.0625 = 1 / 16
+                    viewOffset.width, viewOffset.height);
                 renderer.setRenderTarget(writeBuffer);
                 renderer.setClearColor<u32>(this.clearColor, this.clearAlpha);
                 renderer.clear();
@@ -93,7 +109,12 @@ export class TAARenderPass extends SSAARenderPass {
                 this.accumulateIndex++;
                 if (this.accumulateIndex >= count) break;
             }
-            this.camera.clearViewOffset();
+            if (original.enabled) {
+                this.camera.setViewOffset(original.fullWidth, original.fullHeight, original.offsetX, original.offsetY,
+                    original.width, original.height);
+            } else {
+                this.camera.clearViewOffset();
+            }
         }
 
         renderer.setClearColor<u32>(this.clearColor, this.clearAlpha);

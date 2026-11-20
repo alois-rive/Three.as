@@ -278,6 +278,18 @@ export class GTAOPass extends Pass {
 
     override render(renderer: GPURenderer, writeBuffer: RenderTarget, readBuffer: RenderTarget, deltaTime: f64,
                     maskActive: bool): void {
+        const out = this.output;
+        if (out == GTAOPass.OUTPUT.Off) {
+            this.needsSwap = false;
+            if (this.renderToScreen) {
+                this.copyMaterial.uniform<Texture>("tDiffuse").value = readBuffer.texture;
+                this.copyMaterial.blending = NoBlending;
+                aoRenderPass(renderer, this.fsQuad, this.copyMaterial, null);
+            }
+            return;
+        }
+        this.needsSwap = true;
+
         // Normals and depth (meshes only: points and lines do not occlude).
         const nrt = this.normalRenderTarget;
         if (this._renderGBuffer && nrt != null) {
@@ -288,7 +300,9 @@ export class GTAOPass extends Pass {
 
         // AO.
         const camera = this.camera;
+        const perspective = isPerspective(camera);
         const g = this.gtaoMaterial;
+        g.uniform<f64>("perspective").value = perspective;
         g.uniform<f64>("cameraNear").value = cameraNear(camera);
         g.uniform<f64>("cameraFar").value = cameraFar(camera);
         g.uniform<Matrix4>("cameraProjectionMatrix").value.copy(camera.projectionMatrix);
@@ -303,7 +317,6 @@ export class GTAOPass extends Pass {
         // Output.
         const target: RenderTarget? = this.renderToScreen ? null : writeBuffer;
         const copy = this.copyMaterial;
-        const out = this.output;
         if (out == GTAOPass.OUTPUT.Diffuse) {
             copy.uniform<Texture>("tDiffuse").value = readBuffer.texture;
             copy.blending = NoBlending;
@@ -317,6 +330,7 @@ export class GTAOPass extends Pass {
             copy.blending = NoBlending;
             aoRenderPass(renderer, this.fsQuad, copy, target);
         } else if (out == GTAOPass.OUTPUT.Depth) {
+            this.depthRenderMaterial.uniform<f64>("perspective").value = perspective;
             this.depthRenderMaterial.uniform<f64>("cameraNear").value = cameraNear(camera);
             this.depthRenderMaterial.uniform<f64>("cameraFar").value = cameraFar(camera);
             aoRenderPass(renderer, this.fsQuad, this.depthRenderMaterial, target);

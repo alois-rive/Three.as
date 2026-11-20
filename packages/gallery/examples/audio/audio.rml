@@ -21,7 +21,7 @@
     <!-- AudioCheck: the scenarios tools/check_audio.py renders headless
          with rive --render-audio (examples/audio/audio_check.as). Not in the
          gallery's list. -->
-    <Artboard isComponent="true" defaultStateMachineId="0:4257" clip="true" x="900" y="9100" width="320" height="240" styleId="0:4251" name="AudioCheck" id="0:4250">
+    <Artboard defaultStateMachineId="0:4257" clip="true" x="900" y="9100" width="320" height="240" styleId="0:4251" name="AudioCheck" id="0:4250">
         <LayoutComponentStyle name="Artboard Style" id="0:4251"/>
         <LayoutComponent width="320" height="240" styleId="0:4253" name="Root" id="0:4252">
             <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:4253"/>

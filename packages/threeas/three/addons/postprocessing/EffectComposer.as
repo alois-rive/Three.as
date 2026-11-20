@@ -79,12 +79,16 @@ export class EffectComposer {
     }
 
     insertPass(pass: Pass, index: i32): void {
+        const len = this.passes.length;
+        let idx = index < 0 ? len + index : index;
+        if (idx < 0) idx = 0;
+        if (idx > len) idx = len;
         const list: Array<Pass> = [];
-        for (let i = 0; i < this.passes.length; i++) {
-            if (i == index) list.push(pass);
+        for (let i = 0; i < len; i++) {
+            if (i == idx) list.push(pass);
             list.push(this.passes[i]);
         }
-        if (index >= this.passes.length) list.push(pass);
+        if (idx >= len) list.push(pass);
         this.passes = list;
         pass.setSize(this._width * this._pixelRatio, this._height * this._pixelRatio);
     }
@@ -178,11 +182,20 @@ export class EffectComposer {
             this._pixelRatio = this.renderer.getPixelRatio();
             this._width = this._size.x;
             this._height = this._size.y;
-            this.renderTarget1.setSize(<u32>(this._width * this._pixelRatio), <u32>(this._height * this._pixelRatio));
-            this.renderTarget2.setSize(<u32>(this._width * this._pixelRatio), <u32>(this._height * this._pixelRatio));
+            const w = <u32>Math.max(1, this._width * this._pixelRatio);
+            const h = <u32>Math.max(1, this._height * this._pixelRatio);
+            this.renderTarget1.setSize(w, h);
+            this.renderTarget2.setSize(w, h);
+            const backup = this.maskBackup;
+            if (backup != null) backup.setSize(w, h);
         } else {
             this.renderTarget1.dispose();
             this.renderTarget2.dispose();
+            const backup = this.maskBackup;
+            if (backup != null) {
+                backup.dispose();
+                this.maskBackup = null;
+            }
             this.renderTarget1 = renderTarget!;
             this.renderTarget2 = renderTarget!.clone();
         }

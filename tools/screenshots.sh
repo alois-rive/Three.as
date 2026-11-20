@@ -28,8 +28,8 @@ mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 
 # Every isComponent artboard of the examples, plus the Gallery.
-artboards=$(cat "$project"/examples/*/*.rml | grep -o '<Artboard isComponent="true"[^>]*name="[^"]*"' \
-    | sed 's/.*name="\([^"]*\)"/\1/')
+artboards=$(cat "$project"/examples/*/*.rml | grep -o '<Artboard [^>]*>' \
+    | grep 'isComponent="true"' | sed -n 's/.*name="\([^"]*\)".*/\1/p')
 artboards="$artboards Gallery"
 
 commands="$out/commands.txt"

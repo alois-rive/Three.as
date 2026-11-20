@@ -8,6 +8,7 @@
 import { GPURenderer } from "../../renderers/GPURenderer";
 import { RenderTarget, RenderTargetOptions } from "../../renderers/RenderTarget";
 import { ShaderMaterial, UniformBase, Uniform } from "../../materials/ShaderMaterial";
+import { Material } from "../../materials/Material";
 import { MeshDepthMaterial } from "../../materials/MeshDepthMaterial";
 import { Texture } from "../../textures/Texture";
 import { DepthTexture } from "../../textures/DepthTexture";
@@ -89,7 +90,11 @@ export class BokehPass extends Pass {
         // The depth.
         const scene = this.scene;
         const isScene = scene instanceof Scene;
-        if (isScene) (scene as Scene).overrideMaterial = this.materialDepth;
+        let oldOverrideMaterial: Material? = null;
+        if (isScene) {
+            oldOverrideMaterial = (scene as Scene).overrideMaterial;
+            (scene as Scene).overrideMaterial = this.materialDepth;
+        }
         renderer.getClearColor(this._oldClearColor);
         const oldClearAlpha = renderer.getClearAlpha();
         const oldAutoClear = renderer.autoClear;
@@ -107,7 +112,7 @@ export class BokehPass extends Pass {
         renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
         this.fsQuad.render(renderer);
 
-        if (isScene) (scene as Scene).overrideMaterial = null;
+        if (isScene) (scene as Scene).overrideMaterial = oldOverrideMaterial;
         renderer.setClearColor<Color>(this._oldClearColor, oldClearAlpha);
         renderer.autoClear = oldAutoClear;
     }

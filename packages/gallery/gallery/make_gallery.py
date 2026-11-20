@@ -119,8 +119,8 @@ INSTALL = [
 ]
 
 QUICKSTART = [
-    ("t", 'import * as THREE from "../three/Three";'),
-    ("t", 'import { OrbitControls } from "../three/addons/controls/OrbitControls";'),
+    ("t", 'import * as THREE from "lib:threeas/three/Three";'),
+    ("t", 'import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";'),
     ("t", 'import { Context } from "rive/host";'),
     ("t", ""),
     ("c", "// attach it to a ScriptedLayout in your artboard"),

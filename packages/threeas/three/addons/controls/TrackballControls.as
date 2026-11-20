@@ -191,8 +191,13 @@ export class TrackballControls extends Controls {
     override pointerDown(event: PointerEvent): void {
         if (!this.enabled) return;
         if (this.pointerIds.length == 0) this.started();
-        this.pointerIds.push(event.id);
-        this.pointerPositions.push(new Vector2(<f64>event.position.x, <f64>event.position.y));
+        const existing = this.pointerIds.indexOf(event.id);
+        if (existing >= 0) {
+            this.pointerPositions[existing].set(<f64>event.position.x, <f64>event.position.y);
+        } else {
+            this.pointerIds.push(event.id);
+            this.pointerPositions.push(new Vector2(<f64>event.position.x, <f64>event.position.y));
+        }
         if (this.pointerIds.length == 1) {
             this.state = STATE_ROTATE;
             this.mouseOnCircle(<f64>event.position.x, <f64>event.position.y, this.moveCurr);
@@ -235,6 +240,11 @@ export class TrackballControls extends Controls {
             this.state = STATE_ROTATE;
             this.mouseOnCircle(this.pointerPositions[0].x, this.pointerPositions[0].y, this.moveCurr);
             this.movePrev.copy(this.moveCurr);
+        } else if (this.pointerIds.length >= 2) {
+            const a = this.pointerPositions[0], b = this.pointerPositions[1];
+            this.touchZoomStart = this.touchZoomEnd = a.distanceTo(b);
+            this.mouseOnScreen((a.x + b.x) / 2, (a.y + b.y) / 2, this.panStart);
+            this.panEnd.copy(this.panStart);
         }
         event.hit();
     }

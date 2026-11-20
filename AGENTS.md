@@ -19,7 +19,8 @@ own `rive.yaml`, and every `rive` command runs in (or names) a package:
 
 - **`packages/threeas/`**: the engine, published as the Rive library
   `threeas` (UAT: file 38630, library 761, in project 44599 "Rive Public
-  Libraries"; production: the "ThreeAS" project, see `tools/publish.sh`).
+  Libraries"; production: file 2738936 in project 2062040 "Rive Public
+  Libraries", see `packages/threeas/bindings/prod.yaml` and `tools/publish.sh`).
   `three/` is the library, `tests/` its suites and `tests/fixtures/` the
   blobs they read by file stem. No example or gallery content here.
 - **`packages/gallery/`**: the gallery page (`gallery/`) and the examples
@@ -247,10 +248,8 @@ file), and run `rive library publish` (a second time when the first run
 only pushed); put the UAT binding back; then in packages/gallery `rive
 library update --uat`, verify, `rive push --uat` (file 38626) and
 `--publish=web` (from a copy without the override). Commit what it
-changed: `packages/gallery/{threeas.rml,rive.yaml}` (`.libraries/` is ignored) and, after
-a first production publish, `packages/threeas/bindings/prod.yaml`.
-Production's project id is a placeholder in `bindings/prod.yaml` until the
-"ThreeAS" project exists; the script refuses `--env=prod` until it is set.
+changed: `packages/gallery/{threeas.rml,rive.yaml}` (`.libraries/` is ignored) and, if
+production's fileId changes, `packages/threeas/bindings/prod.yaml`.
 The gallery always imports the UAT library.
 
 ## Notes

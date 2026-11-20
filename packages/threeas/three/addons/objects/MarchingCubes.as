@@ -710,7 +710,7 @@ export class MarchingCubes extends Mesh {
         // set the draw range to only the processed triangles
 
         const geometry = this.geometry;
-        geometry.setDrawRange(0, this.count);
+        geometry.setDrawRange(0, min<i32>(this.count, this.maxVertexCount));
 
         // update geometry data
 

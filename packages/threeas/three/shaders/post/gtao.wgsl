@@ -181,7 +181,7 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
             var scene = get_scene_uv_and_depth(view_pos + sample_view_offset);
             var scene_view_pos = get_view_position(scene.xy, scene.z);
             var view_delta = scene_view_pos - view_pos;
-            if (abs(view_delta.z) < u.thickness) {
+            if (abs(view_delta.z) < distance_falloff_to_use) {
                 let sample_cos_horizon = dot(view_dir, normalize(view_delta));
                 cos_horizons.x += max(0.0, (sample_cos_horizon - cos_horizons.x)
                     * mix(1.0, 2.0 / f32(j + 2), u.distanceFallOff));
@@ -190,7 +190,7 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
             scene = get_scene_uv_and_depth(view_pos - sample_view_offset);
             scene_view_pos = get_view_position(scene.xy, scene.z);
             view_delta = scene_view_pos - view_pos;
-            if (abs(view_delta.z) < u.thickness) {
+            if (abs(view_delta.z) < distance_falloff_to_use) {
                 let sample_cos_horizon = dot(view_dir, normalize(view_delta));
                 cos_horizons.y += max(0.0, (sample_cos_horizon - cos_horizons.y)
                     * mix(1.0, 2.0 / f32(j + 2), u.distanceFallOff));

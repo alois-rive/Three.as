@@ -15,12 +15,9 @@ import { Vector2 } from "../../math/Vector2";
 import { Vector3 } from "../../math/Vector3";
 import { Matrix4 } from "../../math/Matrix4";
 
-const _plane = new Plane();
 const _pointer = new Vector2();
-const _offset = new Vector3();
 const _intersection = new Vector3();
 const _worldPosition = new Vector3();
-const _inverseMatrix = new Matrix4();
 const _size = new Vector2();
 
 export class DragControls extends Controls {
@@ -34,6 +31,9 @@ export class DragControls extends Controls {
     private selected: Object3D? = null;
     private hovered: Object3D? = null;
     private intersections: Array<Intersection> = [];
+    private plane: Plane = new Plane();
+    private offset: Vector3 = new Vector3();
+    private inverseMatrix: Matrix4 = new Matrix4();
 
     constructor(objects: Array<Object3D>, camera: Camera, domElement: GPURenderer? = null) {
         super(camera);
@@ -67,12 +67,12 @@ export class DragControls extends Controls {
         if (this.intersections.length == 0) return;
         const hit = this.transformGroup ? this.objects[0] : this.intersections[0].object;
         this.selected = hit;
-        this.camera.getWorldDirection(_plane.normal);
-        _plane.setFromNormalAndCoplanarPoint(_plane.normal, _worldPosition.setFromMatrixPosition(hit.matrixWorld));
-        if (this.raycaster.ray.intersectPlane(_plane, _intersection) != null) {
+        this.camera.getWorldDirection(this.plane.normal);
+        this.plane.setFromNormalAndCoplanarPoint(this.plane.normal, _worldPosition.setFromMatrixPosition(hit.matrixWorld));
+        if (this.raycaster.ray.intersectPlane(this.plane, _intersection) != null) {
             const p = hit.parent;
-            if (p != null) _inverseMatrix.copy(p.matrixWorld).invert(); else _inverseMatrix.identity();
-            _offset.copy(_intersection).sub(_worldPosition.setFromMatrixPosition(hit.matrixWorld));
+            if (p != null) this.inverseMatrix.copy(p.matrixWorld).invert(); else this.inverseMatrix.identity();
+            this.offset.copy(_intersection).sub(_worldPosition.setFromMatrixPosition(hit.matrixWorld));
         }
         this.emit("dragstart", hit);
         event.hit();
@@ -83,8 +83,8 @@ export class DragControls extends Controls {
         this.aim(event);
         const selected = this.selected;
         if (selected != null) {
-            if (this.raycaster.ray.intersectPlane(_plane, _intersection) != null) {
-                selected.position.copy(_intersection.sub(_offset).applyMatrix4(_inverseMatrix));
+            if (this.raycaster.ray.intersectPlane(this.plane, _intersection) != null) {
+                selected.position.copy(_intersection.sub(this.offset).applyMatrix4(this.inverseMatrix));
             }
             this.emit("drag", selected);
             event.hit();

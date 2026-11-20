@@ -14,6 +14,7 @@ import { Material } from "../../materials/Material";
 import { Texture } from "../../textures/Texture";
 import { DepthTexture } from "../../textures/DepthTexture";
 import { Scene } from "../../scenes/Scene";
+import { ColorOrTexture } from "../../core/ColorOrTexture";
 import { Camera } from "../../cameras/Camera";
 import { Vector2 } from "../../math/Vector2";
 import { Vector4 } from "../../math/Vector4";
@@ -114,10 +115,13 @@ export class RenderPixelatedPass extends Pass {
         renderer.render(this.scene, this.camera);
 
         const overrideMaterialOld: Material? = this.scene.overrideMaterial;
+        const backgroundOld: ColorOrTexture? = this.scene.background;
         renderer.setRenderTarget(this.normalRenderTarget);
         this.scene.overrideMaterial = this.normalMaterial;
+        this.scene.background = null;
         renderer.render(this.scene, this.camera);
         this.scene.overrideMaterial = overrideMaterialOld;
+        this.scene.background = backgroundOld;
 
         (uniforms.get("tDiffuse") as Uniform<Texture>).value = this.beautyRenderTarget.texture;
         (uniforms.get("tDepth") as Uniform<Texture>).value = this.beautyRenderTarget.depthTexture!;

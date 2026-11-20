@@ -12,6 +12,7 @@ import { Material } from "../../materials/Material";
 import { Points } from "../../objects/Points";
 import { Line } from "../../objects/Line";
 import { Scene } from "../../scenes/Scene";
+import { ColorOrTexture } from "../../core/ColorOrTexture";
 import { Color } from "../../math/Color";
 import { FullScreenQuad } from "./Pass";
 
@@ -95,12 +96,20 @@ export function aoRenderOverride(renderer: GPURenderer, scene: Object3D, camera:
         renderer.clear();
     }
     let old: Material? = null;
+    let oldBackground: ColorOrTexture? = null;
     if (scene instanceof Scene) {
-        old = (scene as Scene).overrideMaterial;
-        (scene as Scene).overrideMaterial = overrideMaterial;
+        const s = scene as Scene;
+        old = s.overrideMaterial;
+        oldBackground = s.background;
+        s.overrideMaterial = overrideMaterial;
+        s.background = null;
     }
     renderer.render(scene, camera);
-    if (scene instanceof Scene) (scene as Scene).overrideMaterial = old;
+    if (scene instanceof Scene) {
+        const s = scene as Scene;
+        s.overrideMaterial = old;
+        s.background = oldBackground;
+    }
     renderer.autoClear = originalAutoClear;
     renderer.setClearColor<Color>(_originalClearColor);
     renderer.setClearAlpha(originalClearAlpha);

@@ -89,12 +89,14 @@ docs/               DEVIATIONS.md, PERFORMANCE.md, screenshots
 The gallery imports the engine as a Rive library, the way any project
 would: `"lib:threeas/<path in the library>"`, e.g. `lib:threeas/three/Three`.
 Its `rive.yaml` names the library and sets `override: ../threeas`, so the
-gallery builds against the engine sources next door and an engine edit
+gallery builds against the engine sources next door and an engine script edit
 shows in the gallery without publishing. The override replaces the
-library's published scripts and shaders with the local ones and compiles
-local scripts the published version lacks; a new engine shader (a new
-`.wgsl`) only reaches the gallery once the library is republished and the
-gallery updated (`tools/publish.sh`). Baked shader variants are the
+library's published scripts with the local ones and compiles
+local scripts the published version lacks; engine shaders (both new `.wgsl`
+files and edits to existing ones, where the `.libraries/` snapshot wins)
+only reach the gallery once the library is republished and the
+gallery updated (`tools/publish.sh`; see `AGENTS.md` for previewing a local
+`three.wgsl` change). Baked shader variants are the
 project's own (`threeas_baked/`, below), so they need no republish.
 
 ## Run it

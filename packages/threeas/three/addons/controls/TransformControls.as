@@ -33,13 +33,10 @@ import { DoubleSide } from "../../constants";
 
 const _pointer = new Vector2();
 const _size = new Vector2();
-const _plane = new Plane();
 const _hit = new Vector3();
 const _v = new Vector3();
-const _eye = new Vector3();
 const _axisWorld = new Vector3();
 const _q = new Quaternion();
-const _cameraPosition = new Vector3();
 const UNIT: StaticArray<Vector3> = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)];
 const AXIS_COLORS: StaticArray<u32> = [0xff3653, 0x8adb00, 0x2c8fff];
 const HOVER_COLOR: u32 = 0xffff00;
@@ -110,9 +107,14 @@ export class TransformControls extends Controls {
     private quaternionStart: Quaternion = new Quaternion();
     private scaleStart: Vector3 = new Vector3();
     private worldPosition: Vector3 = new Vector3();
+    private worldPositionStart: Vector3 = new Vector3();
     private worldQuaternion: Quaternion = new Quaternion();
     private parentQuaternionInverse: Quaternion = new Quaternion();
+    private parentScale: Vector3 = new Vector3(1, 1, 1);
     private planeNormal: Vector3 = new Vector3();
+    private plane: Plane = new Plane();
+    private eye: Vector3 = new Vector3();
+    private cameraPosition: Vector3 = new Vector3();
 
     constructor(camera: Camera, domElement: GPURenderer? = null) {
         super(camera);
@@ -132,6 +134,12 @@ export class TransformControls extends Controls {
     }
 
     detach(): TransformControls {
+        if (this.dragging) {
+            this.dragging = false;
+            const e = new Event("dragging-changed");
+            e.value = false;
+            if (this.hasListeners("dragging-changed")) this.dispatchEvent(e);
+        }
         this.attached = null;
         this.gizmo.visible = false;
         this.axis = "";
@@ -210,24 +218,25 @@ export class TransformControls extends Controls {
         const parent = object.parent;
         if (parent != null) {
             parent.updateWorldMatrix(true, false);
-            parent.matrixWorld.decompose(_v, this.parentQuaternionInverse, _v);
+            parent.matrixWorld.decompose(_v, this.parentQuaternionInverse, this.parentScale);
             this.parentQuaternionInverse.invert();
         } else {
             this.parentQuaternionInverse.identity();
+            this.parentScale.set(1, 1, 1);
         }
         const g = this.gizmo;
         g.position.copy(this.worldPosition);
         if (this.space == "local" || this.mode == "scale") g.quaternion.copy(this.worldQuaternion);
         else g.quaternion.identity();
         this.camera.updateMatrixWorld();
-        _cameraPosition.setFromMatrixPosition(this.camera.matrixWorld);
+        this.cameraPosition.setFromMatrixPosition(this.camera.matrixWorld);
         let factor: f64;
         if (this.camera instanceof OrthographicCamera) {
             const o = this.camera as OrthographicCamera;
             factor = (o.top - o.bottom) / o.zoom;
         } else {
             const p = this.camera as PerspectiveCamera;
-            factor = this.worldPosition.distanceTo(_cameraPosition)
+            factor = this.worldPosition.distanceTo(this.cameraPosition)
                 * Math.min(1.9 * Math.tan(Math.PI * p.fov / 360) / p.zoom, 7);
         }
         g.scale.setScalar(factor * this.size / 4);
@@ -277,21 +286,21 @@ export class TransformControls extends Controls {
     /// The plane a drag happens on, through the object, for the axis
     /// (three.js's TransformControlsPlane, as a mathematical plane).
     private dragPlane(): void {
-        _eye.copy(_cameraPosition).sub(this.worldPosition).normalize();
+        this.eye.copy(this.cameraPosition).sub(this.worldPosition).normalize();
         const axis = this.axis;
         if (this.mode == "rotate" || axis == "XYZ") {
-            this.planeNormal.copy(_eye);
+            this.planeNormal.copy(this.eye);
         } else if (axis == "XY" || axis == "YZ" || axis == "XZ") {
             const index = axis == "XY" ? 2 : axis == "YZ" ? 0 : 1;
             this.axisDirection(index, this.planeNormal);
         } else {
             // A single axis: the plane containing it that best faces the eye.
             this.axisDirection(axisIndex(axis), _axisWorld);
-            this.planeNormal.copy(_eye).addScaledVector(_axisWorld, -_eye.dot(_axisWorld));
-            if (this.planeNormal.lengthSq() < 1e-8) this.planeNormal.copy(_eye);
+            this.planeNormal.copy(this.eye).addScaledVector(_axisWorld, -this.eye.dot(_axisWorld));
+            if (this.planeNormal.lengthSq() < 1e-8) this.planeNormal.copy(this.eye);
             this.planeNormal.normalize();
         }
-        _plane.setFromNormalAndCoplanarPoint(this.planeNormal, this.worldPosition);
+        this.plane.setFromNormalAndCoplanarPoint(this.planeNormal, this.worldPosition);
     }
 
     override pointerDown(event: PointerEvent): void {
@@ -302,8 +311,9 @@ export class TransformControls extends Controls {
         if (axis.length == 0) return;
         const object = this.attached!;
         this.dragPlane();
-        if (this.raycaster.ray.intersectPlane(_plane, _hit) == null) return;
-        this.pointStart.copy(_hit).sub(this.worldPosition);
+        if (this.raycaster.ray.intersectPlane(this.plane, _hit) == null) return;
+        this.worldPositionStart.copy(this.worldPosition);
+        this.pointStart.copy(_hit).sub(this.worldPositionStart);
         this.positionStart.copy(object.position);
         this.quaternionStart.copy(object.quaternion);
         this.scaleStart.copy(object.scale);
@@ -323,8 +333,8 @@ export class TransformControls extends Controls {
             return;
         }
         const object = this.attached!;
-        if (this.raycaster.ray.intersectPlane(_plane, _hit) == null) return;
-        const pointEnd = _hit.sub(this.worldPosition);
+        if (this.raycaster.ray.intersectPlane(this.plane, _hit) == null) return;
+        const pointEnd = _hit.sub(this.worldPositionStart);
         const axis = this.axis;
         if (this.mode == "translate") {
             const offset = _v.copy(pointEnd).sub(this.pointStart);
@@ -332,8 +342,11 @@ export class TransformControls extends Controls {
                 this.axisDirection(axisIndex(axis), _axisWorld);
                 offset.copy(_axisWorld).multiplyScalar(offset.dot(_axisWorld));
             }
-            // World offset into the parent's frame.
+            // World offset into the parent's frame (rotation and scale).
             offset.applyQuaternion(this.parentQuaternionInverse);
+            if (this.parentScale.x != 0) offset.x /= this.parentScale.x;
+            if (this.parentScale.y != 0) offset.y /= this.parentScale.y;
+            if (this.parentScale.z != 0) offset.z /= this.parentScale.z;
             object.position.copy(this.positionStart).add(offset);
             if (this.translationSnap > 0) {
                 const s = this.translationSnap;
@@ -343,9 +356,9 @@ export class TransformControls extends Controls {
             }
         } else if (this.mode == "rotate") {
             const offset = _v.copy(pointEnd).sub(this.pointStart);
-            const speed = 20 / this.worldPosition.distanceTo(_cameraPosition);
+            const speed = 20 / Math.max(this.worldPositionStart.distanceTo(this.cameraPosition), 1e-8);
             this.axisDirection(axisIndex(axis), _axisWorld);
-            const tangent = new Vector3().copy(_axisWorld).cross(_eye).normalize();
+            const tangent = new Vector3().copy(_axisWorld).cross(this.eye).normalize();
             let angle = offset.dot(tangent) * speed;
             if (this.rotationSnap > 0) angle = Math.round(angle / this.rotationSnap) * this.rotationSnap;
             if (this.space == "local") {

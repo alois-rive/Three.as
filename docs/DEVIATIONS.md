@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestones 14 and 15 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 1 through 18 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -282,9 +282,9 @@ repository commits the gallery unbaked.
 - `flatShading` is on the `Material` base (ignored by unlit materials).
 - Fog is mixed in linear space after tone mapping and before the sRGB
   encode, so a fully fogged surface matches a background of the fog colour.
-- **Environment maps** light MeshStandard/Physical materials only
-  (Lambert/Phong/Basic ignore `envMap`; no `reflectivity`/`combine`), with
-  three.js's IBL maths. The renderer prefilters every environment
+- **Environment maps** light MeshStandard/Physical materials with
+  three.js's IBL maths (Basic, Lambert and Phong use their own `envMap`
+  with `combine`, `reflectivity` and `refractionRatio`, above). The renderer prefilters every environment
   (`scene.environment`, `envMap`, a blurred background) into a PMREM on its
   own, as three.js does for `scene.environment`: **an equirectangular mip
   chain** (128 to 1024 wide, down to 16 x 8) where level k is GGX-convolved
@@ -304,9 +304,7 @@ repository commits the gallery unbaked.
   rgba16float texture 4 x 2 faces wide, redone when a face or `version`
   changes) and sampled as those, for `background`, `environment` and
   `envMap`. Image cube maps follow three.js's orientation (mirrored in x,
-  `flipEnvMap`). `CubeRefractionMapping` reflects instead.
-  `PMREMGenerator.fromEquirectangular(t).texture` is a shim returning `t`
-  prepared; `fromScene`, `fromCubemap` and RoomEnvironment are not ported.
+  `flipEnvMap`).
 - **ShaderMaterial / RawShaderMaterial take a WGSL shader asset**, not GLSL
   strings: `{ shader: "shaders/wave" }` (its project path without `.wgsl`).
   Nothing is injected: the shader declares the bindings it uses by a fixed
@@ -416,11 +414,13 @@ repository commits the gallery unbaked.
   (`perObjectFrustumCulled` is ignored): the whole batch is culled by its
   bounding sphere, which is recomputed after instances change (three.js
   leaves it to `computeBoundingSphere`).
-- Geometries must share the first geometry's attributes and be all
-  indexed or all not; `addGeometry` returns -1 otherwise (three.js
-  throws). Shared attributes are stored as Float32. Morph targets are not
-  batched. `setInstanceCount` / `setGeometrySize` (growing the buffers)
-  are not ported: size the batch up front.
+- Geometries must be all indexed or all non-indexed and have a
+  `"position"` attribute; `addGeometry` returns -1 otherwise or when the
+  reserved vertices/indices exceed capacity (three.js throws). Attributes
+  from the first geometry define the shared Float32 buffers (later
+  geometries zero-fill missing attributes and ignore extra ones). Morph
+  targets are not batched. `setInstanceCount` / `setGeometrySize` (growing
+  the buffers) are not ported: size the batch up front.
 - Hits from raycasting carry `batchId` (the instance), as three.js.
 
 ## Interaction, controls and time
@@ -741,8 +741,8 @@ repository commits the gallery unbaked.
   `onStart`, `onProgress`, `onLoad`, `onError`) instead of callbacks;
   `setURLModifier` is `addURLRewrite(prefix, replacement)`. Progress is
   counted per file, as three.js.
-- GLTFLoader reads `.glb`, and `.gltf` JSON whose buffers and images are
-  base64 `data:` URIs (external files are not read: there are no URLs).
+- GLTFLoader reads `.glb` and `.gltf` JSON (base64 `data:` URIs, external
+  blob assets via `load()`, or external URLs via `loadAsync()`).
   Extensions read: KHR_lights_punctual, KHR_materials_unlit,
   emissive_strength, clearcoat, sheen, ior, specular, transmission, volume,
   iridescence, anisotropy, dispersion (with their textures),
@@ -1103,9 +1103,11 @@ repository commits the gallery unbaked.
 
 - **`Texture.image` is a Rive `Image`**: an image asset, a canvas's image, or
   any image a script holds. The renderer samples `image.view()`.
-- **`TextureLoader(context).load(name)`** loads the `ImageAsset` named `name`
-  (no extension) from the Rive file. There are no URLs and no callbacks: the
-  texture is returned at once and samples once the image has decoded.
+- **`TextureLoader(context).load(name)`** synchronously loads the
+  `ImageAsset` named `name` (no extension) from the Rive file (no
+  callbacks: the texture is returned at once and samples once the image
+  has decoded); use `loadAsync(url)` to fetch external URLs (see
+  [Loaders](#loaders)).
 - **Textures from Rive images, canvases and artboards default to
   `SRGBColorSpace`** (three.js leaves loaded textures at `NoColorSpace`;
   you usually set sRGB yourself there).
