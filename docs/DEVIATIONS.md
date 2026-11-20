@@ -76,6 +76,8 @@ export class Demo extends Layout {
 | (none) | `renderer.parallelCulling` (Rive-only, default true): views with 2048 or more frustum-culled candidates test them in a Rive parallel call (`three/renderers/gpu/Culling`), with the same result as on the main lane |
 | (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
 | uniforms uploaded per program | each draw keeps one 1536-byte block in a shared uniform buffer across frames (bound at a dynamic offset), rewritten and uploaded only when its world matrix, light list or material changed; a material's share of the block is built once a view however many draws use it |
+| `material.dispose()` | as three.js: the renderer frees the material's state (its bind groups; a ShaderMaterial's uniform buffer too) at the next render; drawn again, it is prepared again |
+| per-object render state (three.js: WeakMaps, freed by garbage collection) | each drawn object has a draw state (a slot in the shared uniform buffer; a bind group when skinned). `renderer.releaseObject(object, recursive = true)` (Rive-only) frees it at once; otherwise it is freed once the object has not been drawn for 4000 render calls (each pass counts). Freed slots are reused |
 
 ### Shader programs: the uber-shader and baked variants
 

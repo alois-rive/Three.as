@@ -7,10 +7,21 @@ import {
     MaterialUniforms, ROLE_TRANSMISSION, ROLE_THICKNESS, ROLE_LIGHT, ROLE_BUMP, ROLE_DISPLACEMENT, SLOT_ENV,
 } from "../three/materials/MaterialUniforms";
 import { Texture } from "../three/textures/Texture";
+import { disposedMaterials } from "../three/materials/Material";
 import { AddOperation, ObjectSpaceNormalMap } from "../three/constants";
 
 export class MaterialTests extends Tests {
     override run(): void {
+        group("Material.dispose", () => {
+            test("queues the material for the renderer to free", (expect) => {
+                const m = new MeshLambertMaterial();
+                const before = disposedMaterials.length;
+                m.dispose();
+                expect.that(disposedMaterials.length).is(before + 1);
+                expect.that(disposedMaterials[disposedMaterials.length - 1]).is(m.id);
+                disposedMaterials.pop();
+            });
+        });
         group("MeshPhysicalMaterial", () => {
             test("transmission, volume, iridescence, anisotropy", (expect) => {
                 const map = new Texture();
