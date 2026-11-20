@@ -3,7 +3,8 @@
 // geometries (a rounded box, a Klein bottle, a convex hull with a decal)
 // and text extruded from the Rive file's Orbitron font; wide lines (a
 // rainbow helix and a dashed outline). TransformControls on the rounded
-// box: drag its arrows, planes or rings; orbit elsewhere.
+// box: drag its arrows, planes or rings; orbit elsewhere. A ViewHelper in
+// the bottom-right corner: click an axis to turn the camera along it.
 
 import * as THREE from "lib:threeas/three/Three";
 import { OrbitControls } from "lib:threeas/three/addons/controls/OrbitControls";
@@ -20,7 +21,9 @@ import { LineSegmentsGeometry } from "lib:threeas/three/addons/lines/LineSegment
 import { LineMaterial } from "lib:threeas/three/addons/lines/LineMaterial";
 import { Line2, LineSegments2 } from "lib:threeas/three/addons/lines/LineSegments2";
 import { TransformControls } from "lib:threeas/three/addons/controls/TransformControls";
+import { ViewHelper } from "lib:threeas/three/addons/helpers/ViewHelper";
 import { Context } from "rive/host";
+import { PointerEvent } from "rive/events";
 
 export class Editor extends THREE.ThreeLayout {
     knot: THREE.Mesh = new THREE.Mesh();
@@ -30,6 +33,9 @@ export class Editor extends THREE.ThreeLayout {
     spot: THREE.SpotLight = new THREE.SpotLight();
     time: f64 = 0;
     transform: TransformControls? = null;
+    viewHelper: ViewHelper? = null;
+    /// Where the last press began (a release near it is a click).
+    downPosition: THREE.Vector2 = new THREE.Vector2();
     /// The gizmo: 0 translate, 1 rotate, 2 scale.
     @input gizmoMode: i32 = 0;
 
@@ -162,10 +168,43 @@ export class Editor extends THREE.ThreeLayout {
         controls.target.set(0, 0.8, 0);
         controls.update();
         this.controls = controls;
+
+        // As three.js's editor: the helper turns around the orbit target.
+        const helper = new ViewHelper(this.camera, this.renderer);
+        helper.setLabels("X", "Y", "Z");
+        helper.setLabelStyle("20px Orbitron", "#000000", 14);
+        helper.center = controls.target;
+        this.viewHelper = helper;
         return true;
     }
 
+    override renderFrame(): void {
+        const r = this.renderer!;
+        // Cleared first, so the helper's partial render keeps this one
+        // from the first frame (docs/DEVIATIONS.md, Views).
+        r.clear();
+        super.renderFrame();
+        const helper = this.viewHelper;
+        if (helper != null) helper.render(r);
+    }
+
+    override onPointerDown(event: PointerEvent): void {
+        this.downPosition.set(<f64>event.position.x, <f64>event.position.y);
+    }
+
+    override onPointerUp(event: PointerEvent): void {
+        const helper = this.viewHelper;
+        const dx = <f64>event.position.x - this.downPosition.x, dy = <f64>event.position.y - this.downPosition.y;
+        if (helper != null && dx * dx + dy * dy < 4) helper.handleClick(event);
+    }
+
     override animate(seconds: f64): void {
+        const helper = this.viewHelper;
+        const controls = this.controls;
+        if (helper != null) {
+            if (helper.animating) helper.update(seconds);
+            if (controls != null) controls.enabled = !helper.animating;
+        }
         const tc = this.transform;
         if (tc != null) tc.mode = this.gizmoMode == 1 ? "rotate" : this.gizmoMode == 2 ? "scale" : "translate";
         const t = (this.time += seconds);
