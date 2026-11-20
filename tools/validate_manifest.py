@@ -28,9 +28,11 @@ What it checks (descriptor sanity, not a GPU):
               says; comparison samplers where the layout wants them,
               nearest-only samplers for non-filtering slots
   shaders     no identifier `gl` or `gl_...` (WebGL2 reserves them); no
+              sampler_comparison (a GLSL shadow sampler, which crashes Rive's
+              web runtime: see tools/check_glsl.py); no
               @builtin(instance_index) (naga emulates it on WebGL2 with the
-              plain uniform naga_vs_first_instance, which Rive's web runtime
-              fails to query: see tools/check_glsl.py)
+              plain uniform naga_vs_first_instance; a precaution, see
+              tools/check_glsl.py)
 
 Not checked (no data in the manifest, or needs a GPU): dynamic offsets at
 draw time (256-byte alignment), textures written and sampled in one pass,
@@ -215,9 +217,13 @@ def check(path):
     for sid, s in shaders.items():
         for ident in sorted(set(re.findall(r"\b(gl(?:_\w*)?)\b", s.get("code", "")))):
             problems.append(f"shader {s.get('label', sid)}: identifier `{ident}` is reserved in WebGL2")
+        if re.search(r"\bsampler_comparison\b", s.get("code", "")):
+            problems.append(f"shader {s.get('label', sid)}: sampler_comparison becomes a GLSL shadow sampler, "
+                            "which crashes Rive's web runtime (WebGL2 getUniform with no program bound); "
+                            "read the depth with textureLoad and compare in the shader")
         if re.search(r"@builtin\s*\(\s*instance_index\s*\)", s.get("code", "")):
             problems.append(f"shader {s.get('label', sid)}: @builtin(instance_index) becomes the uniform "
-                            "naga_vs_first_instance on WebGL2, which crashes Rive's web runtime; "
+                            "naga_vs_first_instance on WebGL2, which Rive's web runtime may fail to query; "
                             "use a per-instance vertex attribute")
 
     stats = (len(layouts), len(m.get("pipelines", [])), len(m.get("bindGroups", [])), len(shaders),

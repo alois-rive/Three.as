@@ -121,13 +121,24 @@ engine edit shows in the gallery without publishing:
   share test vectors (`tools/threeas_bake.sh --self-test`): change both or
   neither. The engine ships no variants and no registry.
 - No WGSL identifier named `gl` or starting with `gl_` (WebGL2 reserves them).
+- No WGSL `sampler_comparison` (`textureSampleCompare*`): naga makes it a
+  GLSL shadow sampler (`sampler2DArrayShadow` ...), and Rive's web runtime
+  (threaded WebGL2), after linking such a program, queries each of its
+  sampler uniforms with `glGetUniformiv` while no program is bound:
+  WebGL2's `getUniform` throws ("parameter 2 is not of type
+  'WebGLUniformLocation'"), the render worker dies and the whole page is
+  blank. Read depth with `textureLoad` and compare in the shader (as
+  three.wgsl's `shadow_compare` does, filtering as a linear comparison
+  sampler would); plain depth reads (`textureLoad`, or `textureSampleLevel`
+  with a plain sampler) are fine. `tools/check_glsl.py` fails on any GLSL
+  shadow sampler, `tools/validate_manifest.py` on any `sampler_comparison`.
 - No WGSL `@builtin(instance_index)` (nor anything else the GL translator
-  emulates with a plain uniform): naga emits `uniform uint
-  naga_vs_first_instance;` for it, and Rive's web runtime queries that
-  uniform with no program bound, so WebGL2's `getUniform` throws for every
-  program carrying it. Feed a per-instance vertex attribute instead (as
-  three.wgsl's `vs_morph_instanced` does). `tools/check_glsl.py` fails on
-  any plain uniform in the GLSL.
+  emulates with a plain uniform), as a precaution: naga emits `uniform
+  uint naga_vs_first_instance;` for it, which was blamed for the crash
+  above, but the program that showed it also had a comparison sampler; it
+  is not confirmed to crash on its own. Feed a per-instance vertex
+  attribute instead (as three.wgsl's `vs_morph_instanced` does).
+  `tools/check_glsl.py` fails on any plain uniform in the GLSL.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
 
 - A new example is a folder `packages/gallery/examples/<name>/` with
@@ -204,9 +215,10 @@ after a shader change, build release `.riv`s (`tools/release_build.sh
 build/release`) and run `python3 tools/check_glsl.py` on both (needs
 glslangValidator; tools/publish.sh does): WebGL2 rejects what the native
 backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
-`gl_1`), and it fails on naga's emulation uniforms (`naga_vs_first_instance`,
-see Rules), which compile but crash the web runtime. The gallery's release has 114 GLSL shaders (the engine's 108 and the
-examples' 6).
+`gl_1`), and it fails on GLSL shadow samplers (a WGSL `sampler_comparison`,
+see Rules), which compile but crash the web runtime, and on naga's
+emulation uniforms (`naga_vs_first_instance`, a precaution). The gallery's
+release has 116 GLSL shaders (the engine's 110 and the examples' 6).
 
 ## Publishing
 

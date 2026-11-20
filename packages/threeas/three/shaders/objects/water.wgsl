@@ -121,7 +121,6 @@ struct LtcTable {
 @group(0) @binding(1) var t_env: texture_2d<f32>;
 @group(0) @binding(2) var s_env: sampler;
 @group(0) @binding(3) var t_shadow: texture_depth_2d_array;
-@group(0) @binding(4) var s_shadow: sampler_comparison;
 @group(0) @binding(7) var<uniform> LTC: LtcTable;
 @group(0) @binding(5) var t_transmission: texture_2d<f32>;
 @group(0) @binding(6) var s_transmission: sampler;
@@ -227,6 +226,27 @@ fn distance_attenuation(d: f32, cutoff: f32, decay: f32) -> f32 {
     return falloff;
 }
 
+/// Texel `p` of shadow map `layer` (clamped to its edge) compared with
+/// `depth`: 1 when `depth` <= the stored depth (lit), else 0.
+fn shadow_texel(p: vec2<i32>, size: vec2<i32>, layer: i32, depth: f32) -> f32 {
+    let q = clamp(p, vec2<i32>(0), size - vec2<i32>(1));
+    return select(0.0, 1.0, depth <= textureLoad(t_shadow, q, layer, 0));
+}
+
+/// A comparison sample of shadow map `layer` at `uv`, as a linear
+/// lessEqual comparison sampler with clamp-to-edge filters it: the 2x2
+/// texels around `uv` compared, then weighted bilinearly.
+fn shadow_compare(uv: vec2<f32>, size: vec2<i32>, layer: i32, depth: f32) -> f32 {
+    let t = uv * vec2<f32>(size) - 0.5;
+    let i = vec2<i32>(floor(t));
+    let f = t - floor(t);
+    let a = shadow_texel(i, size, layer, depth);
+    let b = shadow_texel(i + vec2<i32>(1, 0), size, layer, depth);
+    let c = shadow_texel(i + vec2<i32>(0, 1), size, layer, depth);
+    let d = shadow_texel(i + vec2<i32>(1, 1), size, layer, depth);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 /// How lit `world` is by `light`, 0 (shadowed) to 1, from its shadow map.
 fn shadow_factor(light: Light, world: vec3<f32>, normal: vec3<f32>) -> f32 {
     let first = i32(light.shadow.x);
@@ -255,18 +275,35 @@ fn shadow_factor(light: Light, world: vec3<f32>, normal: vec3<f32>) -> f32 {
     }
     let depth = ndc.z + light.shadow.y;
     let kind = u32(F.shadow_params.x);
+    let size = vec2<i32>(textureDimensions(t_shadow));
     var lit = 0.0;
     if (kind == 0u) {
-        lit = textureSampleCompareLevel(t_shadow, s_shadow, uv, layer, depth);
+        lit = shadow_compare(uv, size, layer, depth);
     } else {
-        let step = F.shadow_params.y * max(light.shadow.w, 1.0);
+        // A (2 reach + 1)^2 grid of comparison samples, `step` apart.
         let reach = select(1, 2, kind == 2u);
-        var count = 0.0;
-        for (var y = -reach; y <= reach; y++) {
-            for (var x = -reach; x <= reach; x++) {
-                let o = vec2<f32>(f32(x), f32(y)) * step;
-                lit += textureSampleCompareLevel(t_shadow, s_shadow, uv + o, layer, depth);
-                count += 1.0;
+        let count = f32((2 * reach + 1) * (2 * reach + 1));
+        if (light.shadow.w <= 1.0) {
+            // Samples one texel apart share their texels: compare each
+            // texel of the (2 reach + 2)^2 block once, weighted by the
+            // samples it is in: per axis 1 - f for the first row (column),
+            // f for the last, (1 - f) + f for those between.
+            let t = uv * vec2<f32>(size) - 0.5;
+            let i = vec2<i32>(floor(t));
+            let f = t - floor(t);
+            for (var y = -reach; y <= reach + 1; y++) {
+                let wy = select(0.0, 1.0 - f.y, y <= reach) + select(0.0, f.y, y > -reach);
+                for (var x = -reach; x <= reach + 1; x++) {
+                    let wx = select(0.0, 1.0 - f.x, x <= reach) + select(0.0, f.x, x > -reach);
+                    lit += wx * wy * shadow_texel(i + vec2<i32>(x, y), size, layer, depth);
+                }
+            }
+        } else {
+            let step = F.shadow_params.y * light.shadow.w;
+            for (var y = -reach; y <= reach; y++) {
+                for (var x = -reach; x <= reach; x++) {
+                    lit += shadow_compare(uv + vec2<f32>(f32(x), f32(y)) * step, size, layer, depth);
+                }
             }
         }
         lit /= count;
@@ -347,7 +384,7 @@ fn three_output(rgb_in: vec3<f32>, alpha: f32, depth: f32) -> vec4<f32> {
 /// `lights: true` material is bound with all of them).
 fn three_keep_frame_bindings() -> f32 {
     let e = textureSampleLevel(t_env, s_env, vec2<f32>(0.0), 0.0).r;
-    let s = textureSampleCompareLevel(t_shadow, s_shadow, vec2<f32>(0.0), 0, 1.0);
+    let s = textureLoad(t_shadow, vec2<i32>(0), 0, 0);
     let t = textureSampleLevel(t_transmission, s_transmission, vec2<f32>(0.0), 0.0).r;
     let l = f32(LTC.t[0].x & 1u);
     return (e + s + t + l) * 0.0;
