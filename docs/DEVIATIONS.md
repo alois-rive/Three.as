@@ -1484,6 +1484,36 @@ through `material as ShaderMaterial` or a typed `shaderMaterial` getter
   CameraHelper, light helpers, VertexNormalsHelper). Helper colour
   arguments are hex numbers; the light helpers take `-1` for "the light's
   colour" (three.js's undefined). Lines are one pixel wide.
+- **ViewHelper** (`three/addons/helpers/ViewHelper`, after r16x):
+  `isViewHelper`, `animating`, `center`, `render(renderer)`,
+  `handleClick(event)`, `setLabels`, `setLabelStyle`, `update(delta)`,
+  `dispose()` as three.js; the gizmo is 128 x 128 points at the bottom
+  right (no other corner). What differs:
+  - `domElement` is the `GPURenderer` (its size in points places the
+    gizmo for clicks; `null` takes the gizmo's 128 x 128 as the whole
+    element). `handleClick` takes a Rive `PointerEvent` in layout
+    coordinates; call it on a release near the press (ThreeLayout's
+    `onPointerDown` / `onPointerUp`). It orients the gizmo from the
+    camera before picking, so a click works before the first render.
+  - `render` composites over what the renderer drew: it clears depth
+    through its own pass (`autoClear` on with `autoClearColor` off,
+    restored after) rather than calling `clearDepth()`, so it needs no
+    `autoClear = false` from the caller. With `antialias`, call
+    `renderer.clear()` before the scene's render, or the first frame's
+    gizmo pass starts from an undefined MSAA buffer (see Views).
+  - The sprites' canvases are Rive 2D canvases (64 x 64, a disc of the
+    axis colour, the label centred on y 41 as three.js's `fillText`),
+    drawn by the renderer through the texture's `update(context)` hook and
+    redrawn by `setLabels` / `setLabelStyle` (three.js makes new
+    CanvasTextures). `setLabelStyle(font, color, radius)` keeps three.js's
+    CSS strings: `font`'s `px` size and its first family, which must be
+    a **font asset of the Rive file** (`"20px Orbitron"`); with none of
+    that name the labels are not drawn (three.js's default "24px Arial"
+    usually has none). Labels are off until `setLabels`.
+  - The sprites facing away from the camera are drawn at half opacity
+    (per axis, by the camera's direction).
+  - `dispose()` disposes the sprites' textures (as three.js) and releases
+    their canvases too.
 
 ## Audio
 

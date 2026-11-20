@@ -262,7 +262,8 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M10a, helpers (done).** AxesHelper, GridHelper, PolarGridHelper, BoxHelper,
   Box3Helper, PlaneHelper, ArrowHelper, CameraHelper,
   Directional/Point/Spot/HemisphereLightHelper, SkeletonHelper,
-  VertexNormalsHelper (addon).
+  VertexNormalsHelper (addon), ViewHelper (addon: the axis gizmo in a
+  corner that turns the camera along a clicked axis).
 - **M10b, object and geometry utilities (done; events take listener objects).** Deep `Object3D.clone/copy`,
   `BufferGeometry.clone/copy/toNonIndexed`, InterleavedBuffer and
   InterleavedBufferAttribute, EventDispatcher with typed events (`change`
@@ -283,8 +284,8 @@ Goal: the helpers, utilities and controls that three.js examples lean on.
 - **M10f, BatchedMesh (done).** Many geometries in one draw (per-instance
   geometry ranges, visibility, matrices and colours), with its
   `optimize` and sorting.
-- Examples `Editor` (TransformControls, helpers, wide lines, addon
-  geometry) and `Batched` (600 instances of four geometries).
+- Examples `Editor` (TransformControls, ViewHelper, helpers, wide lines,
+  addon geometry) and `Batched` (600 instances of four geometries).
 
 ### M11: loaders and formats (done)
 
