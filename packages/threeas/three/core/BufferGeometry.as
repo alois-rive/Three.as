@@ -15,9 +15,6 @@ import { JSONMeta, jsonMetadata, isEmptyTable } from "./JSON";
 
 let _geometryId: i32 = 0;
 
-/// Geometries disposed since the renderer last looked (ids). Internal.
-export const disposedGeometries: Array<i32> = [];
-
 export class GeometryGroup {
     start: i32;
     count: i32;
@@ -438,8 +435,9 @@ export class BufferGeometry extends EventDispatcher {
         return out;
     }
 
+    /// Dispatches "dispose": each renderer that holds GPU state for the
+    /// geometry frees it at its next render, as three.js.
     dispose(): void {
-        disposedGeometries.push(this.id);
         if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }

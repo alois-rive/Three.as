@@ -20,6 +20,7 @@ import { Image } from "rive/image";
 import { Texture } from "../textures/Texture";
 import { DepthTexture } from "../textures/DepthTexture";
 import { Vector4 } from "../math/Vector4";
+import { Event, EventDispatcher } from "../core/EventDispatcher";
 import { LinearFilter, SRGBColorSpace, NoColorSpace, UnsignedByteType } from "../constants";
 
 let _rtId: i32 = 0;
@@ -79,6 +80,8 @@ export class RenderTargetTexture extends Texture {
     ensureOwn(format: u32): GPUTextureView? {
         let t = this.hdr;
         if (t == null || t.width != this.pixelWidth || t.height != this.pixelHeight || this.gpuFormat != format) {
+            const old = this.hdrView;
+            if (old != null) old.release();
             if (t != null) t.release();
             const d = new GPUTextureDesc();
             d.width = this.pixelWidth;
@@ -94,14 +97,16 @@ export class RenderTargetTexture extends Texture {
     }
 
     releaseOwn(): void {
+        const v = this.hdrView;
+        if (v != null) v.release();
+        this.hdrView = null;
         const h = this.hdr;
         if (h != null) h.release();
         this.hdr = null;
-        this.hdrView = null;
     }
 }
 
-export class RenderTarget {
+export class RenderTarget extends EventDispatcher {
     readonly isRenderTarget: bool = true;
     id: i32;
     width: u32;
@@ -126,6 +131,7 @@ export class RenderTarget {
     scissorTest: bool = false;
 
     constructor(width: u32 = 1, height: u32 = 1, options: RenderTargetOptions? = null) {
+        super();
         this.id = _rtId++;
         this.width = width;
         this.height = height;
@@ -215,6 +221,9 @@ export class RenderTarget {
         return c;
     }
 
+    /// Frees its canvas and textures now, and (dispatching "dispose", as
+    /// three.js) each renderer's depth and MSAA attachments for it at that
+    /// renderer's next render.
     dispose(): void {
         for (let i = 0; i < this.textures.length; i++) {
             const t = this.textures[i];
@@ -226,6 +235,7 @@ export class RenderTarget {
         }
         const d = this.depthTexture;
         if (d != null) d.dispose();
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }
 

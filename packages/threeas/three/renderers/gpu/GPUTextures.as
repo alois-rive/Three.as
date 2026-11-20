@@ -3,7 +3,9 @@
 // bind. A texture that wants mipmaps (generateMipmaps and a mipmap
 // minFilter) is copied into a mipmapped texture of our own and its levels
 // drawn down from it, again only when the source changes (a new view or
-// size, or texture.version).
+// size, or texture.version). The views and bind groups those passes use are
+// made with their texture and kept (none a redraw), and everything is
+// released when the texture is disposed (its "dispose" event, Disposal).
 
 import { Context } from "rive/host";
 import {
@@ -14,6 +16,11 @@ import {
 import { TextureFormat, Filter, WrapMode, LoadOp, StoreOp, BufferUsage } from "rive/gpu_enums";
 import { Texture } from "../../textures/Texture";
 import { CubeTexture } from "../../textures/CubeTexture";
+import { RendererData } from "../../core/RendererData";
+import {
+    DisposeQueue, DisposeListener, DISPOSED_TEXTURE, DISPOSED_PMREM, PMREM_DISPOSE_EVENT, RendererSlot, dataOf, setDataOf,
+    detach,
+} from "./Disposal";
 import {
     NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearMipmapNearestFilter, LinearMipmapLinearFilter,
 } from "../../constants";
@@ -28,16 +35,43 @@ class PmremEntry {
     view: GPUTextureView;
     levelViews: Array<GPUTextureView> = [];
     params: Array<GPUBuffer> = [];
+    /// Per level: its params over `groupSource` (rebuilt when the source
+    /// view changes).
+    groups: Array<GPUBindGroup?> = [];
+    groupSource: GPUTextureView? = null;
     source: GPUTextureView? = null;
     version: i32 = -1;
     width: u32;
     levels: u32;
+    /// PMREMResult.dispose() of its texture.
+    listener: DisposeListener? = null;
 
     constructor(texture: GPUTexture, w: u32, levels: u32) {
         this.texture = texture;
         this.view = texture.view();
         this.width = w;
         this.levels = levels;
+    }
+
+    releaseGroups(): void {
+        for (let i = 0; i < this.groups.length; i++) {
+            const g = this.groups[i];
+            if (g != null) g.release();
+            this.groups[i] = null;
+        }
+        this.groupSource = null;
+    }
+
+    release(): void {
+        detach(this.listener);
+        this.listener = null;
+        this.releaseGroups();
+        for (let i = 0; i < this.params.length; i++) this.params[i].release();
+        for (let i = 0; i < this.levelViews.length; i++) this.levelViews[i].release();
+        this.params = [];
+        this.levelViews = [];
+        this.view.release();
+        this.texture.release();
     }
 }
 
@@ -46,6 +80,8 @@ class CubeEquirect {
     texture: GPUTexture;
     view: GPUTextureView;
     faces: Array<GPUTextureView?> = [null, null, null, null, null, null];
+    /// The conversion's bind group, over `faces`.
+    group: GPUBindGroup? = null;
     version: i32 = -1;
     width: u32;
     height: u32;
@@ -57,6 +93,15 @@ class CubeEquirect {
         this.width = w;
         this.height = h;
     }
+
+    release(): void {
+        const g = this.group;
+        if (g != null) g.release();
+        this.group = null;
+        this.params.release();
+        this.view.release();
+        this.texture.release();
+    }
 }
 
 class MipChain {
@@ -67,6 +112,13 @@ class MipChain {
     width: u32;
     height: u32;
     format: u32 = <u32>TextureFormat.rgba8unorm;
+    /// Each level's own view, and the group drawing level k (k >= 1) from
+    /// level k - 1 (made with the texture).
+    levelViews: Array<GPUTextureView> = [];
+    groups: Array<GPUBindGroup> = [];
+    /// The group drawing level 0 from `group0Source`.
+    group0: GPUBindGroup? = null;
+    group0Source: GPUTextureView? = null;
 
     constructor(texture: GPUTexture, view: GPUTextureView, source: GPUTextureView, version: i32, w: u32, h: u32) {
         this.texture = texture;
@@ -75,6 +127,19 @@ class MipChain {
         this.version = version;
         this.width = w;
         this.height = h;
+    }
+
+    release(): void {
+        const g0 = this.group0;
+        if (g0 != null) g0.release();
+        this.group0 = null;
+        this.group0Source = null;
+        for (let i = 0; i < this.groups.length; i++) this.groups[i].release();
+        for (let i = 0; i < this.levelViews.length; i++) this.levelViews[i].release();
+        this.groups = [];
+        this.levelViews = [];
+        this.view.release();
+        this.texture.release();
     }
 }
 
@@ -93,6 +158,43 @@ export class CopyTarget {
         this.format = format;
         this.version = version;
     }
+
+    release(): void {
+        this.view.release();
+        this.texture.release();
+    }
+}
+
+/// What a renderer keeps for a texture (on the texture, Disposal).
+class TextureGPU extends RendererData {
+    /// The renderer's view counter of the last update.
+    frame: i32 = -1;
+    chain: MipChain? = null;
+    copied: CopyTarget? = null;
+    cube: CubeEquirect? = null;
+    pmrem: PmremEntry? = null;
+    listener: DisposeListener? = null;
+
+    releasePmrem(): void {
+        const e = this.pmrem;
+        if (e != null) e.release();
+        this.pmrem = null;
+    }
+
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        this.releasePmrem();
+        const c = this.chain;
+        if (c != null) c.release();
+        this.chain = null;
+        const o = this.copied;
+        if (o != null) o.release();
+        this.copied = null;
+        const ce = this.cube;
+        if (ce != null) ce.release();
+        this.cube = null;
+    }
 }
 
 export function wantsMipmaps(t: Texture): bool {
@@ -103,9 +205,6 @@ export function wantsMipmaps(t: Texture): bool {
 
 export class GPUTextures {
     private context: Context;
-    private frames: Map<i32, i32> = new Map<i32, i32>();
-    private chains: Map<i32, MipChain> = new Map<i32, MipChain>();
-    private overrides: Map<i32, CopyTarget> = new Map<i32, CopyTarget>();
     private mipModule: GPUShaderModule? = null;
     private mipPipeline: GPUPipeline? = null;
     private mipPipelineHDR: GPUPipeline? = null;
@@ -113,28 +212,53 @@ export class GPUTextures {
     private cubePipeline: GPUPipeline? = null;
     private cubeLayout: GPUBindGroupLayout? = null;
     private cubeBroken: bool = false;
-    private cubes: Map<i32, CubeEquirect> = new Map<i32, CubeEquirect>();
     private cubeStaging: Float32Array = new Float32Array(4);
     private pmremPipeline: GPUPipeline? = null;
     private pmremLayout: GPUBindGroupLayout? = null;
     private pmremSampler: GPUSampler? = null;
     private pmremBroken: bool = false;
-    private pmrems: Map<i32, PmremEntry> = new Map<i32, PmremEntry>();
     private pmremStaging: Float32Array = new Float32Array(8);
     private mipSampler: GPUSampler? = null;
+    private mipLayout: GPUBindGroupLayout? = null;
+    private mipLayoutHDR: GPUBindGroupLayout? = null;
     private mipBroken: bool = false;
     private colorAttachment: GPUColorAttachment = new GPUColorAttachment();
+    private colorList: Array<GPUColorAttachment> = [];
     private passDesc: GPUPassDesc = new GPUPassDesc();
+    // Each texture's state is on the texture (TextureGPU, Disposal).
+    private queue: DisposeQueue;
+    private slot: RendererSlot;
+    private _count: i32 = 0;
 
-    constructor(context: Context) {
+    constructor(context: Context, queue: DisposeQueue, slot: RendererSlot) {
         this.context = context;
+        this.queue = queue;
+        this.slot = slot;
+        this.colorList.push(this.colorAttachment);
     }
 
     /// Lets the texture draw or upload (once a frame), before any pass.
     update(t: Texture, frame: i32): void {
-        if (this.frames.has(t.id) && this.frames.get(t.id) == frame) return;
-        this.frames.set(t.id, frame);
+        const d = this.stateOf(t);
+        if (d.frame == frame) return;
+        d.frame = frame;
         t.update(this.context);
+    }
+
+    private peek(t: Texture): TextureGPU? {
+        const d = dataOf(t, this.slot);
+        return d != null ? d as TextureGPU : null;
+    }
+
+    /// `t`'s state, made (listening for its "dispose") when it has none.
+    private stateOf(t: Texture): TextureGPU {
+        const d = dataOf(t, this.slot);
+        if (d != null) return d as TextureGPU;
+        const n = new TextureGPU();
+        setDataOf(t, this.slot, n);
+        n.listener = new DisposeListener(this.queue, DISPOSED_TEXTURE, n).attach(t);
+        this._count++;
+        return n;
     }
 
     /// The view to bind for `t`, mipmapped when it asks for mipmaps.
@@ -155,40 +279,44 @@ export class GPUTextures {
             w = t.width;
             h = t.height;
             if (t.isHDRSource) format = <u32>TextureFormat.rgba16float;
-            if (this.overrides.has(t.id)) format = this.overrides.get(t.id).format;
+            const d = this.peek(t);
+            if (d != null && d.copied != null) format = d.copied!.format;
         }
         if (source == null) return null;
         if (!wantsMipmaps(t) || (w <= 1 && h <= 1) || this.mipBroken) return source;
-        let chain: MipChain? = this.chains.has(t.id) ? this.chains.get(t.id) : null;
+        const d = this.stateOf(t);
+        let chain = d.chain;
         if (chain != null && chain.source === source && chain.version == t.version
                 && chain.width == w && chain.height == h) {
             return chain.view;
         }
-        chain = this.build(t, source!, w, h, chain, target, format);
+        chain = this.build(t, d, source!, w, h, chain, target, format);
         return chain != null ? chain.view : source;
     }
 
     /// Mip levels of the view `view()` returned (1 when not mipmapped).
     levels(t: Texture): u32 {
-        if (!this.chains.has(t.id)) return t.mipLevelCount;
-        return this.chains.get(t.id).texture.numMipmaps;
+        const d = this.peek(t);
+        if (d == null || d.chain == null) return t.mipLevelCount;
+        return d.chain!.texture.numMipmaps;
     }
 
     /// Textures the renderer has prepared and not disposed
     /// (renderer.info.memory.textures).
-    get count(): i32 { return this.frames.size; }
+    get count(): i32 { return this._count; }
 
     /// The texture's own view (no mip chain): what a texture copy wrote
     /// into it (copyTextureToTexture into an image or a
     /// FramebufferTexture), else `t.getView()`.
     baseView(t: Texture): GPUTextureView? {
-        if (this.overrides.has(t.id)) {
-            const o = this.overrides.get(t.id);
+        const d = this.peek(t);
+        if (d != null && d.copied != null) {
+            const o = d.copied!;
             // The texture changed on its own since (a new image, a redraw):
             // its content wins.
             if (o.version == t.version) return o.view;
-            o.texture.release();
-            this.overrides.delete(t.id);
+            o.release();
+            d.copied = null;
         }
         return t.getView();
     }
@@ -196,54 +324,71 @@ export class GPUTextures {
     /// The GPU texture copies write into for `t` (internal:
     /// copyTextureToTexture), or null.
     copyTarget(t: Texture): CopyTarget? {
-        if (!this.overrides.has(t.id)) return null;
-        const o = this.overrides.get(t.id);
+        const d = this.peek(t);
+        if (d == null || d.copied == null) return null;
+        const o = d.copied!;
         return o.version == t.version ? o : null;
     }
 
     /// Rebuilds `t`'s mip chain at its next use (its level 0 was written).
     invalidate(t: Texture): void {
-        if (this.chains.has(t.id)) this.chains.get(t.id).version = -0x7fffffff;
+        const d = this.peek(t);
+        if (d != null && d.chain != null) d.chain!.version = -0x7fffffff;
     }
 
     /// Makes `t` sample `texture` from now on, until `t` changes on its own.
     setCopyTarget(t: Texture, texture: GPUTexture, view: GPUTextureView, format: u32): CopyTarget {
-        if (this.overrides.has(t.id)) {
-            const old = this.overrides.get(t.id);
-            if (old.texture !== texture) old.texture.release();
-        }
+        const d = this.stateOf(t);
+        const old = d.copied;
+        if (old != null && old.texture !== texture) old.release();
         const o = new CopyTarget(texture, view, format, t.version);
-        this.overrides.set(t.id, o);
+        d.copied = o;
         return o;
     }
 
-    dispose(id: i32): void {
-        this.frames.delete(id);
-        if (this.cubes.has(id)) {
-            this.cubes.get(id).texture.release();
-            this.cubes.delete(id);
-        }
-        if (this.pmrems.has(id)) {
-            this.pmrems.get(id).texture.release();
-            this.pmrems.delete(id);
-        }
-        if (this.chains.has(id)) {
-            this.chains.get(id).texture.release();
-            this.chains.delete(id);
-        }
-        if (this.overrides.has(id)) {
-            this.overrides.get(id).texture.release();
-            this.overrides.delete(id);
-        }
+    /// Frees a disposed texture's state (its "dispose").
+    free(data: RendererData): void {
+        if (data.serial != this.slot.serial) return;
+        data.release();
+        data.serial = -1;
+        this._count--;
     }
 
-    private build(t: Texture, source: GPUTextureView, w: u32, h: u32, old: MipChain?, target: GPUTarget,
-                  format: u32): MipChain? {
+    /// Frees a texture's PMREM only (PMREMResult.dispose()); it is
+    /// prefiltered again if used again.
+    freePmrem(data: RendererData): void {
+        if (data.serial != this.slot.serial) return;
+        (data as TextureGPU).releasePmrem();
+    }
+
+    /// renderer.dispose(): releases the pipelines and samplers (made again
+    /// on use); the state on textures is left to be collected, or released
+    /// when replaced.
+    reset(): void {
+        this._count = 0;
+        releasePipeline(this.mipPipeline); this.mipPipeline = null;
+        releasePipeline(this.mipPipelineHDR); this.mipPipelineHDR = null;
+        releasePipeline(this.cubePipeline); this.cubePipeline = null;
+        releasePipeline(this.pmremPipeline); this.pmremPipeline = null;
+        releaseLayout(this.mipLayout); this.mipLayout = null;
+        releaseLayout(this.mipLayoutHDR); this.mipLayoutHDR = null;
+        releaseLayout(this.cubeLayout); this.cubeLayout = null;
+        releaseLayout(this.pmremLayout); this.pmremLayout = null;
+        releaseSampler(this.mipSampler); this.mipSampler = null;
+        releaseSampler(this.pmremSampler); this.pmremSampler = null;
+        this.mipModule = null;
+        this.cubeModule = null;
+    }
+
+    private build(t: Texture, d: TextureGPU, source: GPUTextureView, w: u32, h: u32, old: MipChain?,
+                  target: GPUTarget, format: u32): MipChain? {
         if (!this.ensurePipeline()) return null;
         const levels = mipLevels(w, h);
+        const hdr = format != <u32>TextureFormat.rgba8unorm;
+        const layout = hdr ? this.mipLayoutHDR! : this.mipLayout!;
         let chain = old;
         if (chain == null || chain.width != w || chain.height != h || chain.format != format) {
-            if (chain != null) chain.texture.release();
+            if (chain != null) chain.release();
             const desc = new GPUTextureDesc();
             desc.width = w;
             desc.height = h;
@@ -253,27 +398,40 @@ export class GPUTextures {
             const tex = new GPUTexture(desc);
             chain = new MipChain(tex, tex.view(), source, t.version, w, h);
             chain.format = format;
-            this.chains.set(t.id, chain);
+            // Each level's view, and the groups drawing a level from the one
+            // above, once.
+            for (let level: u32 = 0; level < levels; level++) {
+                const vd = new GPUTextureViewDesc();
+                vd.baseMipLevel = level;
+                vd.mipCount = 1;
+                chain.levelViews.push(tex.view(vd));
+                if (level > 0) chain.groups.push(this.mipGroup(layout, chain.levelViews[level - 1]));
+            }
+            d.chain = chain;
         }
         chain.source = source;
         chain.version = t.version;
+        let g0 = chain.group0;
+        if (g0 == null || chain.group0Source !== source) {
+            if (g0 != null) g0.release();
+            g0 = this.mipGroup(layout, source);
+            chain.group0 = g0;
+            chain.group0Source = source;
+        }
         // Level 0 from the source, then each level from the one above.
-        let from = source;
+        const pipeline = hdr ? this.mipPipelineHDR! : this.mipPipeline!;
         for (let level: u32 = 0; level < levels; level++) {
-            const vd = new GPUTextureViewDesc();
-            vd.baseMipLevel = level;
-            vd.mipCount = 1;
-            const into = chain.texture.view(vd);
-            this.blit(from, into, target, format != <u32>TextureFormat.rgba8unorm);
-            from = into;
+            this.blit(pipeline, level == 0 ? g0! : chain.groups[level - 1], chain.levelViews[level], target);
         }
         return chain;
     }
 
-    private blit(from: GPUTextureView, into: GPUTextureView, target: GPUTarget, hdr: bool): void {
-        const pipeline = hdr ? this.mipPipelineHDR! : this.mipPipeline!;
-        const group = new GPUBindGroup(pipeline.getBindGroupLayout(0), [],
-            [new GPUBindGroupTexture(0, from)], [new GPUBindGroupSampler(1, this.mipSampler!)]);
+    private mipGroup(layout: GPUBindGroupLayout, from: GPUTextureView): GPUBindGroup {
+        return new GPUBindGroup(layout, [], [new GPUBindGroupTexture(0, from)],
+            [new GPUBindGroupSampler(1, this.mipSampler!)]);
+    }
+
+    private blit(pipeline: GPUPipeline, group: GPUBindGroup, into: GPUTextureView, target: GPUTarget): void {
         const color = this.colorAttachment;
         color.view = into;
         color.loadOp = LoadOp.clear;
@@ -281,7 +439,7 @@ export class GPUTextures {
         color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
         const pd = this.passDesc;
         pd.label = "three mip";
-        pd.color = [color];
+        pd.color = this.colorList;
         pd.depthView = null;
         const pass = target.beginRenderPass(pd);
         pass.setPipeline(pipeline);
@@ -298,16 +456,17 @@ export class GPUTextures {
         const face = max<u32>(1, t.width);
         const maxSize = this.context.features().maxTextureSize2D;
         const w = min<u32>(face * 4, maxSize), h = min<u32>(face * 2, maxSize / 2);
-        let ce: CubeEquirect? = this.cubes.has(t.id) ? this.cubes.get(t.id) : null;
+        const d = this.stateOf(t);
+        let ce = d.cube;
         if (ce == null || ce.width != w || ce.height != h) {
-            if (ce != null) ce.texture.release();
+            if (ce != null) ce.release();
             const desc = new GPUTextureDesc();
             desc.width = w;
             desc.height = h;
             desc.format = TextureFormat.rgba16float;
             desc.renderTarget = true;
             ce = new CubeEquirect(new GPUTexture(desc), w, h);
-            this.cubes.set(t.id, ce);
+            d.cube = ce;
         }
         let changed = ce.version != t.version;
         const views: Array<GPUTextureView> = [];
@@ -323,13 +482,20 @@ export class GPUTextures {
         p[2] = t.colorSpace == "srgb" ? 1 : 0;
         p[3] = t.premultiplyAlpha ? 1 : 0;
         ce.params.update(0, p.buffer);
-        const textures: Array<GPUBindGroupTexture> = [];
-        for (let i = 0; i < 6; i++) {
-            textures.push(new GPUBindGroupTexture(<u32>i, views[i]));
-            ce.faces[i] = views[i];
+        let group = ce.group;
+        let facesChanged = group == null;
+        for (let i = 0; i < 6 && !facesChanged; i++) facesChanged = ce.faces[i] !== views[i];
+        if (facesChanged) {
+            const textures: Array<GPUBindGroupTexture> = [];
+            for (let i = 0; i < 6; i++) {
+                textures.push(new GPUBindGroupTexture(<u32>i, views[i]));
+                ce.faces[i] = views[i];
+            }
+            if (group != null) group.release();
+            group = new GPUBindGroup(this.cubeLayout!, [new GPUBindGroupUBO(7, ce.params)], textures,
+                [new GPUBindGroupSampler(6, this.mipSampler!)]);
+            ce.group = group;
         }
-        const group = new GPUBindGroup(this.cubeLayout!, [new GPUBindGroupUBO(7, ce.params)], textures,
-            [new GPUBindGroupSampler(6, this.mipSampler!)]);
         const color = this.colorAttachment;
         color.view = ce.view;
         color.loadOp = LoadOp.clear;
@@ -337,11 +503,11 @@ export class GPUTextures {
         color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
         const pd = this.passDesc;
         pd.label = "three cube";
-        pd.color = [color];
+        pd.color = this.colorList;
         pd.depthView = null;
         const pass = target.beginRenderPass(pd);
         pass.setPipeline(this.cubePipeline!);
-        pass.setBindGroup(0, group);
+        pass.setBindGroup(0, group!);
         pass.draw(3);
         pass.finish();
         ce.version = t.version;
@@ -359,7 +525,7 @@ export class GPUTextures {
         const cube = t instanceof CubeTexture;
         let sw: u32, sh: u32;
         if (cube) {
-            const ce = this.cubes.get(t.id);
+            const ce = this.stateOf(t).cube!;
             sw = ce.width; sh = ce.height;
         } else {
             sw = t.width; sh = t.height;
@@ -368,9 +534,10 @@ export class GPUTextures {
         while (w < sw && w < 1024) w <<= 1;
         const h = w / 2;
         const levels = mipLevels(w / 16, w / 16);   // the last level is 16 x 8
-        let e: PmremEntry? = this.pmrems.has(t.id) ? this.pmrems.get(t.id) : null;
+        const d = this.stateOf(t);
+        let e = d.pmrem;
         if (e == null || e.width != w) {
-            if (e != null) e.texture.release();
+            if (e != null) e.release();
             const desc = new GPUTextureDesc();
             desc.width = w;
             desc.height = h;
@@ -385,10 +552,14 @@ export class GPUTextures {
                 vd.mipCount = 1;
                 e.levelViews.push(tex.view(vd));
                 e.params.push(new GPUBuffer(BufferUsage.uniform, 32));
+                e.groups.push(null);
             }
-            this.pmrems.set(t.id, e);
+            // PMREMResult.dispose() frees it alone.
+            e.listener = new DisposeListener(this.queue, DISPOSED_PMREM, d).attach(t, PMREM_DISPOSE_EVENT);
+            d.pmrem = e;
         }
         if (e.source === src && e.version == t.version) return e.view;
+        if (e.groupSource !== src) e.releaseGroups();
         const srcLevels = this.levels(t);
         const p = this.pmremStaging;
         for (let l: u32 = 0; l < levels; l++) {
@@ -401,8 +572,12 @@ export class GPUTextures {
             p[6] = cube || t.flipY ? 1 : 0;
             p[7] = 0;
             e.params[l].update(0, p.buffer);
-            const group = new GPUBindGroup(this.pmremLayout!, [new GPUBindGroupUBO(2, e.params[l])],
-                [new GPUBindGroupTexture(0, src)], [new GPUBindGroupSampler(1, this.pmremSampler!)]);
+            let group = e.groups[l];
+            if (group == null) {
+                group = new GPUBindGroup(this.pmremLayout!, [new GPUBindGroupUBO(2, e.params[l])],
+                    [new GPUBindGroupTexture(0, src)], [new GPUBindGroupSampler(1, this.pmremSampler!)]);
+                e.groups[l] = group;
+            }
             const color = this.colorAttachment;
             color.view = e.levelViews[l];
             color.loadOp = LoadOp.clear;
@@ -410,14 +585,15 @@ export class GPUTextures {
             color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
             const pd = this.passDesc;
             pd.label = "three pmrem";
-            pd.color = [color];
+            pd.color = this.colorList;
             pd.depthView = null;
             const pass = target.beginRenderPass(pd);
             pass.setPipeline(this.pmremPipeline!);
-            pass.setBindGroup(0, group);
+            pass.setBindGroup(0, group!);
             pass.draw(3);
             pass.finish();
         }
+        e.groupSource = src;
         e.source = src;
         e.version = t.version;
         return e.view;
@@ -425,7 +601,8 @@ export class GPUTextures {
 
     /// Levels of `pmrem(t)`'s chain (0 before it exists).
     pmremLevels(t: Texture): u32 {
-        return this.pmrems.has(t.id) ? this.pmrems.get(t.id).levels : 0;
+        const d = this.peek(t);
+        return d != null && d.pmrem != null ? d.pmrem!.levels : 0;
     }
 
     private ensurePmremPipeline(): bool {
@@ -516,10 +693,24 @@ export class GPUTextures {
         dh.fragmentEntryPoint = "fs_blit";
         dh.colorTargets = [hdrTarget];
         this.mipPipelineHDR = new GPUPipeline(dh);
+        this.mipLayout = this.mipPipeline!.getBindGroupLayout(0);
+        this.mipLayoutHDR = this.mipPipelineHDR!.getBindGroupLayout(0);
         this.mipSampler = new GPUSampler(Filter.linear, Filter.linear, Filter.nearest,
             WrapMode.clampToEdge, WrapMode.clampToEdge);
         return true;
     }
+}
+
+function releasePipeline(p: GPUPipeline?): void {
+    if (p != null) p.release();
+}
+
+function releaseLayout(l: GPUBindGroupLayout?): void {
+    if (l != null) l.release();
+}
+
+function releaseSampler(s: GPUSampler?): void {
+    if (s != null) s.release();
 }
 
 function mipLevels(w: u32, h: u32): u32 {

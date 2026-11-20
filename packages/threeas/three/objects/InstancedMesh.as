@@ -6,6 +6,7 @@
 // after changes, as three.js).
 
 import { Object3D } from "../core/Object3D";
+import { Event } from "../core/EventDispatcher";
 import { Mesh } from "./Mesh";
 import { BufferGeometry } from "../core/BufferGeometry";
 import { InstancedBufferAttribute } from "../core/InstancedBufferAttribute";
@@ -155,7 +156,10 @@ export class InstancedMesh extends Mesh {
         return true;
     }
 
+    /// Dispatches "dispose" (the renderers free its instance buffers at
+    /// their next render) and disposes its morphTexture, as three.js.
     dispose(): void {
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
         const t = this.morphTexture;
         if (t != null) {
             t.dispose();

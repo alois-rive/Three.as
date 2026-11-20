@@ -76,8 +76,13 @@ export class Demo extends Layout {
 | (none) | `renderer.parallelCulling` (Rive-only, default true): views with 2048 or more frustum-culled candidates test them in a Rive parallel call (`three/renderers/gpu/Culling`), with the same result as on the main lane |
 | (none) | `info.timings` (Rive-only, off by default): CPU seconds per render stage (`matrices`, `collect`, `prepare`, `write`, `passes`, `draw`) summed over `renders`; `summary()` averages them, `reset()` clears |
 | uniforms uploaded per program | each draw keeps one 1536-byte block in a shared uniform buffer across frames (bound at a dynamic offset), rewritten and uploaded only when its world matrix, light list or material changed; a material's share of the block is built once a view however many draws use it |
-| `material.dispose()` | as three.js: the renderer frees the material's state (its bind groups; a ShaderMaterial's uniform buffer too) at the next render; drawn again, it is prepared again |
-| per-object render state (three.js: WeakMaps, freed by garbage collection) | each drawn object has a draw state (a slot in the shared uniform buffer; a bind group when skinned). `renderer.releaseObject(object, recursive = true)` (Rive-only) frees it at once; otherwise it is freed once the object has not been drawn for 4000 render calls (each pass counts). Freed slots are reused |
+| renderer state in WeakMaps keyed by the object, material, geometry, texture or render target (freed by garbage collection) | kept **on** that object (an internal `_gpu` field on EventDispatcher, one entry per renderer): AnimaScript has no weak references, but state stored on its key lives exactly as long as the key, so an object dropped without `dispose()` takes its renderer state with it, and the collector frees the GPU handles in it. Each renderer has a small index into that field (the lowest free one; `dispose()` frees it) and a serial, so several renderers share objects |
+| `dispose()` of a geometry, material, texture, render target | as three.js: each renderer that made state for it listens for its "dispose" event (as WebGLRenderer's onMaterialDispose, onGeometryDispose, onTextureDispose, onRenderTargetDispose), queues it, and frees it (buffers, bind groups, a ShaderMaterial's uniform buffer, mip chains, PMREMs, cube conversions, copies, a target's depth and MSAA attachments, morph textures, wide line segments) at its next render; drawn again, it is made again. Every renderer sees every dispose |
+| `InstancedMesh.dispose()`, `BatchedMesh.dispose()`, `Skeleton.dispose()` | dispatch "dispose" too: the renderers free the instance buffers (and draw state) of an InstancedMesh or BatchedMesh, and a skeleton's bone block or bone texture (kept on the skeleton, shared by the meshes it skins, as three.js's `boneTexture`). `BatchedMesh.dispose()` also disposes its geometry, as three.js; three.js's BatchedMesh has no "dispose" event and frees its data textures instead. `Skeleton` is an EventDispatcher here (three.js's is not) |
+| `WebGLCubeRenderTarget.dispose()` | disposes its six faces and its cube texture (the renderers' equirectangular conversion, mip chain and PMREM of it) |
+| `PMREMResult.dispose()` | `fromScene`'s: disposes its cube target; `fromEquirectangular`'s and `fromCubemap`'s (which return their own texture, see [Materials](#materials)): frees the renderers' PMREM of that texture (an internal "pmremdispose" event), keeping the texture; used as an environment again, it is prefiltered again |
+| per-object render state | each drawn object has a draw state per part (a slot in the shared uniform buffer; a bind group when skinned, morphed or extra-mapped), its deformation block, instance buffers, CPU-blended morphs, kept on the object. `renderer.releaseObject(object, recursive = true)` (Rive-only) frees it at once. Uniform buffer slots are the renderer's: a slot not drawn for 4000 render calls (each pass counts) is reclaimed and reused (the state taking a new one if drawn again); the reclaiming holds no reference to objects or GPU handles |
+| `renderer.dispose()` | frees what the renderer owns at once (canvas, attachments, uniform buffers, pipelines, samplers, shared bind groups and buffers, shadow maps) and forgets its state on objects: that state no longer matches the renderer and goes with the objects (or is released when the renderer, used again, replaces it). The renderer can render again after `dispose()` |
 
 ### Shader programs: the uber-shader and baked variants
 
@@ -209,8 +214,10 @@ repository commits the gallery unbaked.
   `clone` and `toNonIndexed` as three.js.
 - **Events take listener objects** (no closures): subclass
   `EventListener` with `handleEvent(event)`. Objects dispatch "added",
-  "removed", "childadded", "childremoved"; materials, geometries and
-  textures "dispose"; controls "change", "start", "end".
+  "removed", "childadded", "childremoved"; materials, geometries,
+  textures, render targets, InstancedMesh, BatchedMesh and Skeleton
+  "dispose" (renderers listen for it, see [Renderer](#renderer));
+  controls "change", "start", "end".
 - `InterleavedBuffer` / `InterleavedBufferAttribute`: the attribute keeps
   its own dense copy (the renderer uploads attributes separately); its
   setters write both, and `buffer.needsUpdate = true` after writing
@@ -283,7 +290,8 @@ repository commits the gallery unbaked.
   texture prepared (the renderer prefilters it); `fromScene(scene, sigma,
   near, far)` renders the scene into a 256 cube map at the start of the
   renderer's next `render` (scripts render only from `draw()`), and
-  ignores `sigma`. `RoomEnvironment` is in `three/addons/environments/`.
+  ignores `sigma`. `result.dispose()` frees the prefiltered chain (see
+  [Renderer](#renderer)). `RoomEnvironment` is in `three/addons/environments/`.
 - **Cube textures are converted to equirectangular maps** on the GPU (an
   rgba16float texture 4 x 2 faces wide, redone when a face or `version`
   changes) and sampled as those, for `background`, `environment` and

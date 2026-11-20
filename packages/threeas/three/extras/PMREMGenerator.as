@@ -11,6 +11,8 @@ import { CubeTexture } from "../textures/CubeTexture";
 import { Object3D } from "../core/Object3D";
 import { CubeCamera } from "../cameras/CubeCamera";
 import { WebGLCubeRenderTarget } from "../renderers/WebGLCubeRenderTarget";
+import { Event } from "../core/EventDispatcher";
+import { PMREM_DISPOSE_EVENT } from "../renderers/gpu/Disposal";
 import { EquirectangularReflectionMapping, LinearMipmapLinearFilter, RepeatWrapping } from "../constants";
 
 /// What three.js returns (a render target): `.texture` is the environment.
@@ -23,9 +25,14 @@ export class PMREMResult {
         this.cubeTarget = cubeTarget;
     }
 
+    /// Frees the prefiltered environment, as three.js: fromScene's cube
+    /// target, or the renderers' PMREM of fromEquirectangular's /
+    /// fromCubemap's texture (the texture itself stays; used as an
+    /// environment again, it is prefiltered again).
     dispose(): void {
         const t = this.cubeTarget;
         if (t != null) t.dispose();
+        else if (this.texture.hasListeners(PMREM_DISPOSE_EVENT)) this.texture.dispatchEvent(new Event(PMREM_DISPOSE_EVENT));
     }
 }
 

@@ -10,6 +10,8 @@
 // materials, geometries and textures "dispose"; controls "change",
 // "start", "end".
 
+import { RendererData } from "./RendererData";
+
 export class Event {
     type: string;
     /// The dispatcher (set by dispatchEvent).
@@ -32,6 +34,9 @@ export abstract class EventListener {
 
 export class EventDispatcher {
     private _listeners: Map<string, Array<EventListener>>? = null;
+    /// Internal: each renderer's state for this object (by renderer index;
+    /// core/RendererData), freed with the object.
+    _gpu: Array<RendererData?>? = null;
 
     addEventListener(type: string, listener: EventListener): void {
         let map = this._listeners;

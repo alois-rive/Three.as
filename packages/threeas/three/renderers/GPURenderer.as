@@ -44,8 +44,8 @@ import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { clock } from "rive/os";
 
 import { Object3D } from "../core/Object3D";
-import { BufferGeometry, GeometryGroup, disposedGeometries } from "../core/BufferGeometry";
-import { disposedMaterials } from "../materials/Material";
+import { BufferGeometry, GeometryGroup } from "../core/BufferGeometry";
+import { RendererData } from "../core/RendererData";
 import { BufferAttribute } from "../core/BufferAttribute";
 import { Camera } from "../cameras/Camera";
 import { OrthographicCamera } from "../cameras/OrthographicCamera";
@@ -70,7 +70,7 @@ import {
     MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT, KIND_PHYSICAL, KIND_WIDE_LINE,
 } from "../materials/MaterialUniforms";
 import { ShaderMaterial } from "../materials/ShaderMaterial";
-import { Texture, disposedTextures } from "../textures/Texture";
+import { Texture } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
 import { Vector2 } from "../math/Vector2";
@@ -102,6 +102,11 @@ import { ArrayCamera } from "../cameras/ArrayCamera";
 import { GPUGeometries, GeometryGPU, LINE_STRIP, LINE_LOOP, LINE_SEGMENTS, LINE_WIREFRAME } from "./gpu/GPUGeometries";
 import { interleaveNormalTangent } from "./gpu/GPUGeometries";
 import { GPUTextures, wantsMipmaps } from "./gpu/GPUTextures";
+import {
+    DisposeQueue, DisposeListener, RendererSlot, acquireSlot, releaseSlot, dataOf, setDataOf, clearDataOf, detach,
+    DISPOSED_GEOMETRY, DISPOSED_TEXTURE, DISPOSED_MATERIAL, DISPOSED_RENDER_TARGET, DISPOSED_OBJECT, DISPOSED_SKELETON,
+    DISPOSED_PMREM,
+} from "./gpu/Disposal";
 import { RenderTarget, RenderTargetOptions, RenderTargetTexture } from "./RenderTarget";
 import { FramebufferTexture } from "../textures/FramebufferTexture";
 import { DepthTexture } from "../textures/DepthTexture";
@@ -190,8 +195,9 @@ class PassState {
 }
 const KEY_BACKGROUND: i32 = 1 << 30;
 
-// The depth (and MSAA colour) attachments of one render destination.
-class PassTargets {
+// The depth (and MSAA colour) attachments of one render destination (a
+// render target's are kept on it, Disposal).
+class PassTargets extends RendererData {
     depthTex: GPUTexture? = null;
     depthView: GPUTextureView? = null;
     msaaTex: GPUTexture? = null;
@@ -204,10 +210,22 @@ class PassTargets {
     // pass loads them (autoClear off, a scissor, renderer.clear).
     keepColor: bool = false;
     keepDepth: bool = false;
+    /// A render target's "dispose".
+    listener: DisposeListener? = null;
 
-    release(): void {
-        releaseTex(this.depthTex); this.depthTex = null; this.depthView = null;
-        releaseTex(this.msaaTex); this.msaaTex = null; this.msaaView = null;
+    releaseAttachments(): void {
+        releaseView(this.depthView); this.depthView = null;
+        releaseTex(this.depthTex); this.depthTex = null;
+        releaseView(this.msaaView); this.msaaView = null;
+        releaseTex(this.msaaTex); this.msaaTex = null;
+        this.width = 0;
+        this.height = 0;
+    }
+
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        this.releaseAttachments();
     }
 }
 
@@ -232,6 +250,36 @@ class CustomPipeline {
         this.layout1 = layout1;
         this.frameGroup = frameGroup;
     }
+
+    release(): void {
+        releaseGroup(this.objGroup); this.objGroup = null;
+        releaseGroup(this.fullGroup); this.fullGroup = null;
+        this.frameGroup.release();
+        this.pipeline.release();
+        this.layout0.release();
+        this.layout1.release();
+        const l2 = this.layout2;
+        if (l2 != null) l2.release();
+    }
+}
+
+// A copy pass's bind group for one format: over the last source copied
+// from (copies of one source, the framebuffer each frame, make no group).
+class CopyGroup {
+    layout: GPUBindGroupLayout;
+    from: GPUTextureView? = null;
+    group: GPUBindGroup? = null;
+
+    constructor(layout: GPUBindGroupLayout) {
+        this.layout = layout;
+    }
+
+    release(): void {
+        releaseGroup(this.group);
+        this.group = null;
+        this.from = null;
+        this.layout.release();
+    }
 }
 
 // A ShaderMaterial's uniform block and bind group.
@@ -242,6 +290,11 @@ class CustomUniforms {
     group: GPUBindGroup? = null;
     views: Array<GPUTextureView> = [];
     frame: i32 = -1;
+
+    release(): void {
+        releaseGroup(this.group); this.group = null;
+        releaseBuffer(this.buffer); this.buffer = null;
+    }
 }
 
 // What a draw rasterizes.
@@ -258,11 +311,17 @@ class MorphGPU {
     normals: Float32Array = new Float32Array(0);
     influences: Array<f64> = [];
     geometryVersion: i32 = -1;
+
+    release(): void {
+        releaseBuffer(this.position); this.position = null;
+        releaseBuffer(this.normal); this.normal = null;
+    }
 }
 
 // A geometry's morph target deltas as an rgba16float texture (three.wgsl's
 // morph()): target-major, a position texel (and a normal texel) a vertex.
-class MorphTargetsGPU {
+// Kept on the geometry's GeometryGPU.
+class MorphTargetsGPU extends RendererData {
     texture: GPUTexture? = null;
     view: GPUTextureView? = null;
     width: i32 = 0;
@@ -277,6 +336,14 @@ class MorphTargetsGPU {
     /// a join gave up.
     awaited: i32 = -1;
     zeroed: bool = false;
+
+    override release(): void {
+        releaseView(this.view); this.view = null;
+        releaseTex(this.texture); this.texture = null;
+        const job = this.job;
+        if (job != null) job.release();
+        this.job = null;
+    }
 }
 
 /// Morph textures above this many texels convert in a job (the 48-target
@@ -285,11 +352,18 @@ class MorphTargetsGPU {
 const MORPH_JOB_TEXELS: i32 = 65536;
 
 // Where a mesh's MorphU block (group 1 binding 7) sits in the renderer's
-// morph arena this view and, for skeletons above MAX_BONES, its bone
-// texture.
+// morph arena this view.
 class DeformGPU {
     offset: u32 = 0;
     frame: i32 = -1;
+}
+
+// A skeleton's bones (kept on the skeleton, as three.js keeps its bone
+// texture there): a uniform block, or for skeletons above MAX_BONES a
+// texture; uploaded once a view.
+class SkeletonGPU extends RendererData {
+    bones: GPUBuffer? = null;
+    bonesFrame: i32 = -1;
     boneTexture: GPUTexture? = null;
     boneView: GPUTextureView? = null;
     boneWidth: i32 = 0;
@@ -297,13 +371,29 @@ class DeformGPU {
     /// The bone rows last uploaded (12 floats a bone).
     boneCache: Float32Array = new Float32Array(0);
     boneFrame: i32 = -1;
+    listener: DisposeListener? = null;
+
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        releaseBuffer(this.bones); this.bones = null;
+        releaseView(this.boneView); this.boneView = null;
+        releaseTex(this.boneTexture); this.boneTexture = null;
+        this.bonesFrame = -1;
+        this.boneFrame = -1;
+    }
 }
 
-// A wide line geometry's packed segments.
-class WideLineGPU {
+// A wide line geometry's packed segments (on its GeometryGPU).
+class WideLineGPU extends RendererData {
     buffer: GPUBuffer? = null;
     data: Float32Array = new Float32Array(0);
     version: i32 = -1;
+
+    override release(): void {
+        releaseBuffer(this.buffer);
+        this.buffer = null;
+    }
 }
 
 // An InstancedMesh's packed instance buffer.
@@ -316,6 +406,13 @@ class InstanceGPU {
     matrixVersion: i32 = -1;
     colorVersion: i32 = -1;
     count: i32 = -1;
+
+    release(): void {
+        releaseBuffer(this.matrices); this.matrices = null;
+        if (this.ownColors) releaseBuffer(this.colors);
+        this.colors = null;
+        this.ownColors = false;
+    }
 }
 
 // A BatchedMesh's visible instances, packed by geometry: geometry k's
@@ -328,7 +425,50 @@ class BatchedGPU {
     first: Array<i32> = [];
     count: Array<i32> = [];
     version: i32 = -1;
+
+    release(): void {
+        releaseBuffer(this.matrices); this.matrices = null;
+        releaseBuffer(this.colors); this.colors = null;
+    }
 }
+
+// What a renderer keeps for an object (on the object, as three.js's
+// WeakMaps: it goes with the object): a draw state per part (0 the object,
+// 1 + i its geometry group i, the shadow stand-in), its deformation, an
+// InstancedMesh's or BatchedMesh's instance buffers, CPU-blended morphs.
+class ObjectGPU extends RendererData {
+    main: DrawState? = null;
+    shadow: DrawState? = null;
+    groups: Array<DrawState?> = [];
+    deform: DeformGPU? = null;
+    instance: InstanceGPU? = null;
+    batched: BatchedGPU? = null;
+    morph: MorphGPU? = null;
+    /// An InstancedMesh's or BatchedMesh's "dispose".
+    listener: DisposeListener? = null;
+
+    /// Releases its GPU handles (its arena slots are the renderer's:
+    /// GPURenderer.freeObject).
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        releaseState(this.main);
+        releaseState(this.shadow);
+        for (let i = 0; i < this.groups.length; i++) releaseState(this.groups[i]);
+        const ig = this.instance;
+        if (ig != null) ig.release();
+        this.instance = null;
+        const bg = this.batched;
+        if (bg != null) bg.release();
+        this.batched = null;
+        const m = this.morph;
+        if (m != null) m.release();
+        this.morph = null;
+        this.deform = null;
+    }
+}
+
+const STATE_SHADOW: i32 = 63;
 
 // -----------------------------------------------------------------------------
 
@@ -452,8 +592,10 @@ class DrawState {
     /// (bound with a dynamic offset): its own slot, kept across frames and
     /// rewritten only when the block changes.
     objOffset: u32 = 0;
-    /// Its arena slot (-1: none yet).
+    /// Its arena slot (-1: none yet), valid while the slot's generation is
+    /// `slotGen` (the renderer reclaims slots not drawn for a while).
     slot: i32 = -1;
+    slotGen: i32 = 0;
     /// What the slot holds: the material block and its version, the world
     /// matrix, the light list and the per-draw patches it was written from.
     block: MaterialBlock? = null;
@@ -465,7 +607,8 @@ class DrawState {
     spriteY: f64 = 0;
     /// The material entry it last drew with (skips a map lookup).
     entry: MaterialEntry? = null;
-    /// Skinned draws: a group 1 of their own (arena + their bones).
+    /// Skinned (morphed, extra-mapped) draws: a group 1 of their own.
+    /// `arenaGroup` marks the shared one, never released here.
     objGroup: GPUBindGroup? = null;
     arena: GPUBuffer? = null;
     bones: GPUBuffer? = null;
@@ -489,8 +632,13 @@ class DrawState {
 
 // What a material needs from a view, found once per view however many
 // draws use it: its textures updated, its shading kind, and its blocks.
-class MaterialEntry {
+// Kept on the material (Disposal); serial -1 once freed (draw states that
+// cached it look it up again).
+class MaterialEntry extends RendererData {
     material: Material;
+    /// A ShaderMaterial's uniform block and group.
+    uniforms: CustomUniforms? = null;
+    listener: DisposeListener? = null;
     prepared: i32 = -1;
     kind: i32 = 0;
     displaced: bool = false;
@@ -523,7 +671,26 @@ class MaterialEntry {
     customLights: bool = false;
 
     constructor(material: Material) {
+        super();
         this.material = material;
+    }
+
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        for (let v = 0; v < 8; v++) {
+            const b = unchecked(this.blocks[v]);
+            if (b == null) continue;
+            releaseGroup(b.matGroup);
+            releaseGroup(b.samplerGroup);
+            b.matGroup = null;
+            b.samplerGroup = null;
+            unchecked(this.blocks[v] = null);
+        }
+        const cu = this.uniforms;
+        if (cu != null) cu.release();
+        this.uniforms = null;
+        this.custom = null;
     }
 }
 
@@ -691,19 +858,12 @@ export class GPURenderer {
     private morphRowBuffers: Array<GPUVertexBufferLayout> = [];
     private dummyBones: GPUBuffer? = null;
     private dummyMorph: GPUBuffer? = null;
-    private morphTargets: Map<i32, MorphTargetsGPU> = new Map<i32, MorphTargetsGPU>();
     private pendingMorphs: Array<MorphTargetsGPU> = [];
-    private deforms: Map<i32, DeformGPU> = new Map<i32, DeformGPU>();
     private warnedMorphs: bool = false;
-    private boneBuffers: Map<i32, GPUBuffer> = new Map<i32, GPUBuffer>();
-    private morphs: Map<i32, MorphGPU> = new Map<i32, MorphGPU>();
     private customPipelines: Map<string, CustomPipeline> = new Map<string, CustomPipeline>();
     private customModules: Map<string, GPUShaderModule> = new Map<string, GPUShaderModule>();
-    private customUniforms: Map<i32, CustomUniforms> = new Map<i32, CustomUniforms>();
     private warnedShaders: Map<string, bool> = new Map<string, bool>();
     private warnedBones: bool = false;
-    private instanceBuffers: Map<i32, InstanceGPU> = new Map<i32, InstanceGPU>();
-    private batchedBuffers: Map<i32, BatchedGPU> = new Map<i32, BatchedGPU>();
     private pipelines: Map<i64, GPUPipeline> = new Map<i64, GPUPipeline>();
     // The colour format of the target being rendered (pipelines are cached
     // per format).
@@ -732,14 +892,19 @@ export class GPURenderer {
     private arenaU32: Uint32Array = new Uint32Array(0);
     private arenaCapacity: i32 = 0;
     private slotCount: i32 = 0;
-    // Per-object draw states (an arena slot, and a bind group for skinned
-    // draws) are freed by releaseObject, or else once the object has not
-    // been drawn for STALE_RENDERS render calls (sweepStale): three.js keeps
-    // that state in WeakMaps that garbage collection clears, and AnimaScript
-    // has no weak references. Freed arena slots are reused. Materials are
-    // freed by Material.dispose(), as three.js.
+    // The renderer's state for objects, materials, geometries, textures,
+    // skeletons and render targets is kept on them (as three.js's WeakMaps:
+    // it goes with them; gpu/Disposal), freed at once by their dispose()
+    // (or releaseObject). Arena slots are the renderer's: each records the
+    // view it was last written or drawn in (slotFrame), and one not drawn
+    // for STALE_RENDERS render calls is reclaimed (sweepStale; its
+    // generation changes, so a draw state still naming it takes a new one).
     private freeSlots: Array<i32> = [];
+    private slotFrame: Int32Array = new Int32Array(0);
+    private slotGen: Int32Array = new Int32Array(0);
     private lastSweep: i32 = 0;
+    private disposeQueue: DisposeQueue = new DisposeQueue();
+    private rslot: RendererSlot = new RendererSlot();
     private slotDirty: Uint8Array = new Uint8Array(0);
     private dirtyLo: i32 = 0x7fffffff;
     private dirtyHi: i32 = -1;
@@ -749,6 +914,10 @@ export class GPURenderer {
     private materialEntries: Map<i32, MaterialEntry> = new Map<i32, MaterialEntry>();
     private itemPool: Array<DrawItem> = [];
     private itemsUsed: i32 = 0;
+    // Items used since clearUnusedItems last ran, and the state unused ones
+    // point at.
+    private itemsPeak: i32 = 0;
+    private placeholderState: DrawState = new DrawState();
     /// Cull big scenes (from PARALLEL_CULL_MIN candidates) in a Rive
     /// parallel call (Rive-only; same result either way).
     parallelCulling: bool = true;
@@ -807,6 +976,9 @@ export class GPURenderer {
     private morphUsed: i32 = 0;
     private morphFlushed: i32 = 0;
     private white: GPUTextureView? = null;
+    private whiteTex: GPUTexture? = null;
+    private dummyShadowTex: GPUTexture? = null;
+    private dummyDepthTex: GPUTexture? = null;
     private identityInstance: GPUBuffer? = null;
     private identityColor: GPUBuffer? = null;
     private whiteColors: GPUBuffer? = null;
@@ -867,11 +1039,9 @@ export class GPURenderer {
     private lightScores: Float64Array = new Float64Array(MAX_LIGHTS);
     private lightOrder: Int32Array = new Int32Array(MAX_LIGHTS);
     private passStates: Array<PassState> = [new PassState()];
-    private wideLines: Map<i32, WideLineGPU> = new Map<i32, WideLineGPU>();
     private passStateKeys: Map<string, i32> = new Map<string, i32>();
 
     private mainTargets: PassTargets = new PassTargets();
-    private rtTargets: Map<i32, PassTargets> = new Map<i32, PassTargets>();
     private renderTarget: RenderTarget? = null;
     // The destination of the render in progress.
     private passSamples: u32 = 1;
@@ -919,12 +1089,15 @@ export class GPURenderer {
     private utilBroken: bool = false;
     private fillPipelines: Map<i64, GPUPipeline> = new Map<i64, GPUPipeline>();
     private copyPipelines: Map<u32, GPUPipeline> = new Map<u32, GPUPipeline>();
+    private copyGroups: Map<u32, CopyGroup> = new Map<u32, CopyGroup>();
+    private copyColor: GPUColorAttachment = new GPUColorAttachment();
+    private copyColors: Array<GPUColorAttachment> = [];
+    private copyDesc: GPUPassDesc = new GPUPassDesc();
     private copyUbo: GPUBuffer? = null;
     private copyStaging: Float32Array = new Float32Array(8);
 
-    private geometries: GPUGeometries = new GPUGeometries();
+    private geometries: GPUGeometries;
     private textures: GPUTextures;
-    private states: Map<i32, DrawState> = new Map<i32, DrawState>();
     private opaque: Array<DrawItem> = [];
     private transparent: Array<DrawItem> = [];
     private lights: Array<Light> = [];
@@ -962,7 +1135,9 @@ export class GPURenderer {
 
     constructor(context: Context, parameters: GPURendererParameters? = null) {
         this.context = context;
-        this.textures = new GPUTextures(context);
+        acquireSlot(this.rslot);
+        this.geometries = new GPUGeometries(this.disposeQueue, this.rslot);
+        this.textures = new GPUTextures(context, this.disposeQueue, this.rslot);
         this.antialias = parameters != null ? parameters.antialias : false;
         if (parameters != null && parameters.alpha) this.clearAlpha = 0;
         this.logDepth = parameters != null && parameters.logarithmicDepthBuffer;
@@ -1149,8 +1324,7 @@ export class GPURenderer {
             pw = rt.width; ph = rt.height;
             if (pw == 0 || ph == 0) return false;
             canvas = rt.isHDR ? this.ensureCanvas() : rt.ensureCanvas(this.context);
-            if (!this.rtTargets.has(rt.id)) this.rtTargets.set(rt.id, new PassTargets());
-            targets = this.rtTargets.get(rt.id);
+            targets = this.passTargetsOf(rt);
             this.passRatio = 1;
         } else {
             pw = this.pixelWidth(); ph = this.pixelHeight();
@@ -1461,7 +1635,11 @@ export class GPURenderer {
             // the nested renders of that view's later hooks (they draw it
             // with what it rendered for the outermost camera).
             const top = this.hookDepth == 0;
-            if (top) this.hookView++;
+            if (top) {
+                this.hookView++;
+                // Only this view's entries are read.
+                this.hookedObjects.clear();
+            }
             const view = this.hookView;
             const serial = this.passSerial;
             const target = this.renderTarget;
@@ -1539,6 +1717,7 @@ export class GPURenderer {
         }
         if (drawn.length > 0) this.afterRenderHooks(drawn, scene, camera, retry);
         this.recycleHooks(drawn);
+        if (this.itemsPeak > this.itemsUsed) this.clearUnusedItems();
     }
 
     /// onAfterRender for the objects a view drew. A hook drawing over the
@@ -1801,6 +1980,7 @@ export class GPURenderer {
             d.colorTargets = [target];
             pipeline = new GPUPipeline(d);
             this.copyPipelines.set(format, pipeline);
+            this.copyGroups.set(format, new CopyGroup(pipeline.getBindGroupLayout(0)));
         }
         let ubo = this.copyUbo;
         if (ubo == null) {
@@ -1812,20 +1992,29 @@ export class GPURenderer {
         f[0] = <f32>sx; f[1] = <f32>sy; f[2] = <f32>dx; f[3] = <f32>dy;
         f[4] = flipRows ? 1 : 0; f[5] = <f32>h; f[6] = 0; f[7] = 0;
         ubo.update(0, f.buffer);
-        const group = new GPUBindGroup(pipeline.getBindGroupLayout(0), [new GPUBindGroupUBO(0, ubo)],
-            [new GPUBindGroupTexture(1, from)]);
-        const color = new GPUColorAttachment();
+        const cg = this.copyGroups.get(format);
+        let group = cg.group;
+        if (group == null || cg.from !== from) {
+            if (group != null) group.release();
+            group = new GPUBindGroup(cg.layout, [new GPUBindGroupUBO(0, ubo)], [new GPUBindGroupTexture(1, from)]);
+            cg.group = group;
+            cg.from = from;
+        }
+        const color = this.copyColor;
         color.view = into;
         color.loadOp = LoadOp.load;
         color.storeOp = StoreOp.store;
-        const pd = new GPUPassDesc();
+        const colors = this.copyColors;
+        colors.length = 0;
+        colors.push(color);
+        const pd = this.copyDesc;
         pd.label = "three copy";
-        pd.color = [color];
+        pd.color = colors;
         const pass = host.beginRenderPass(pd);
         pass.setViewport(<f32>dx, <f32>dy, <f32>w, <f32>h, 0, 1);
         pass.setScissor(<u32>dx, <u32>dy, <u32>w, <u32>h);
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group);
+        pass.setBindGroup(0, group!);
         pass.draw(3);
         pass.finish();
     }
@@ -1843,27 +2032,135 @@ export class GPURenderer {
         renderer.restore();
     }
 
-    /// Frees every GPU resource the renderer made.
+    /// Frees the GPU resources the renderer owns now (its canvas,
+    /// attachments, uniform arenas, pipelines, samplers, shared groups and
+    /// buffers) and forgets its state on objects, materials, geometries,
+    /// textures and render targets: that state no longer matches the
+    /// renderer, and its GPU handles go with those objects (or are released
+    /// if this renderer, used again, replaces them). The renderer can render
+    /// again afterwards; everything is made again.
     dispose(): void {
-        this.geometries.disposeAll();
-        this.states.clear();
-        const arena = this.arena;
-        if (arena != null) arena.release();
-        this.arena = null;
-        this.arenaGroup = null;
-        this.arenaCapacity = 0;
-        this.slotCount = 0;
-        this.dirtyLo = 0x7fffffff;
-        this.dirtyHi = -1;
-        this.materialEntries.clear();
-        this.pipelines.clear();
-        this.mainTargets.release();
-        const rts = this.rtTargets.values();
-        for (let i = 0; i < rts.length; i++) rts[i].release();
-        this.rtTargets.clear();
         const canvas = this.canvas;
         if (canvas != null) canvas.release();
         this.canvas = null;
+        this.mainTargets.releaseAttachments();
+        this.transmissionTargets.releaseAttachments();
+        const rt = this.transmissionTarget;
+        if (rt != null) rt.dispose();
+        this.transmissionTarget = null;
+        // Uniform arenas and their slots.
+        releaseBuffer(this.arena); this.arena = null;
+        releaseGroup(this.arenaGroup); this.arenaGroup = null;
+        this.arenaCapacity = 0;
+        this.slotCount = 0;
+        this.freeSlots = [];
+        this.slotFrame = new Int32Array(0);
+        this.slotGen = new Int32Array(0);
+        this.slotDirty = new Uint8Array(0);
+        this.dirtyLo = 0x7fffffff;
+        this.dirtyHi = -1;
+        this.uploadAll = false;
+        releaseBuffer(this.morphArena); this.morphArena = null;
+        this.morphCapacity = 0;
+        this.morphUsed = 0;
+        this.morphFlushed = 0;
+        // Shared buffers, textures and groups.
+        releaseBuffer(this.dummyBones); this.dummyBones = null;
+        releaseBuffer(this.dummyMorph); this.dummyMorph = null;
+        releaseBuffer(this.identityInstance); this.identityInstance = null;
+        releaseBuffer(this.identityColor); this.identityColor = null;
+        releaseBuffer(this.whiteColors); this.whiteColors = null;
+        this.whiteCount = 0;
+        releaseBuffer(this.morphRows); this.morphRows = null;
+        this.morphRowCount = 0;
+        releaseBuffer(this.frameUbo); this.frameUbo = null;
+        releaseBuffer(this.ltcUbo); this.ltcUbo = null;
+        releaseBuffer(this.copyUbo); this.copyUbo = null;
+        releaseBuffer(this.transmissionUbo); this.transmissionUbo = null;
+        releaseView(this.white); this.white = null;
+        releaseTex(this.whiteTex); this.whiteTex = null;
+        releaseView(this.dummyShadowView); this.dummyShadowView = null;
+        releaseTex(this.dummyShadowTex); this.dummyShadowTex = null;
+        releaseView(this.dummyDepthView); this.dummyDepthView = null;
+        releaseTex(this.dummyDepthTex); this.dummyDepthTex = null;
+        releaseGroup(this.frameGroup); this.frameGroup = null;
+        releaseGroup(this.transmissionGroup); this.transmissionGroup = null;
+        releaseGroup(this.transmissionBgGroup); this.transmissionBgGroup = null;
+        releaseGroup(this.bgGroup); this.bgGroup = null;
+        const copies = this.copyGroups.values();
+        for (let i = 0; i < copies.length; i++) copies[i].release();
+        this.copyGroups.clear();
+        for (let i = 0; i < this.tileGroups.length; i++) this.tileGroups[i].release();
+        for (let i = 0; i < this.tileUbos.length; i++) this.tileUbos[i].release();
+        this.tileGroups = [];
+        this.tileUbos = [];
+        for (let i = 0; i < this.shadowLayerViews.length; i++) this.shadowLayerViews[i].release();
+        this.shadowLayerViews = [];
+        releaseView(this.shadowView); this.shadowView = null;
+        releaseTex(this.shadowTex); this.shadowTex = null;
+        this.shadowSize = 0;
+        this.shadowLayers = 0;
+        this.frameGroupView = null;
+        this.frameGroupShadow = null;
+        this.frameGroupTransmission = null;
+        this.frameEnvView = null;
+        this.frameShadowView = null;
+        this.transmissionView = null;
+        this.transmissionBgView = null;
+        this.transmissionGroupViews[0] = null;
+        this.transmissionGroupViews[1] = null;
+        this.bgGroupView = null;
+        this.bgView = null;
+        this.bgTexture = null;
+        this.envTexture = null;
+        this.envView = null;
+        // Pipelines, samplers, layouts and modules.
+        releasePipelines<i64>(this.pipelines);
+        releasePipelines<i64>(this.fillPipelines);
+        releasePipelines<u32>(this.copyPipelines);
+        releasePipelines<i32>(this.shadowPipelines);
+        for (let i = 0; i < this.variantPipelines.length; i++) releasePipelines<i64>(this.variantPipelines[i]);
+        this.variantPipelines = [];
+        this.variantModules = [];
+        this.variantByKey.clear();
+        const customs = this.customPipelines.values();
+        for (let i = 0; i < customs.length; i++) customs[i].release();
+        this.customPipelines.clear();
+        this.customModules.clear();
+        const samplers = this.samplers.values();
+        for (let i = 0; i < samplers.length; i++) samplers[i].release();
+        this.samplers.clear();
+        const layouts: StaticArray<GPUBindGroupLayout?> = [this.frameLayout, this.objLayout, this.matLayout,
+            this.samplerLayout, this.backgroundLayout];
+        for (let i = 0; i < layouts.length; i++) {
+            const l = layouts[i];
+            if (l != null) l.release();
+        }
+        this.frameLayout = null;
+        this.objLayout = null;
+        this.matLayout = null;
+        this.samplerLayout = null;
+        this.backgroundLayout = null;
+        this.module = null;
+        this.bgModule = null;
+        this.utilModule = null;
+        this.textures.reset();
+        this.geometries.reset();
+        // What draws and views kept.
+        this.pendingMorphs.length = 0;
+        this.disposeQueue.clear();
+        this.hookedObjects.clear();
+        this.itemPool = [];
+        this.itemsUsed = 0;
+        this.itemsPeak = 0;
+        this.opaque.length = 0;
+        this.transparent.length = 0;
+        this.casterItems.length = 0;
+        this.casterMeshes.length = 0;
+        this.lights.length = 0;
+        // State left on objects no longer matches (a new serial); the
+        // index is free for another renderer.
+        releaseSlot(this.rslot);
     }
 
     // ------------------------------------------------------------------ setup
@@ -1889,6 +2186,8 @@ export class GPURenderer {
 
     private ensureSetup(canvas: GPUCanvas): bool {
         if (this.module == null) {
+            // (Again after dispose().)
+            if (this.rslot.index < 0) acquireSlot(this.rslot);
             let module: GPUShaderModule? = null;
             for (let i = 0; i < SHADER_NAMES.length && module == null; i++) module = this.context.shader(SHADER_NAMES[i]);
             let bgModule: GPUShaderModule? = null;
@@ -1969,6 +2268,7 @@ export class GPURenderer {
             const dv = new GPUTextureViewDesc();
             dv.dimension = TextureViewDimension.array2D;
             dv.aspect = TextureAspect.depthOnly;
+            this.dummyShadowTex = dummyShadow;
             this.dummyShadowView = dummyShadow.view(dv);
             const features = this.context.features();
             this.samples = this.antialias && features.maxSamples >= 4 ? 4 : 1;
@@ -1989,6 +2289,7 @@ export class GPURenderer {
             px.fill(255);
             uploadRegion.width = 1; uploadRegion.height = 1;
             white.upload(uploadRegion, px.buffer);
+            this.whiteTex = white;
             this.white = white.view();
 
             // One identity instance (white) for every non-instanced draw.
@@ -2005,7 +2306,7 @@ export class GPURenderer {
     private ensureTargets(t: PassTargets, format: u32, w: u32, h: u32, samples: u32, ownDepth: bool = true): void {
         if ((t.depthView != null) == ownDepth && t.width == w && t.height == h && t.format == format
                 && t.samples == samples) return;
-        t.release();
+        t.releaseAttachments();
         if (ownDepth) {
             const dd = new GPUTextureDesc();
             dd.width = w; dd.height = h;
@@ -2111,7 +2412,9 @@ export class GPURenderer {
             d.renderTarget = true;
             const vd = new GPUTextureViewDesc();
             vd.aspect = TextureAspect.depthOnly;
-            v = new GPUTexture(d).view(vd);
+            const tex = new GPUTexture(d);
+            this.dummyDepthTex = tex;
+            v = tex.view(vd);
             this.dummyDepthView = v;
         }
         return v!;
@@ -2283,14 +2586,14 @@ export class GPURenderer {
 
     /// Packs a ShaderMaterial's uniforms (WGSL alignment) and binds its
     /// textures; once a frame per material.
-    private prepareCustomUniforms(material: ShaderMaterial, cp: CustomPipeline, frame: i32, canvas: GPUCanvas): CustomUniforms? {
+    private prepareCustomUniforms(material: ShaderMaterial, entry: MaterialEntry, cp: CustomPipeline, frame: i32,
+                                  canvas: GPUCanvas): CustomUniforms? {
         const layout = cp.layout2;
         if (layout == null) return null;
-        let cu: CustomUniforms;
-        if (this.customUniforms.has(material.id)) cu = this.customUniforms.get(material.id);
-        else {
+        let cu = entry.uniforms;
+        if (cu == null) {
             cu = new CustomUniforms();
-            this.customUniforms.set(material.id, cu);
+            entry.uniforms = cu;
         }
         if (cu.frame == frame) return cu;
         cu.frame = frame;
@@ -2392,97 +2695,92 @@ export class GPURenderer {
         return s;
     }
 
-    /// Frees per-object draw states not drawn for STALE_RENDERS render calls
-    /// (render calls, not displayed frames: each pass counts).
+    /// Reclaims arena slots not written or drawn for STALE_RENDERS render
+    /// calls (render calls, not displayed frames: each pass counts): their
+    /// objects were dropped, or are not drawn now. Only slot indices are
+    /// recycled; nothing here holds an object or a GPU handle.
     private sweepStale(frame: i32): void {
         if (frame - this.lastSweep < 600) return;
         this.lastSweep = frame;
         const STALE_RENDERS = 4000;
-        const keys = this.states.keys();
-        for (let i = 0; i < keys.length; i++) {
-            const st = this.states.get(keys[i]);
-            if (st.frame < 0 || frame - st.frame < STALE_RENDERS) continue;
-            this.freeState(keys[i], st);
+        const frames = this.slotFrame;
+        for (let s = 0; s < this.slotCount; s++) {
+            const f = unchecked(frames[s]);
+            if (f < 0 || frame - f < STALE_RENDERS) continue;
+            this.reclaimSlot(s);
         }
     }
 
-    private freeState(key: i32, st: DrawState): void {
-        if (st.slot >= 0) this.freeSlots.push(st.slot);
-        const og = st.objGroup;
-        if (og != null && og !== this.arenaGroup) og.release();
-        st.objGroup = null;
-        st.entry = null;
-        this.states.delete(key);
+    private reclaimSlot(s: i32): void {
+        unchecked(this.slotFrame[s] = -1);
+        unchecked(this.slotGen[s] = this.slotGen[s] + 1);
+        this.freeSlots.push(s);
     }
 
-    /// Rive-only: frees the draw state of `object` (and, with `recursive`, of
-    /// its descendants) now, for code that drops objects it will not draw
-    /// again; it is rebuilt if the object is drawn later. Without it the
-    /// state goes once the object has not been drawn for a while.
+    /// Gives back a draw state's arena slot (when it still owns it).
+    private freeStateSlot(st: DrawState?): void {
+        if (st == null || st.slot < 0) return;
+        if (st.slot < this.slotCount && unchecked(this.slotGen[st.slot]) == st.slotGen) this.reclaimSlot(st.slot);
+        st.slot = -1;
+    }
+
+    /// Frees an object's state: its arena slots and GPU handles.
+    private freeObject(og: ObjectGPU): void {
+        if (og.serial != this.rslot.serial) return;
+        this.freeStateSlot(og.main);
+        this.freeStateSlot(og.shadow);
+        for (let i = 0; i < og.groups.length; i++) this.freeStateSlot(og.groups[i]);
+        og.release();
+        og.serial = -1;
+    }
+
+    /// Rive-only: frees the renderer's state for `object` (and, with
+    /// `recursive`, its descendants) now: its draw states and arena slots,
+    /// skinning and morph blocks, an InstancedMesh's or BatchedMesh's
+    /// instance buffers. It is rebuilt if the object is drawn later. Without
+    /// it, the state goes with the object (it is kept on it, as three.js's
+    /// WeakMaps), its arena slots once it has not been drawn for a while.
     releaseObject(object: Object3D, recursive: bool = true): void {
-        const base = object.id * 64;
-        for (let part = 0; part < 64; part++) {
-            const key = base + part;
-            if (this.states.has(key)) this.freeState(key, this.states.get(key));
+        const d = dataOf(object, this.rslot);
+        if (d != null) {
+            this.freeObject(d as ObjectGPU);
+            clearDataOf(object, this.rslot, d);
         }
         if (!recursive) return;
         const children = object.children;
         for (let i = 0; i < children.length; i++) this.releaseObject(children[i], true);
     }
 
-    /// Frees what the renderer holds for disposed materials.
-    private releaseMaterial(id: i32): void {
-        if (this.materialEntries.has(id)) {
-            const entry = this.materialEntries.get(id);
-            for (let v = 0; v < 8; v++) {
-                const b = unchecked(entry.blocks[v]);
-                if (b == null) continue;
-                const mg = b.matGroup;
-                if (mg != null) mg.release();
-                const sg = b.samplerGroup;
-                if (sg != null) sg.release();
-                b.matGroup = null;
-                b.samplerGroup = null;
-                unchecked(entry.blocks[v] = null);
-            }
-            this.materialEntries.delete(id);
-        }
-        if (this.customUniforms.has(id)) {
-            const cu = this.customUniforms.get(id);
-            const g = cu.group;
-            if (g != null) g.release();
-            const b = cu.buffer;
-            if (b != null) b.release();
-            this.customUniforms.delete(id);
-        }
+    /// Frees what the renderer holds for a disposed material: draw states
+    /// that cached the entry see its serial change and look it up again.
+    private releaseMaterial(entry: MaterialEntry): void {
+        if (entry.serial != this.rslot.serial) return;
+        entry.release();
+        entry.serial = -1;
     }
 
+    /// Frees the state of what was disposed since the last render (the
+    /// "dispose" listeners queued it).
     private drainDisposed(): void {
-        for (let i = 0; i < disposedGeometries.length; i++) {
-            const id = disposedGeometries[i];
-            this.geometries.dispose(id);
-            if (this.morphTargets.has(id)) {
-                const mt = this.morphTargets.get(id);
-                const t = mt.texture;
-                if (t != null) t.release();
-                const job = mt.job;
-                if (job != null) job.release();
-                this.morphTargets.delete(id);
+        const q = this.disposeQueue;
+        if (q.length == 0) return;
+        const serial = this.rslot.serial;
+        for (let i = 0; i < q.length; i++) {
+            const kind = q.kinds[i];
+            const data = q.items[i];
+            if (data.serial != serial) continue;
+            if (kind == DISPOSED_GEOMETRY) this.geometries.free(data as GeometryGPU);
+            else if (kind == DISPOSED_TEXTURE) this.textures.free(data);
+            else if (kind == DISPOSED_PMREM) this.textures.freePmrem(data);
+            else if (kind == DISPOSED_MATERIAL) this.releaseMaterial(data as MaterialEntry);
+            else if (kind == DISPOSED_OBJECT) this.freeObject(data as ObjectGPU);
+            else {
+                // A render target's attachments, a skeleton's bones.
+                data.release();
+                data.serial = -1;
             }
         }
-        disposedGeometries.length = 0;
-        for (let i = 0; i < disposedTextures.length; i++) this.textures.dispose(disposedTextures[i]);
-        disposedTextures.length = 0;
-        if (disposedMaterials.length > 0) {
-            for (let i = 0; i < disposedMaterials.length; i++) this.releaseMaterial(disposedMaterials[i]);
-            // Draw states must not keep a freed entry.
-            const states = this.states.values();
-            for (let i = 0; i < states.length; i++) {
-                const e = states[i].entry;
-                if (e != null && !this.materialEntries.has(e.material.id)) states[i].entry = null;
-            }
-            disposedMaterials.length = 0;
-        }
+        q.clear();
     }
 
     // ---------------------------------------------------------------- collect
@@ -2492,6 +2790,7 @@ export class GPURenderer {
                     colors: GPUBuffer): DrawItem {
         const pool = this.itemPool;
         const i = this.itemsUsed++;
+        if (i >= this.itemsPeak) this.itemsPeak = i + 1;
         if (i < pool.length) {
             const item = unchecked(pool[i]);
             item.reset(object, material, g, state, instances, colors);
@@ -2502,13 +2801,65 @@ export class GPURenderer {
         return item;
     }
 
-    /// The draw state of `object`'s part `part` (63: its shadow stand-in).
-    private stateOf(key: i32): DrawState {
-        const states = this.states;
-        if (states.has(key)) return states.get(key);
-        const state = new DrawState();
-        states.set(key, state);
-        return state;
+    /// Drops what pooled items past the last render's hold (objects,
+    /// materials, geometries, buffers), so a dropped scene is not kept.
+    private clearUnusedItems(): void {
+        const pool = this.itemPool;
+        const placeholder = this.placeholderState;
+        for (let i = this.itemsUsed; i < this.itemsPeak && i < pool.length; i++) {
+            unchecked(pool[i]).reset(_placeholderObject, _placeholderMaterial, null, placeholder,
+                this.identityInstance!, this.identityColor!);
+        }
+        this.itemsPeak = this.itemsUsed;
+    }
+
+    /// The renderer's state for `object`, made when it has none.
+    private objectOf(object: Object3D): ObjectGPU {
+        const d = dataOf(object, this.rslot);
+        if (d != null) return d as ObjectGPU;
+        const og = new ObjectGPU();
+        setDataOf(object, this.rslot, og);
+        return og;
+    }
+
+    /// The draw state of `object`'s part `part` (0 the object, 1 + i its
+    /// geometry group i, STATE_SHADOW its shadow stand-in).
+    private stateOf(object: Object3D, part: i32): DrawState {
+        const og = this.objectOf(object);
+        if (part == 0) {
+            let st = og.main;
+            if (st == null) {
+                st = new DrawState();
+                og.main = st;
+            }
+            return st!;
+        }
+        if (part == STATE_SHADOW) {
+            let st = og.shadow;
+            if (st == null) {
+                st = new DrawState();
+                og.shadow = st;
+            }
+            return st!;
+        }
+        const groups = og.groups;
+        while (groups.length < part) groups.push(null);
+        let st = unchecked(groups[part - 1]);
+        if (st == null) {
+            st = new DrawState();
+            unchecked(groups[part - 1] = st);
+        }
+        return st!;
+    }
+
+    /// A render target's depth and MSAA attachments (on the target).
+    private passTargetsOf(rt: RenderTarget): PassTargets {
+        const d = dataOf(rt, this.rslot);
+        if (d != null) return d as PassTargets;
+        const t = new PassTargets();
+        setDataOf(rt, this.rslot, t);
+        t.listener = new DisposeListener(this.disposeQueue, DISPOSED_RENDER_TARGET, t).attach(rt);
+        return t;
     }
 
     private collect(scene: Object3D, camera: Camera, frame: i32): void {
@@ -2723,7 +3074,7 @@ export class GPURenderer {
         }
         if (item.entry!.kind == KIND_WIDE_LINE) {
             // Wide lines: the base quad once per segment.
-            const segments = this.wideLineInstances(geometry, item);
+            const segments = this.wideLineInstances(geometry, g, item);
             if (segments == 0) {
                 item.instanceCount = 0;
                 return;
@@ -2738,7 +3089,7 @@ export class GPURenderer {
     /// Packs a LineSegmentsGeometry's segments as instances (start xyz +
     /// distance, end xyz + distance, start colour, end colour), re-uploaded
     /// when its attributes change. Returns the segment count.
-    private wideLineInstances(geometry: BufferGeometry, item: DrawItem): i32 {
+    private wideLineInstances(geometry: BufferGeometry, g: GeometryGPU, item: DrawItem): i32 {
         const s = geometry.getAttribute("instanceStart");
         const e = geometry.getAttribute("instanceEnd");
         if (s == null || e == null || s.count == 0) return 0;
@@ -2749,10 +3100,11 @@ export class GPURenderer {
         const de = geometry.getAttribute("instanceDistanceEnd");
         const version = s.version * 31 + e.version * 17 + (cs != null ? cs.version * 7 : 0) + (ds != null ? ds.version : 0) + n * 1000003;
         let w: WideLineGPU;
-        if (this.wideLines.has(geometry.id)) w = this.wideLines.get(geometry.id);
+        const wl = g.wideLine;
+        if (wl != null) w = wl as WideLineGPU;
         else {
             w = new WideLineGPU();
-            this.wideLines.set(geometry.id, w);
+            g.wideLine = w;
         }
         if (w.buffer == null || w.version != version) {
             if (w.data.length != n * 16) w.data = new Float32Array(n * 16);
@@ -2790,7 +3142,7 @@ export class GPURenderer {
         let instanceWeights: Texture? = null;
         if (morphs && mesh instanceof InstancedMesh) instanceWeights = (mesh as InstancedMesh).morphTexture;
         if (morphs && (mesh.morphTargetInfluences.length > 0 || instanceWeights != null)) {
-            mt = this.morphTargetsOf(geometry);
+            mt = this.morphTargetsOf(geometry, g);
             if (mt == null) {
                 // CPU fallback (the texture would not fit).
                 const m = this.morph(mesh, geometry);
@@ -2816,6 +3168,7 @@ export class GPURenderer {
             }
         }
         let skeleton: Skeleton? = null;
+        let sk: SkeletonGPU? = null;
         let bigSkeleton = false;
         if (mesh instanceof SkinnedMesh && g.skin != null) {
             skeleton = (mesh as SkinnedMesh).skeleton;
@@ -2824,6 +3177,7 @@ export class GPURenderer {
                     skeleton.update();
                     skeleton.frame = frame;
                 }
+                sk = this.skeletonOf(skeleton);
                 bigSkeleton = skeleton.bones.length > MAX_BONES;
                 if (bigSkeleton) flags |= BONE_TEXTURE;
             }
@@ -2832,7 +3186,7 @@ export class GPURenderer {
             const d = this.deformOf(mesh);
             if (d.frame != frame) {
                 d.frame = frame;
-                this.writeMorphBlock(d, mesh, mt, count, flags, skeleton, frame);
+                this.writeMorphBlock(d, mesh, mt, count, flags, skeleton, sk, frame);
             }
             item.morphed = true;
             item.morphOffset = d.offset;
@@ -2840,7 +3194,7 @@ export class GPURenderer {
                 item.pipelineKey |= KEY_MORPH_INSTANCED;
                 item.morphRows = this.morphRowsFor(item.instanceCount);
             }
-            if (bigSkeleton) item.boneView = d.boneView;
+            if (bigSkeleton) item.boneView = sk!.boneView;
         }
         if (skeleton == null) return;
         if (bigSkeleton) {
@@ -2849,24 +3203,42 @@ export class GPURenderer {
             item.pipelineKey |= KEY_SKINNED;
             return;
         }
-        let bones: GPUBuffer;
-        if (this.boneBuffers.has(mesh.id)) bones = this.boneBuffers.get(mesh.id);
-        else {
+        // The skeleton's bone block, uploaded once a view.
+        const s = sk!;
+        let bones = s.bones;
+        if (bones == null) {
             bones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
-            this.boneBuffers.set(mesh.id, bones);
+            s.bones = bones;
         }
-        const data = skeleton.boneMatrices;
-        if (data.length > 0) bones.update(0, data.buffer, <u32>data.byteLength);
+        if (s.bonesFrame != frame) {
+            s.bonesFrame = frame;
+            const data = skeleton.boneMatrices;
+            if (data.length > 0) bones.update(0, data.buffer, <u32>min<i32>(data.byteLength, BONES_BYTES));
+        }
         item.skinned = true;
         item.bones = bones;
         item.pipelineKey |= KEY_SKINNED;
     }
 
     private deformOf(mesh: Mesh): DeformGPU {
-        if (this.deforms.has(mesh.id)) return this.deforms.get(mesh.id);
-        const d = new DeformGPU();
-        this.deforms.set(mesh.id, d);
-        return d;
+        const og = this.objectOf(mesh);
+        let d = og.deform;
+        if (d == null) {
+            d = new DeformGPU();
+            og.deform = d;
+        }
+        return d!;
+    }
+
+    /// The renderer's state for a skeleton (on it, listening for its
+    /// "dispose").
+    private skeletonOf(skeleton: Skeleton): SkeletonGPU {
+        const d = dataOf(skeleton, this.rslot);
+        if (d != null) return d as SkeletonGPU;
+        const s = new SkeletonGPU();
+        setDataOf(skeleton, this.rslot, s);
+        s.listener = new DisposeListener(this.disposeQueue, DISPOSED_SKELETON, s).attach(skeleton);
+        return s;
     }
 
     /// Room for `bytes` more bytes in the morph arena at a 256-byte offset
@@ -2907,7 +3279,7 @@ export class GPURenderer {
     /// Writes a mesh's MorphU block (and bone texture) for this view into
     /// the morph arena: the header and its weighted targets only.
     private writeMorphBlock(d: DeformGPU, mesh: Mesh, mt: MorphTargetsGPU?, count: i32, flags: u32,
-                            skeleton: Skeleton?, frame: i32): void {
+                            skeleton: Skeleton?, sk: SkeletonGPU?, frame: i32): void {
         const weighted = mt != null && count > 0 && (flags & MORPH_INSTANCED) == 0;
         const most = weighted ? MORPH_ACTIVE + (min<i32>(count, MAX_ACTIVE_MORPHS) + 1) * 8 : MORPH_ACTIVE;
         const base = this.reserveMorph(most);
@@ -2940,15 +3312,15 @@ export class GPURenderer {
         u[ui + 3] = mt != null ? <u32>mt.texelsPerTarget : 0;
         const ub = (base + MORPH_BONES) >> 2;
         u[ub] = 0; u[ub + 1] = 0; u[ub + 2] = 0; u[ub + 3] = 0;
-        if (skeleton != null && (flags & BONE_TEXTURE) != 0) {
-            this.writeBoneTexture(d, skeleton, frame);
-            u[ub] = <u32>d.boneWidth;
+        if (skeleton != null && sk != null && (flags & BONE_TEXTURE) != 0) {
+            this.writeBoneTexture(sk, skeleton, frame);
+            u[ub] = <u32>sk.boneWidth;
         }
     }
 
     /// Uploads a big skeleton's bone matrices: six rgba16float texels a
     /// bone, its three affine rows as half floats plus their remainders.
-    private writeBoneTexture(d: DeformGPU, skeleton: Skeleton, frame: i32): void {
+    private writeBoneTexture(d: SkeletonGPU, skeleton: Skeleton, frame: i32): void {
         if (d.boneFrame == frame) return;
         d.boneFrame = frame;
         const n = skeleton.bones.length;
@@ -2958,6 +3330,7 @@ export class GPURenderer {
         const height = (texels + width - 1) / width;
         let tex = d.boneTexture;
         if (tex == null || tex.width != <u32>width || tex.height != <u32>height) {
+            releaseView(d.boneView);
             if (tex != null) tex.release();
             const desc = new GPUTextureDesc();
             desc.width = <u32>width;
@@ -3014,7 +3387,7 @@ export class GPURenderer {
     /// caller blends on the CPU). Big target sets convert to half floats in
     /// a Rive job started here, while the frame's other draws are collected
     /// and written; joinMorphJobs uploads them before the first pass.
-    private morphTargetsOf(geometry: BufferGeometry): MorphTargetsGPU? {
+    private morphTargetsOf(geometry: BufferGeometry, g: GeometryGPU): MorphTargetsGPU? {
         const position = geometry.getAttribute("position");
         if (position == null) return null;
         const targets = geometry.morphAttributes.get("position");
@@ -3025,15 +3398,16 @@ export class GPURenderer {
         for (let i = 0; i < targets.length; i++) key = key * 31 + targets[i].version;
         if (normals) for (let i = 0; i < normalTargets!.length; i++) key = key * 31 + normalTargets![i].version;
         let mt: MorphTargetsGPU;
-        if (this.morphTargets.has(geometry.id)) {
-            mt = this.morphTargets.get(geometry.id);
+        const kept = g.morphTargets;
+        if (kept != null) {
+            mt = kept as MorphTargetsGPU;
             if (mt.key == key) {
                 if (mt.job != null) this.awaitMorphJob(mt);
                 return mt.texture != null ? mt : null;
             }
         } else {
             mt = new MorphTargetsGPU();
-            this.morphTargets.set(geometry.id, mt);
+            g.morphTargets = mt;
         }
         mt.key = key;
         const pending = mt.job;
@@ -3053,8 +3427,8 @@ export class GPURenderer {
                 this.context.log("three: morph targets too big for a texture blend on the CPU");
                 this.warnedMorphs = true;
             }
-            const old = mt.texture;
-            if (old != null) old.release();
+            releaseView(mt.view);
+            releaseTex(mt.texture);
             mt.texture = null;
             mt.view = null;
             return null;
@@ -3099,6 +3473,7 @@ export class GPURenderer {
         // its texels follow.
         let tex = mt.texture;
         if (tex == null || tex.width != <u32>width || tex.height != <u32>height) {
+            releaseView(mt.view);
             if (tex != null) tex.release();
             const desc = new GPUTextureDesc();
             desc.width = <u32>width;
@@ -3170,11 +3545,11 @@ export class GPURenderer {
         let active = false;
         for (let i = 0; i < influences.length; i++) if (influences[i] != 0) active = true;
         if (!active) return null;
-        let m: MorphGPU;
-        if (this.morphs.has(mesh.id)) m = this.morphs.get(mesh.id);
-        else {
+        const og = this.objectOf(mesh);
+        let m = og.morph;
+        if (m == null) {
             m = new MorphGPU();
-            this.morphs.set(mesh.id, m);
+            og.morph = m;
         }
         let same = m.position != null && m.influences.length == influences.length && m.geometryVersion == position.version;
         for (let i = 0; i < influences.length && same; i++) same = m.influences[i] == influences[i];
@@ -3194,6 +3569,7 @@ export class GPURenderer {
                 const t = tangent != null && tangent.count == position.count && tangent.itemSize == 4 ? tangent.array : null;
                 m.normal = uploadVertices(m.normal, interleaveNormalTangent(m.normals, t, position.count));
             } else {
+                releaseBuffer(m.normal);
                 m.normal = null;
             }
         }
@@ -3203,12 +3579,14 @@ export class GPURenderer {
     /// `material`'s entry (cached on the draw state).
     private entryOf(state: DrawState, material: Material): MaterialEntry {
         let entry = state.entry;
-        if (entry != null && entry.material === material) return entry;
-        const id = material.id;
-        if (this.materialEntries.has(id)) entry = this.materialEntries.get(id);
+        const serial = this.rslot.serial;
+        if (entry != null && entry.material === material && entry.serial == serial) return entry;
+        const d = dataOf(material, this.rslot);
+        if (d != null) entry = d as MaterialEntry;
         else {
             entry = new MaterialEntry(material);
-            this.materialEntries.set(id, entry);
+            setDataOf(material, this.rslot, entry);
+            entry.listener = new DisposeListener(this.disposeQueue, DISPOSED_MATERIAL, entry).attach(material);
         }
         state.entry = entry;
         return entry!;
@@ -3260,7 +3638,7 @@ export class GPURenderer {
     private addDraw(object: Object3D, material: Material, g: GeometryGPU?, part: i32, start: i32, end: i32,
                     frame: i32, prim: i32): DrawItem? {
         if (!material.visible || end <= start) return null;
-        const state = this.stateOf(object.id * 64 + part);
+        const state = this.stateOf(object, part);
         // Textures draw and upload now, before any pass (once a view per material).
         const entry = this.prepareMaterial(state, material, frame);
         const displaced = entry.displaced && prim == PRIM_TRIANGLES;
@@ -3301,25 +3679,29 @@ export class GPURenderer {
     /// The InstancedMesh's instances, packed as mat4 + RGBA, re-uploaded when
     /// instanceMatrix or instanceColor changed.
     private instanceBuffer(im: InstancedMesh): InstanceGPU {
-        let ig: InstanceGPU;
-        if (this.instanceBuffers.has(im.id)) ig = this.instanceBuffers.get(im.id);
-        else {
+        const og = this.objectOf(im);
+        let ig = og.instance;
+        if (ig == null) {
             ig = new InstanceGPU();
-            this.instanceBuffers.set(im.id, ig);
+            og.instance = ig;
+            this.listenToObject(im, og);
         }
         const capacity = im.instanceMatrix.count;
         const colors = im.instanceColor;
         const colorVersion = colors != null ? colors.version : -2;
         const resized = ig.count != capacity;
         if (resized || ig.matrixVersion != im.instanceMatrix.version || ig.matrices == null) {
-            ig.matrices = uploadVertices(resized ? null : ig.matrices, im.instanceMatrix.array);
+            // (A new size releases the old buffer.)
+            ig.matrices = uploadVertices(ig.matrices, im.instanceMatrix.array);
             ig.matrixVersion = im.instanceMatrix.version;
         }
         if (resized || ig.colorVersion != colorVersion || ig.colors == null) {
             if (colors != null) {
-                ig.colors = uploadVertices(ig.ownColors && !resized ? ig.colors : null, colors.array);
+                ig.colors = uploadVertices(ig.ownColors ? ig.colors : null, colors.array);
                 ig.ownColors = true;
             } else {
+                // Its own colours go; the white buffer is shared.
+                if (ig.ownColors) releaseBuffer(ig.colors);
                 ig.colors = this.white3(capacity);
                 ig.ownColors = false;
             }
@@ -3332,11 +3714,12 @@ export class GPURenderer {
     /// A BatchedMesh's active, visible instances packed by geometry,
     /// re-packed when its instances change.
     private batchedBuffer(bm: BatchedMesh): BatchedGPU {
-        let bg: BatchedGPU;
-        if (this.batchedBuffers.has(bm.id)) bg = this.batchedBuffers.get(bm.id);
-        else {
+        const og = this.objectOf(bm);
+        let bg = og.batched;
+        if (bg == null) {
             bg = new BatchedGPU();
-            this.batchedBuffers.set(bm.id, bg);
+            og.batched = bg;
+            this.listenToObject(bm, og);
         }
         if (bg.version == bm.instancesVersion && bg.matrices != null) return bg;
         const n = max<i32>(1, bm.maxInstanceCount);
@@ -3365,6 +3748,11 @@ export class GPURenderer {
         bg.colors = uploadVertices(bg.colors, bg.colorData);
         bg.version = bm.instancesVersion;
         return bg;
+    }
+
+    /// Frees an InstancedMesh's or BatchedMesh's state at its dispose().
+    private listenToObject(object: Object3D, og: ObjectGPU): void {
+        if (og.listener == null) og.listener = new DisposeListener(this.disposeQueue, DISPOSED_OBJECT, og).attach(object);
     }
 
     /// A white colour per instance for `count` instances (shared, grown).
@@ -3441,6 +3829,9 @@ export class GPURenderer {
         const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
         if (this.frameGroup != null && this.frameGroupView === env && this.frameGroupShadow === shadow
                 && this.frameGroupTransmission === tr) return;
+        // A replaced group is released (passes already recorded hold what
+        // they bound).
+        releaseGroup(this.frameGroup);
         this.frameGroup = this.makeFrameGroup(this.frameLayout!, this.frameUbo!, env, shadow, tr);
         this.frameGroupView = env;
         this.frameGroupShadow = shadow;
@@ -3480,6 +3871,7 @@ export class GPURenderer {
         const tv = this.transmissionGroupViews;
         let group = this.transmissionGroup;
         if (group == null || tv[0] !== env || tv[1] !== shadow) {
+            releaseGroup(group);
             group = this.makeFrameGroup(this.frameLayout!, ubo, env, shadow, this.white!);
             this.transmissionGroup = group;
             tv[0] = env;
@@ -3522,6 +3914,7 @@ export class GPURenderer {
             let bgGroup = this.transmissionBgGroup;
             if (bgGroup == null || this.transmissionBgView !== this.bgGroupView
                     || this.transmissionBgMipmapped != this.bgMipmapped) {
+                releaseGroup(bgGroup);
                 bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, ubo)],
                     [new GPUBindGroupTexture(1, this.bgGroupView!)],
                     [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
@@ -3566,6 +3959,7 @@ export class GPURenderer {
         // The background pass's own group: the frame block and the texture.
         const bg = this.bgTexture != null && this.bgView != null ? this.bgView! : this.white!;
         if (this.bgGroup == null || this.bgGroupView !== bg || this.bgGroupMipmapped != this.bgMipmapped) {
+            releaseGroup(this.bgGroup);
             this.bgGroup = new GPUBindGroup(this.backgroundLayout!, [new GPUBindGroupUBO(0, this.frameUbo!)],
                 [new GPUBindGroupTexture(1, bg)], [new GPUBindGroupSampler(2, this.backgroundSampler(this.bgMipmapped))]);
             this.bgGroupView = bg;
@@ -3785,7 +4179,7 @@ export class GPURenderer {
             instanceCount = <u32>im.count;
         }
         // Its own object block when another material stands in.
-        const state = this.stateOf(mesh.id * 64 + (custom != null ? 63 : 0));
+        const state = this.stateOf(mesh, custom != null ? STATE_SHADOW : 0);
         if (custom != null) this.prepareMaterial(state, custom, frame);
         const item = this.newItem(mesh, material, g, state, instances, colors);
         item.instanceCount = instanceCount;
@@ -4133,6 +4527,13 @@ export class GPURenderer {
         const dirty = new Uint8Array(capacity);
         if (this.slotDirty.length > 0) dirty.set(this.slotDirty);
         this.slotDirty = dirty;
+        const frames = new Int32Array(capacity);
+        frames.fill(-1);
+        if (this.slotFrame.length > 0) frames.set(this.slotFrame);
+        this.slotFrame = frames;
+        const gens = new Int32Array(capacity);
+        if (this.slotGen.length > 0) gens.set(this.slotGen);
+        this.slotGen = gens;
         this.arenaStaging = staging;
         this.arenaBytes = bytes;
         this.arenaF32 = Float32Array.wrap(staging);
@@ -4141,6 +4542,7 @@ export class GPURenderer {
         // it is left to the collector, not released.
         this.arena = new GPUBuffer(BufferUsage.uniform, <u32>(capacity * OBJ_BYTES));
         this.arenaCapacity = capacity;
+        releaseGroup(this.arenaGroup);
         this.arenaGroup = null;
         this.uploadAll = true;
     }
@@ -4234,6 +4636,7 @@ export class GPURenderer {
         const tr = this.transmissionView != null ? this.transmissionView! : this.white!;
         const v = cp.fullViews;
         if (cp.fullGroup == null || v[0] !== env || v[1] !== shadow || v[2] !== tr) {
+            releaseGroup(cp.fullGroup);
             cp.fullGroup = this.makeFrameGroup(cp.layout0, this.frameUbo!, env, shadow, tr);
             v[0] = env; v[1] = shadow; v[2] = tr;
         }
@@ -4244,6 +4647,7 @@ export class GPURenderer {
     private customObjGroup(cp: CustomPipeline): GPUBindGroup {
         const arena = this.arena!;
         if (cp.objGroup == null || cp.objArena !== arena) {
+            releaseGroup(cp.objGroup);
             cp.objGroup = new GPUBindGroup(cp.layout1, [new GPUBindGroupUBO(0, arena, 0, <u32>OBJ_BYTES)]);
             cp.objArena = arena;
         }
@@ -4690,6 +5094,13 @@ export class GPURenderer {
                 continue;
             }
             state.frame = frame;
+            // Its slot, unless it was reclaimed meanwhile (then a new one).
+            let slot = state.slot;
+            if (slot >= 0 && unchecked(this.slotGen[slot]) != state.slotGen) {
+                slot = -1;
+                state.slot = -1;
+            }
+            if (slot >= 0) unchecked(this.slotFrame[slot] = frame);
             const object = item.object;
             const b = this.materialBlock(item, frame, canvas);
             // Its share of the extra slots: the material's maps, then the
@@ -4720,8 +5131,11 @@ export class GPURenderer {
             if (!dirty) continue;
 
             if (state.slot < 0) {
-                state.slot = this.freeSlots.length > 0 ? this.freeSlots.pop() : this.slotCount++;
-                state.objOffset = <u32>(state.slot * OBJ_BYTES);
+                const s = this.freeSlots.length > 0 ? this.freeSlots.pop() : this.slotCount++;
+                state.slot = s;
+                state.slotGen = unchecked(this.slotGen[s]);
+                unchecked(this.slotFrame[s] = frame);
+                state.objOffset = <u32>(s * OBJ_BYTES);
             }
             const base = <i32>state.objOffset;
             const staging = this.arenaStaging;
@@ -4764,7 +5178,10 @@ export class GPURenderer {
         for (let i = 0; i < list.length; i++) {
             const item = unchecked(list[i]);
             const cp = item.custom;
-            if (cp != null) item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, cp, frame, canvas);
+            if (cp != null) {
+                const entry = item.entry != null ? item.entry! : this.entryOf(item.state, item.material);
+                item.customUniforms = this.prepareCustomUniforms(item.material as ShaderMaterial, entry, cp, frame, canvas);
+            }
         }
         this.flushArena();
     }
@@ -4978,6 +5395,9 @@ function compareTransparent(a: DrawItem, b: DrawItem): i32 {
 }
 
 const _noMaterials: Array<Material> = [];
+// What unused pooled draw items point at (GPURenderer.clearUnusedItems).
+const _placeholderObject: Object3D = new Object3D();
+const _placeholderMaterial: Material = new Material();
 
 function materialOf(o: Object3D): Material? {
     if (o instanceof Mesh) return (o as Mesh).material;
@@ -5022,6 +5442,33 @@ function vertexLayout(stride: u32, format: VertexFormat, location: u32): GPUVert
 
 function releaseTex(t: GPUTexture?): void {
     if (t != null) t.release();
+}
+
+function releaseView(v: GPUTextureView?): void {
+    if (v != null) v.release();
+}
+
+function releaseBuffer(b: GPUBuffer?): void {
+    if (b != null) b.release();
+}
+
+function releaseGroup(g: GPUBindGroup?): void {
+    if (g != null) g.release();
+}
+
+function releasePipelines<K>(map: Map<K, GPUPipeline>): void {
+    const ps = map.values();
+    for (let i = 0; i < ps.length; i++) ps[i].release();
+    map.clear();
+}
+
+/// Releases a draw state's own group 1 (not the shared arena group, which
+/// such a state never holds: objGroupOf gives non-shared draws their own).
+function releaseState(st: DrawState?): void {
+    if (st == null) return;
+    releaseGroup(st.objGroup);
+    st.objGroup = null;
+    st.entry = null;
 }
 
 const _pos: Vector3 = new Vector3();
