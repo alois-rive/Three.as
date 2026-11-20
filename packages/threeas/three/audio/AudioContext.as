@@ -245,17 +245,53 @@ export class AudioContext {
         return this.inputs.buffers.send(m);
     }
 
-    /// An analyser slot for `node`, or -1.
+    /// An analyser slot for `node`, or -1. When all are taken, slots whose
+    /// analyser no voice listens to are freed first (their analysers take
+    /// a slot again when their Audio plays).
     analyserSlot(node: AnalyserNode): i32 {
         if (node.slot >= 0 && node.slot < MIX_MAX_ANALYSERS && this.analysers[node.slot] === node) return node.slot;
-        for (let i = 0; i < MIX_MAX_ANALYSERS; i++) {
-            if (this.analysers[i] == null) {
-                this.analysers[i] = node;
-                node.slot = i;
-                return i;
+        node.slot = -1;
+        for (let pass = 0; pass < 2; pass++) {
+            for (let i = 0; i < MIX_MAX_ANALYSERS; i++) {
+                if (this.analysers[i] == null) {
+                    this.analysers[i] = node;
+                    node.slot = i;
+                    return i;
+                }
             }
+            if (pass == 0) this.collectAnalysers();
         }
         return -1;
+    }
+
+    /// Gives `node`'s analyser slot back.
+    releaseAnalyser(node: AnalyserNode): void {
+        const slot = node.slot;
+        if (slot >= 0 && slot < MIX_MAX_ANALYSERS && this.analysers[slot] === node) this.analysers[slot] = null;
+        node.slot = -1;
+    }
+
+    /// Frees analyser slots no voice's Audio listens through.
+    private collectAnalysers(): void {
+        for (let i = 0; i < MIX_MAX_ANALYSERS; i++) {
+            const node = this.analysers[i];
+            if (node == null) continue;
+            let used = false;
+            for (let v = 0; v < MIX_MAX_VOICES; v++) {
+                const a = this.voices[v];
+                if (a != null && a.analyser === node) used = true;
+            }
+            if (!used) this.releaseAnalyser(node!);
+        }
+    }
+
+    /// Updates the world matrices of the Audio objects holding a voice (the
+    /// listener's update, before it computes the mix).
+    updateVoiceMatrices(): void {
+        for (let v = 0; v < MIX_MAX_VOICES; v++) {
+            const audio = this.voices[v];
+            if (audio != null) audio.updateWorldMatrix(true, false);
+        }
     }
 
     /// The latest samples of analyser `node` into its frame.
@@ -307,8 +343,11 @@ export class AudioContext {
             audio.writeVoice(this, data, base);
             if (this.suspendedByUser) data[base + P_PLAYING] = 0;
             if (this.fallback) audio.updateFallback(this, data, base);
-            // A stopped voice that went quiet gives its slot back.
-            if (!audio.isPlaying && !audio.paused && !audio.isNodeSource()) {
+            // A stopped voice that went quiet gives its slot back: a buffer
+            // stopped (or ended, or disposed), an oscillator stopped or
+            // disconnected. A paused one keeps it (the mixer holds its
+            // position) until it plays, stops or is disposed.
+            if (audio.isSilenced()) {
                 if (running) {
                     // (Whatever generation it holds: a stopped play that never
                     // started, waiting for its buffer, goes too.)
@@ -332,8 +371,16 @@ async function decodeAudioDataAsync(bytes: ArrayBuffer, buffer: AudioBuffer): Pr
         buffer.fail(info.error);
         return await Promise.reject<AudioBuffer>(info.error);
     }
-    const result = await Jobs.run(decodeWAV, bytes, info).promise();
-    const blob: Blob = result;
+    // The job's handle is released once its outcome is in (the decoded
+    // value stays valid).
+    const job = Jobs.run(decodeWAV, bytes, info);
+    const settled = await job.promise().settled();
+    job.release();
+    if (!settled.ok) {
+        buffer.fail(settled.error);
+        return await Promise.reject<AudioBuffer>(settled.error);
+    }
+    const blob: Blob = settled.value;
     buffer.setBlob(blob, min<i32>(info.channels, 2), info.sampleRate);
     return buffer;
 }

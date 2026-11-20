@@ -392,8 +392,20 @@ export class TransformControls extends Controls {
         if (this.hasListeners(type)) this.dispatchEvent(new Event(type));
     }
 
+    /// Detaches, then disposes the gizmo's geometries and materials (three.js
+    /// traverses its root for them; the handles share geometries, each is
+    /// disposed once).
     override dispose(): void {
         this.detach();
+        const geometries: Array<BufferGeometry> = [];
+        for (let i = 0; i < this.handles.length; i++) {
+            const h = this.handles[i];
+            if (geometries.indexOf(h.visible.geometry) < 0) geometries.push(h.visible.geometry);
+            if (geometries.indexOf(h.picker.geometry) < 0) geometries.push(h.picker.geometry);
+            h.visible.material.dispose();
+            h.picker.material.dispose();
+        }
+        for (let i = 0; i < geometries.length; i++) geometries[i].dispose();
     }
 }
 

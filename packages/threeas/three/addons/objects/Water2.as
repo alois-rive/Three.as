@@ -99,6 +99,8 @@ export class Water extends Mesh {
     private flowSpeed: f64;
     private cycle: f64 = 0.15; // a cycle of a flow map phase
     private halfCycle: f64 = 0.075;
+    // The flat normal maps made for missing options (disposed with it).
+    private ownedMaps: Array<Texture> = [];
 
     static WaterShader: ShaderDefinition = new WaterShaderDefinition();
 
@@ -112,6 +114,8 @@ export class Water extends Mesh {
         const flowMap = o.flowMap;
         const normalMap0 = o.normalMap0 != null ? o.normalMap0! : flatNormals();
         const normalMap1 = o.normalMap1 != null ? o.normalMap1! : flatNormals();
+        if (o.normalMap0 == null) this.ownedMaps.push(normalMap0);
+        if (o.normalMap1 == null) this.ownedMaps.push(normalMap1);
 
         // internal components
         this.reflector = new Reflector(geometry, {
@@ -159,6 +163,18 @@ export class Water extends Mesh {
 
     /// The material, typed (three.js's `water.material`).
     get shaderMaterial(): ShaderMaterial { return this.material as ShaderMaterial; }
+
+    /// Disposes the reflector, the refractor (their render targets and
+    /// materials), the material and the flat normal maps it made in place
+    /// of missing ones (three.js's Water2 has no dispose; the maps and
+    /// flow map passed in stay the caller's).
+    dispose(): void {
+        this.reflector.dispose();
+        this.refractor.dispose();
+        this.material.dispose();
+        for (let i = 0; i < this.ownedMaps.length; i++) this.ownedMaps[i].dispose();
+        this.ownedMaps.length = 0;
+    }
 
     /// Advances the flow's clock (Rive-only: call from advance).
     tick(seconds: f64): void {

@@ -470,6 +470,23 @@ export class SceneBindings {
         return made;
     }
 
+    /// Detaches every binding from the view model (removing the trigger
+    /// listeners that would keep this scene alive as long as the view model)
+    /// and forgets the bindings, named actions and spec. Call it before
+    /// dropping bindings on a view model that outlives the scene.
+    dispose(): void {
+        for (let i = 0; i < this.bindings.length; i++) this.bindings[i].attach(null);
+        this.bindings.length = 0;
+        this.errors.length = 0;
+        this.actionNames.length = 0;
+        this.actions.length = 0;
+        this.viewModel = null;
+        this.specProperty = null;
+        this.specRoot = false;
+        this.spec = "";
+        this.stale = false;
+    }
+
     /// Syncs every binding (and re-reads a spec property that changed).
     update(): void {
         const sp = this.specProperty;

@@ -14,7 +14,6 @@ import { Quaternion } from "../math/Quaternion";
 import { Audio as RiveAudio } from "rive/audio";
 import { AudioContext } from "./AudioContext";
 import { GainNode, BiquadFilterNode } from "./AudioNodes";
-import { Audio } from "./Audio";
 
 const _position = new Vector3();
 const _quaternion = new Quaternion();
@@ -26,8 +25,6 @@ export class AudioListener extends Object3D {
     filter: BiquadFilterNode? = null;
     /// Seconds between the last two updates.
     timeDelta: f64 = 0;
-    /// The Audio objects made with this listener.
-    sources: Array<Audio> = [];
     /// World position, forward (-Z) and up as of the last update.
     readonly worldPosition: Vector3 = new Vector3();
     readonly worldForward: Vector3 = new Vector3(0, 0, -1);
@@ -73,15 +70,16 @@ export class AudioListener extends Object3D {
 
     /// Publishes this frame's mix: every source's gains, panning and
     /// transport, from the listener's and the sources' world matrices.
-    /// `updateMatrices` refreshes those matrices first (updateMatrixWorld
-    /// passes false: the render just did).
+    /// `updateMatrices` refreshes those matrices first, the listener's and
+    /// those of the sources holding a mixer voice (the only ones mixed;
+    /// updateMatrixWorld passes false: the render just did).
     update(updateMatrices: bool = true): void {
         const now = RiveAudio.time();
         this.timeDelta = this.lastTime >= 0 ? Math.max(0, now - this.lastTime) : 0;
         this.lastTime = now;
         if (updateMatrices) {
             this.updateWorldMatrix(true, false);
-            for (let i = 0; i < this.sources.length; i++) this.sources[i].updateWorldMatrix(true, false);
+            this.context.updateVoiceMatrices();
         }
         this.matrixWorld.decompose(_position, _quaternion, _scale);
         this.worldPosition.copy(_position);

@@ -53,6 +53,7 @@ export class DepthTexture extends Texture {
         const t = this.gpuTexture;
         if (t == null || t.width != width || t.height != height) {
             if (t != null) t.release();
+            this.releaseViews();
             const d = new GPUTextureDesc();
             d.width = width;
             d.height = height;
@@ -75,8 +76,16 @@ export class DepthTexture extends Texture {
         const t = this.gpuTexture;
         if (t != null) t.release();
         this.gpuTexture = null;
+        this.releaseViews();
+        super.dispose();
+    }
+
+    private releaseViews(): void {
+        const a = this.attachView;
+        if (a != null) a.release();
+        const s = this.sampleView;
+        if (s != null) s.release();
         this.attachView = null;
         this.sampleView = null;
-        super.dispose();
     }
 }

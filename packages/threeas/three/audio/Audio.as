@@ -69,7 +69,6 @@ export class Audio extends Object3D {
         this.type = "Audio";
         this.listener = listener;
         this.context = listener.context;
-        listener.sources.push(this);
     }
 
     getOutput(): AudioNode {
@@ -82,8 +81,8 @@ export class Audio extends Object3D {
         this.hasPlaybackControl = false;
         this.sourceType = "audioNode";
         this.source = audioNode;
+        audioNode._audio = this;
         this.connect();
-        this.context.acquireVoice(this);
         return this;
     }
 
@@ -162,12 +161,51 @@ export class Audio extends Object3D {
 
     connect(): Audio {
         this._connected = true;
+        // An oscillator sounds while connected: it takes a voice (one
+        // stopped or disconnected gave its voice back).
+        if (this.isNodeSource()) this.context.acquireVoice(this);
         return this;
     }
 
+    /// An oscillator source goes silent and gives its voice back once it
+    /// faded out; a buffer source is muted (keeping its voice).
     disconnect(): Audio {
         this._connected = false;
         return this;
+    }
+
+    /// Rive-only (three.js leaves a dropped Audio to the garbage collector,
+    /// which ends its Web Audio nodes): stops it, gives its mixer voice back
+    /// once it has faded out and its analyser slot at once. Call it before
+    /// dropping an Audio that may be paused or play an oscillator: those
+    /// keep their voice (at most MIX_MAX_VOICES, 32) otherwise. It can play
+    /// again afterwards.
+    dispose(): void {
+        this._progress = 0;
+        this.isPlaying = false;
+        this.paused = false;
+        if (this.hasPlaybackControl) {
+            this.stopGen = this.context.nextGeneration();
+            this.stopDelay = 0;
+        }
+        this._connected = false;
+        const analyser = this.analyser;
+        if (analyser != null) {
+            this.context.releaseAnalyser(analyser);
+            this.analyser = null;
+        }
+    }
+
+    /// Whether this Audio is silent from the main lane's side, so that its
+    /// voice goes back once the mixer has faded it out: a buffer stopped,
+    /// ended or disposed (not paused), an oscillator not started, stopped
+    /// or disconnected.
+    isSilenced(): bool {
+        if (this.isNodeSource()) {
+            const osc = this.source;
+            return osc == null || !osc.started || osc.stopped || !this._connected;
+        }
+        return !this.isPlaying && !this.paused;
     }
 
     getFilters(): Array<BiquadFilterNode> {

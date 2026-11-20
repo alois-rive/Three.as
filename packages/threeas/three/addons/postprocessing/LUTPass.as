@@ -44,9 +44,12 @@ export class LUTPass extends ShaderPass {
     private _lut: Data3DTexture? = null;
     private copyMaterial: ShaderMaterial = CopyShader.createMaterial();
     private warned: bool = false;
+    // LUTShader's white 1x1x1 placeholder, disposed once a LUT replaces it.
+    private placeholder: Texture? = null;
 
     constructor(options: LUTPassParameters? = null) {
         super(LUTShader);
+        this.placeholder = this.uniform<Texture>("lut").value;
         const o = options != null ? options! : new LUTPassParameters();
         this.lut = o.lut;
         this.intensity = o.intensity;
@@ -59,6 +62,9 @@ export class LUTPass extends ShaderPass {
         if (v != null) {
             this.uniform<f64>("lutSize").value = <f64>v.width;
             this.uniform<Texture>("lut").value = v;
+            const placeholder = this.placeholder;
+            if (placeholder != null) placeholder.dispose();
+            this.placeholder = null;
         }
     }
 
@@ -82,8 +88,13 @@ export class LUTPass extends ShaderPass {
         renderer.autoClear = oldAutoClear;
     }
 
+    /// Disposes the materials, the quad and the placeholder LUT (the LUT
+    /// set stays the caller's, as three.js).
     override dispose(): void {
         super.dispose();
         this.copyMaterial.dispose();
+        const placeholder = this.placeholder;
+        if (placeholder != null) placeholder.dispose();
+        this.placeholder = null;
     }
 }

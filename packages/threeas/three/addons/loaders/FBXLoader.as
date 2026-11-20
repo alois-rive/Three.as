@@ -200,7 +200,14 @@ async function loadFBXAsync(loader: FBXLoader, url: string): Promise<Group> {
 async function parseFBXAsync(loader: FBXLoader, data: ArrayBuffer, path: string): Promise<Group> {
     let inflated: FBXInflated? = null;
     if (isFbxFormatBinary(data)) {
-        const result = await Jobs.run(inflateFBX, data).promise();
+        const job = Jobs.run(inflateFBX, data);
+        const settled = await job.promise().settled();
+        job.release();   // the decoded value outlives the handle
+        if (!settled.ok) {
+            loader.error = settled.error;
+            return await Promise.reject<Group>(settled.error);
+        }
+        const result = settled.value;
         if (result.error.length > 0) {
             loader.error = result.error;
             return await Promise.reject<Group>(result.error);
