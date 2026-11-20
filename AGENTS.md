@@ -29,8 +29,10 @@ own `rive.yaml`, and every `rive` command runs in (or names) a package:
 
 The gallery imports the engine as a library, through `threeas.rml` (the
 `LibraryAsset`), `rive.yaml`'s `libraries:` and `.libraries/` (the
-downloaded snapshot, committed). Modules are named `lib:threeas/` plus
-their path in the library:
+downloaded snapshot of that version; git-ignored, so after a clone run
+`rive library update packages/gallery --uat`: on the newest version it
+only downloads, otherwise it also moves the import, so review the diff).
+Modules are named `lib:threeas/` plus their path in the library:
 
 ```as
 import * as THREE from "lib:threeas/three/Three";
@@ -227,7 +229,7 @@ file), and run `rive library publish` (a second time when the first run
 only pushed); put the UAT binding back; then in packages/gallery `rive
 library update --uat`, verify, `rive push --uat` (file 38626) and
 `--publish=web` (from a copy without the override). Commit what it
-changed: `packages/gallery/{threeas.rml,rive.yaml,.libraries/}` and, after
+changed: `packages/gallery/{threeas.rml,rive.yaml}` (`.libraries/` is ignored) and, after
 a first production publish, `packages/threeas/bindings/prod.yaml`.
 Production's project id is a placeholder in `bindings/prod.yaml` until the
 "ThreeAS" project exists; the script refuses `--env=prod` until it is set.
@@ -275,7 +277,7 @@ packages/gallery/   the gallery (Rive project, imports the engine library)
   gallery/          the landing page and its generator
   examples/<name>/  one example each; shared/ for common content
   tools/            make_effects_ui.py, make_rive_driven_ui.py
-  threeas.rml, .libraries/   the library import
+  threeas.rml, .libraries/   the library import (.libraries/ git-ignored)
 tools/              cross-package scripts (publish, bench, screenshots, shaders, samples)
 docs/               DEVIATIONS.md, PERFORMANCE.md
 ```

@@ -2,7 +2,7 @@
     <!-- The engine, imported as a Rive library (rive library add/update
          write this block; see rive.yaml's libraries: and AGENTS.md). The
          examples import its modules as "lib:threeas/three/...". -->
-    <LibraryAsset libraryId="761" libraryVersionId="1956" assetId="122977" name="threeas" id="1:301817">
+    <LibraryAsset libraryId="761" libraryVersionId="1960" assetId="123004" name="threeas" id="1:301817">
         <LibraryCodeFile componentId="0:348872" codeFileTypeValue="3" id="1:301249"/>
         <ScriptAsset name="Three" folderPath="three" codeFileId="1:301249" groupId="1:301817" id="1:301250"/>
         <LibraryCodeFile componentId="0:355300" codeFileTypeValue="3" id="1:301251"/>

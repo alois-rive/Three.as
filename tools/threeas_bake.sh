@@ -160,7 +160,7 @@ else
     for f in "$project"/.libraries/*/three_shaders_three.wgsl; do
         [ -f "$f" ] && snapshots+=("$(dirname "$f")")
     done
-    [ ${#snapshots[@]} -gt 0 ] || die "no threeas library in $project/.libraries (rive pull, or pass --engine=DIR)"
+    [ ${#snapshots[@]} -gt 0 ] || die "no threeas library in $project/.libraries (rive library update <project> --uat, or pass --engine=DIR)"
     snapshot="${snapshots[0]}"
     if [ ${#snapshots[@]} -gt 1 ]; then
         used=$(find "$project" \( -name '.?*' -o -path "$project/build" \) -prune -o -name '*.rml' -print0 \

@@ -33,8 +33,8 @@
 #     UAT Rive workspace (41013), from a copy
 #     without the library override, so the page runs the published engine.
 #
-# Afterwards commit what changed: packages/gallery/{threeas.rml,rive.yaml,
-# .libraries/} and, after a first production publish,
+# Afterwards commit what changed: packages/gallery/{threeas.rml,rive.yaml}
+# (.libraries/ is git-ignored) and, after a first production publish,
 # packages/threeas/bindings/prod.yaml. Needs `rive login` on each
 # environment used (`rive login --uat` for UAT).
 set -euo pipefail
@@ -188,4 +188,4 @@ if [ "$gallery" = 1 ]; then
     run python3 tools/check_glsl.py "$WORK/gallery/build/three_as.riv"
 fi
 
-echo "done. Commit packages/gallery/{threeas.rml,rive.yaml,.libraries} (and packages/threeas/bindings/ after a first production publish)."
+echo "done. Commit packages/gallery/{threeas.rml,rive.yaml} (and packages/threeas/bindings/ after a first production publish)."
