@@ -2,8 +2,10 @@
 // renderer calls update(camera) each frame while autoUpdate.
 
 import { Object3D } from "../core/Object3D";
+import { Raycaster, Intersection } from "../core/Raycaster";
 import { Camera } from "../cameras/Camera";
 import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
+import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Vector3 } from "../math/Vector3";
 import { Dynamic } from "rive/dynamic";
 import { JSONMeta } from "../core/JSON";
@@ -96,7 +98,13 @@ export class LOD extends Object3D {
         _v1.setFromMatrixPosition(camera.matrixWorld);
         _v2.setFromMatrixPosition(this.matrixWorld);
         let distance = _v1.distanceTo(_v2);
-        if (camera instanceof PerspectiveCamera) distance /= (camera as PerspectiveCamera).zoom;
+        if (camera instanceof PerspectiveCamera) {
+            const z = (camera as PerspectiveCamera).zoom;
+            if (z > 0) distance /= z;
+        } else if (camera instanceof OrthographicCamera) {
+            const z = (camera as OrthographicCamera).zoom;
+            if (z > 0) distance /= z;
+        }
         levels[0].object.visible = true;
         let i = 1;
         for (; i < levels.length; i++) {
@@ -111,6 +119,31 @@ export class LOD extends Object3D {
         }
         this.currentLevel = i - 1;
         for (; i < levels.length; i++) levels[i].object.visible = false;
+    }
+
+    override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        const levels = this.levels;
+        if (levels.length > 0) {
+            _v1.setFromMatrixPosition(this.matrixWorld);
+            let distance: f64;
+            const camera = raycaster.camera;
+            if (camera != null) {
+                _v2.setFromMatrixPosition(camera.matrixWorld);
+                distance = _v2.distanceTo(_v1);
+                if (camera instanceof PerspectiveCamera) {
+                    const z = (camera as PerspectiveCamera).zoom;
+                    if (z > 0) distance /= z;
+                } else if (camera instanceof OrthographicCamera) {
+                    const z = (camera as OrthographicCamera).zoom;
+                    if (z > 0) distance /= z;
+                }
+            } else {
+                distance = raycaster.ray.origin.distanceTo(_v1);
+            }
+            const levelObj = this.getObjectForDistance(distance);
+            if (levelObj != null) raycaster.intersectObject(levelObj, true, intersects);
+        }
+        return false;
     }
 
     /// three.js's LOD.copy: the levels' objects cloned (not the children

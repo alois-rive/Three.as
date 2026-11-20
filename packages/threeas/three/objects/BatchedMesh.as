@@ -19,6 +19,7 @@ import { Matrix4 } from "../math/Matrix4";
 import { Color } from "../math/Color";
 import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
+import { Ray } from "../math/Ray";
 import { Vector3 } from "../math/Vector3";
 import { Object3D } from "../core/Object3D";
 import { Event } from "../core/EventDispatcher";
@@ -53,6 +54,9 @@ export class BatchedGeometryRange {
 
 const _box = new Box3();
 const _sphere = new Sphere();
+const _ray = new Ray();
+const _hitAt = new Vector3();
+const _v = new Vector3();
 const _m = new Matrix4();
 const _world = new Matrix4();
 
@@ -126,10 +130,10 @@ export class BatchedMesh extends Mesh {
     /// Adds a geometry (copied in); returns its id, or -1 when it does not
     /// fit or does not match. Reserved counts leave room to replace it.
     addGeometry(geometry: BufferGeometry, reservedVertexCount: i32 = -1, reservedIndexCount: i32 = -1): i32 {
-        if (this.indexed < 0) this.initGeometry(geometry);
-        if ((geometry.index != null ? 1 : 0) != this.indexed) return -1;
         const position = geometry.getAttribute("position");
         if (position == null) return -1;
+        if (this.indexed < 0) this.initGeometry(geometry);
+        if ((geometry.index != null ? 1 : 0) != this.indexed) return -1;
         const info = new BatchedGeometryInfo();
         info.vertexStart = this.nextVertex;
         info.reservedVertexCount = max<i32>(reservedVertexCount, position.count);
@@ -147,9 +151,17 @@ export class BatchedMesh extends Mesh {
 
     /// Replaces geometry `geometryId` (within its reserved space).
     setGeometryAt(geometryId: i32, geometry: BufferGeometry): i32 {
+        if (geometryId < 0 || geometryId >= this.geometryInfo.length) return -1;
         const info = this.geometryInfo[geometryId];
-        const position = geometry.getAttribute("position")!;
-        if (position.count > info.reservedVertexCount) return -1;
+        if (!info.active) return -1;
+        const position = geometry.getAttribute("position");
+        if (position == null || position.count > info.reservedVertexCount) return -1;
+        if (this.indexed == 1) {
+            const src = geometry.index;
+            if (src == null || src.count > info.reservedIndexCount) return -1;
+        } else if (geometry.index != null) {
+            return -1;
+        }
         const g = this.geometry;
         for (let n = 0; n < this.attributeNames.length; n++) {
             const name = this.attributeNames[n];
@@ -166,7 +178,6 @@ export class BatchedMesh extends Mesh {
         info.vertexCount = position.count;
         if (this.indexed == 1) {
             const src = geometry.index!;
-            if (src.count > info.reservedIndexCount) return -1;
             const dst = g.index!;
             for (let i = 0; i < src.count; i++) dst.array[info.indexStart + i] = src.array[i] + <u32>info.vertexStart;
             dst.version++;
@@ -176,8 +187,7 @@ export class BatchedMesh extends Mesh {
         }
         // Bounds, for culling.
         info.boundingBox.makeEmpty();
-        const v = new Vector3();
-        for (let i = 0; i < position.count; i++) info.boundingBox.expandByPoint(v.fromBufferAttribute(position, i));
+        for (let i = 0; i < position.count; i++) info.boundingBox.expandByPoint(_v.fromBufferAttribute(position, i));
         info.boundingBox.getBoundingSphere(info.boundingSphere);
         g.boundingBox = null;
         g.boundingSphere = null;
@@ -344,18 +354,34 @@ export class BatchedMesh extends Mesh {
     /// Raycasts each visible instance (its geometry's range, its matrix);
     /// hits carry `batchId`.
     override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {
+        if (this.instanceInfo.length == 0 || this.indexed < 0) return true;
+        if (this.boundingSphere == null) this.computeBoundingSphere();
+        if (this.boundingSphere!.isEmpty()) return true;
+        const range = raycaster.far - raycaster.near;
+        const rangeSq = range * range;
+        _ray.copy(raycaster.ray).recast(raycaster.near);
+        _sphere.copy(this.boundingSphere!).applyMatrix4(this.matrixWorld);
+        if (!_sphere.containsPoint(_ray.origin)) {
+            if (_ray.intersectSphere(_sphere, _hitAt) == null) return true;
+            if (_ray.origin.distanceToSquared(_hitAt) > rangeSq) return true;
+        }
         const g = this.geometry;
         const saveStart = g.drawRange.start, saveCount = g.drawRange.count;
         for (let i = 0; i < this.instanceInfo.length; i++) {
             const info = this.instanceInfo[i];
             if (!info.active || !info.visible) continue;
             const geo = this.geometryInfo[info.geometryIndex];
-            if (!geo.active) continue;
+            if (!geo.active || geo.boundingSphere.isEmpty()) continue;
+            _world.multiplyMatrices(this.matrixWorld, this.getMatrixAt(i, _m));
+            _sphere.copy(geo.boundingSphere).applyMatrix4(_world);
+            if (!_sphere.containsPoint(_ray.origin)) {
+                if (_ray.intersectSphere(_sphere, _hitAt) == null) continue;
+                if (_ray.origin.distanceToSquared(_hitAt) > rangeSq) continue;
+            }
             if (this.indexed == 1) g.setDrawRange(geo.indexStart, geo.indexCount);
             else g.setDrawRange(geo.vertexStart, geo.vertexCount);
-            _world.multiplyMatrices(this.matrixWorld, this.getMatrixAt(i, _m));
             const before = intersects.length;
-            raycastMesh(this, raycaster, intersects, _world, -1);
+            raycastMesh(this, raycaster, intersects, _world, -1, null, geo.boundingBox, false, true);
             for (let k = before; k < intersects.length; k++) intersects[k].batchId = i;
             if (raycastAnyHit() && intersects.length > before) break;
         }
@@ -365,21 +391,55 @@ export class BatchedMesh extends Mesh {
 
     override copy(source: Object3D, recursive: bool = true): Object3D {
         super.copy(source, recursive);
+        if (source instanceof BatchedMesh) {
+            const s = source as BatchedMesh;
+            this.geometry = s.geometry.clone();
+            this.maxInstanceCount = s.maxInstanceCount;
+            this.maxVertexCount = s.maxVertexCount;
+            this.maxIndexCount = s.maxIndexCount;
+            this.perObjectFrustumCulled = s.perObjectFrustumCulled;
+            this.sortObjects = s.sortObjects;
+            this.customSort = s.customSort;
+            this.nextVertex = s.nextVertex;
+            this.nextIndex = s.nextIndex;
+            this.indexed = s.indexed;
+            this.attributeNames = s.attributeNames.slice();
+            this.geometryInfo = [];
+            for (let i = 0; i < s.geometryInfo.length; i++) {
+                const sg = s.geometryInfo[i];
+                const dg = new BatchedGeometryInfo();
+                dg.vertexStart = sg.vertexStart;
+                dg.vertexCount = sg.vertexCount;
+                dg.reservedVertexCount = sg.reservedVertexCount;
+                dg.indexStart = sg.indexStart;
+                dg.indexCount = sg.indexCount;
+                dg.reservedIndexCount = sg.reservedIndexCount;
+                dg.active = sg.active;
+                dg.boundingBox.copy(sg.boundingBox);
+                dg.boundingSphere.copy(sg.boundingSphere);
+                this.geometryInfo.push(dg);
+            }
+            this.instanceInfo = [];
+            for (let i = 0; i < s.instanceInfo.length; i++) {
+                const si = s.instanceInfo[i];
+                const di = new BatchedInstanceInfo();
+                di.geometryIndex = si.geometryIndex;
+                di.visible = si.visible;
+                di.active = si.active;
+                this.instanceInfo.push(di);
+            }
+            if (this.matricesArray.length == s.matricesArray.length) this.matricesArray.set(s.matricesArray);
+            else this.matricesArray = s.matricesArray.slice();
+            if (this.colorsArray.length == s.colorsArray.length) this.colorsArray.set(s.colorsArray);
+            else this.colorsArray = s.colorsArray.slice();
+            this.boundingBox = s.boundingBox != null ? s.boundingBox!.clone() : null;
+            this.boundingSphere = s.boundingSphere != null ? s.boundingSphere!.clone() : null;
+            this.instancesVersion++;
+        }
         return this;
     }
 
     override clone(recursive: bool = true): Object3D {
-        // Shares the buffers' source geometries by copying the batch.
-        const b = new BatchedMesh(this.maxInstanceCount, this.maxVertexCount, this.maxIndexCount, this.material);
-        b.geometry = this.geometry.clone();
-        for (let i = 0; i < this.geometryInfo.length; i++) b.geometryInfo.push(this.geometryInfo[i]);
-        for (let i = 0; i < this.instanceInfo.length; i++) {
-            const s = this.instanceInfo[i], d = new BatchedInstanceInfo();
-            d.geometryIndex = s.geometryIndex; d.visible = s.visible; d.active = s.active;
-            b.instanceInfo.push(d);
-        }
-        b.matricesArray.set(this.matricesArray);
-        b.colorsArray.set(this.colorsArray);
-        return b.copy(this, recursive);
+        return new BatchedMesh(this.maxInstanceCount, this.maxVertexCount, this.maxIndexCount, this.material).copy(this, recursive);
     }
 }

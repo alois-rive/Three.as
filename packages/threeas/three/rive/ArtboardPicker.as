@@ -114,7 +114,8 @@ export class ArtboardPicker {
         this.texture = t;
         this.object = nearest.object;
         this.distance = nearest.distance;
-        this.uv.set(uv.x * t.repeat.x + t.offset.x, uv.y * t.repeat.y + t.offset.y);
+        if (t.matrixAutoUpdate) t.updateMatrix();
+        this.uv.copy(uv).applyMatrix3(t.matrix);
         return true;
     }
 

@@ -2,6 +2,7 @@
 
 import { Tests } from "rive/test";
 import { Texture } from "../three/textures/Texture";
+import { Event, EventListener } from "../three/core/EventDispatcher";
 import { Vector2 } from "../three/math/Vector2";
 import { Vector3 } from "../three/math/Vector3";
 import { CubeTexture } from "../three/textures/CubeTexture";
@@ -34,6 +35,11 @@ function differences(a: Uint8Array, b: Uint8Array, offset: i32, tolerance: i32):
 function apply(t: Texture, u: f64, v: f64): Vector2 {
     const p = new Vector3(u, v, 1).applyMatrix3(t.matrix);
     return new Vector2(p.x, p.y);
+}
+
+class CountTextureDisposes extends EventListener {
+    count: i32 = 0;
+    override handleEvent(event: Event): void { this.count++; }
 }
 
 export class TextureTests extends Tests {
@@ -79,6 +85,11 @@ export class TextureTests extends Tests {
                 expect.that(<f64>t.mapping).is(<f64>CubeReflectionMapping);
                 expect.that(t.ready).is(false);
                 expect.that(t.flipX).is(true);
+                // dispose() disposes all 6 owned face textures.
+                const l = new CountTextureDisposes();
+                for (let i = 0; i < 6; i++) t.faces[i].addEventListener("dispose", l);
+                t.dispose();
+                expect.that(l.count).is(6);
             });
             test("a cube render target's faces are its targets' textures", (expect) => {
                 const rt = new WebGLCubeRenderTarget(32);
@@ -204,9 +215,11 @@ export class TextureTests extends Tests {
                 }
                 const job = decodeCompressedJob(t.format, true, all.buffer, offsets, widths, heights);
                 expect.that(job.error).is("");
-                expect.that(job.offsets.length).is(7);
-                expect.that(differences(levels[0].data, job.data, 0, 0)).is(0);
-                expect.that(job.data.length).is((4096 + 1024 + 256 + 64 + 16 + 4 + 1) * 4);
+                expect.that(job.levels.length).is(7);
+                expect.that(differences(levels[0].data, job.levels[0], 0, 0)).is(0);
+                let decodedBytes = 0;
+                for (let l = 0; l < job.levels.length; l++) decodedBytes += job.levels[l].length;
+                expect.that(decodedBytes).is((4096 + 1024 + 256 + 64 + 16 + 4 + 1) * 4);
             });
             test("RGBAFormat mipmaps pass through", (expect) => {
                 const t = new CompressedTexture([new CompressedMipmap(new Uint8Array(16), 2, 2)], 2, 2, RGBAFormat);

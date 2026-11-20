@@ -92,4 +92,28 @@ export class MeshBasicMaterial extends Material {
         u.reflectivity = this.reflectivity;
         u.refractionRatio = this.refractionRatio;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshBasicMaterial) {
+            const s = source as MeshBasicMaterial;
+            this.color.copy(s.color);
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+            this.aoMap = s.aoMap;
+            this.aoMapIntensity = s.aoMapIntensity;
+            this.lightMap = s.lightMap;
+            this.lightMapIntensity = s.lightMapIntensity;
+            this.specularMap = s.specularMap;
+            this.envMap = s.envMap;
+            this.combine = s.combine;
+            this.reflectivity = s.reflectivity;
+            this.refractionRatio = s.refractionRatio;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshBasicMaterial().copy(this);
+    }
 }

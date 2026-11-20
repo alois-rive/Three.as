@@ -9,7 +9,11 @@ import { Color } from "../math/Color";
 
 export class ShadowMaterialParameters extends MaterialParameters {
     color: u32 = 0x000000;
-    transparent: bool = true;
+
+    constructor() {
+        super();
+        this.transparent = true;
+    }
 }
 
 export class ShadowMaterial extends Material {
@@ -35,5 +39,18 @@ export class ShadowMaterial extends Material {
         super.fillUniforms(u);
         u.kind = KIND_SHADOW;
         u.r = this.color.r; u.g = this.color.g; u.b = this.color.b;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof ShadowMaterial) {
+            const s = source as ShadowMaterial;
+            this.color.copy(s.color);
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new ShadowMaterial().copy(this);
     }
 }

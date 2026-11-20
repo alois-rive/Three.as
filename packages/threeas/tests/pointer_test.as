@@ -181,6 +181,29 @@ export class PointerTests extends Tests {
                 near(expect, p.distance, 5);
                 expect.that(p.candidateCount).is(1);
             });
+            test("applies texture rotation, center and custom matrix in pick()", (expect) => {
+                const scene = new THREE.Scene();
+                const plane = targetPlane(0);
+                const map = (plane.material as THREE.MeshBasicMaterial).map!;
+                map.center.set(0.5, 0.5);
+                map.rotation = Math.PI / 2;
+                scene.add(plane);
+                const p = new TestPicker();
+                // Aim at (+0.5, 0) on the 2x2 plane -> mesh UV is (0.75, 0.5).
+                // Rotating (0.75, 0.5) clockwise by pi/2 around (0.5, 0.5) gives (0.5, 0.25).
+                const r = new THREE.Raycaster(new THREE.Vector3(0.5, 0, 5), new THREE.Vector3(0, 0, -1));
+                scene.updateMatrixWorld();
+                expect.that(p.pick(scene, r)).is(true);
+                near(expect, p.uv.x, 0.5);
+                near(expect, p.uv.y, 0.25);
+
+                // Custom matrix with matrixAutoUpdate = false is also honoured.
+                map.matrixAutoUpdate = false;
+                map.matrix.setUvTransform(0.1, 0.2, 1, 1, 0, 0, 0);
+                expect.that(p.pick(scene, r)).is(true);
+                near(expect, p.uv.x, 0.85);
+                near(expect, p.uv.y, 0.7);
+            });
             test("a mesh in front blocks, a points cloud and a line do not", (expect) => {
                 const scene = new THREE.Scene();
                 scene.add(targetPlane(0));

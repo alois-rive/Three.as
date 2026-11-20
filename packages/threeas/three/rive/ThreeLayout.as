@@ -86,6 +86,8 @@ export abstract class ThreeLayout extends Layout {
     private hovered: ArtboardTexture? = null;
     private captured: ArtboardTexture? = null;
     private hitUv: Vector2 = new Vector2();
+    private hoveredUv: Vector2 = new Vector2();
+    private capturedUv: Vector2 = new Vector2();
     // Frames advanced; world matrices changed since the last pointer update.
     private frame: i32 = 0;
     private matricesStale: bool = true;
@@ -204,6 +206,7 @@ export abstract class ThreeLayout extends Layout {
         const t = this.artboardUnderPointer(true);
         if (t != null && t.pointerDown(this.hitUv, event.id)) {
             this.captured = t;
+            this.capturedUv.copy(this.hitUv);
             event.hit();
         } else {
             let claimed = false;
@@ -235,13 +238,25 @@ export abstract class ThreeLayout extends Layout {
             }
         }
         const t = this.artboardUnderPointer(false);
-        const hovered = this.hovered;
-        if (hovered != null && hovered !== t) hovered.pointerExit(this.hitUv, event.id);
-        this.hovered = t;
         const captured = this.captured;
-        if (t != null) t.pointerMove(this.hitUv, event.id);
-        else if (captured != null) captured.pointerMove(this.hitUv, event.id);
-        if (captured == null) {
+        if (captured != null) {
+            if (t === captured) this.capturedUv.copy(this.hitUv);
+            captured.pointerMove(this.capturedUv, event.id);
+            const hovered = this.hovered;
+            if (hovered != null && hovered !== t && hovered !== captured) {
+                hovered.pointerExit(this.hoveredUv, event.id);
+            }
+            this.hovered = t;
+            if (t != null) this.hoveredUv.copy(this.hitUv);
+            event.hit();
+        } else {
+            const hovered = this.hovered;
+            if (hovered != null && hovered !== t) hovered.pointerExit(this.hoveredUv, event.id);
+            this.hovered = t;
+            if (t != null) {
+                this.hoveredUv.copy(this.hitUv);
+                t.pointerMove(this.hitUv, event.id);
+            }
             let claimed = false;
             for (let i = 0; i < this.tools.length; i++) {
                 this.tools[i].pointerMove(event);
@@ -251,8 +266,6 @@ export abstract class ThreeLayout extends Layout {
             if (c != null && !claimed) c.pointerMove(event);
             // A tool dragging an object moves it.
             if (claimed) this.invalidatePointer();
-        } else {
-            event.hit();
         }
         this.onPointerMove(event);
     }
@@ -272,10 +285,16 @@ export abstract class ThreeLayout extends Layout {
         const t = this.artboardUnderPointer(true);
         const captured = this.captured;
         if (captured != null) {
-            captured.pointerUp(this.hitUv, event.id);
+            if (t === captured) this.capturedUv.copy(this.hitUv);
+            captured.pointerUp(this.capturedUv, event.id);
+            if (t !== captured) {
+                captured.pointerExit(this.capturedUv, event.id);
+                if (this.hovered === captured) this.hovered = null;
+            }
             this.captured = null;
             event.hit();
         } else if (t != null) {
+            this.hoveredUv.copy(this.hitUv);
             t.pointerUp(this.hitUv, event.id);
         }
         for (let i = 0; i < this.tools.length; i++) this.tools[i].pointerUp(event);
@@ -290,8 +309,14 @@ export abstract class ThreeLayout extends Layout {
         const overlay = this.overlay;
         if (overlay != null) overlay.pointerExit(event);
         const hovered = this.hovered;
-        if (hovered != null) hovered.pointerExit(this.hitUv, event.id);
+        if (hovered != null) hovered.pointerExit(this.hoveredUv, event.id);
         this.hovered = null;
+        const captured = this.captured;
+        if (captured != null) {
+            if (captured !== hovered) captured.pointerExit(this.capturedUv, event.id);
+            this.captured = null;
+        }
+        for (let i = 0; i < this.tools.length; i++) this.tools[i].pointerExit(event);
         const c = this.controls;
         if (c != null) c.pointerExit(event);
     }

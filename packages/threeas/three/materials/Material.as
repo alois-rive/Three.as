@@ -270,7 +270,9 @@ export class Material extends EventDispatcher {
     displacementMapOf(): Texture? {
         const u = _scratch;
         this.fillUniforms(u);
-        return u.roles[ROLE_DISPLACEMENT];
+        const map = u.roles[ROLE_DISPLACEMENT];
+        u.reset();
+        return map;
     }
 
     /// Fills what the renderer needs (internal). Subclasses call super first.
@@ -303,7 +305,36 @@ export class Material extends EventDispatcher {
         this.fog = source.fog;
         this.flatShading = source.flatShading;
         this.wireframe = source.wireframe;
+        this.polygonOffset = source.polygonOffset;
+        this.polygonOffsetFactor = source.polygonOffsetFactor;
+        this.polygonOffsetUnits = source.polygonOffsetUnits;
+        this.depthFunc = source.depthFunc;
+        this.stencilWrite = source.stencilWrite;
+        this.stencilWriteMask = source.stencilWriteMask;
+        this.stencilFunc = source.stencilFunc;
+        this.stencilRef = source.stencilRef;
+        this.stencilFuncMask = source.stencilFuncMask;
+        this.stencilFail = source.stencilFail;
+        this.stencilZFail = source.stencilZFail;
+        this.stencilZPass = source.stencilZPass;
+        const srcPlanes = source.clippingPlanes;
+        if (srcPlanes != null) {
+            const dstPlanes: Array<Plane> = [];
+            for (let i = 0; i < srcPlanes.length; i++) dstPlanes.push(srcPlanes[i].clone());
+            this.clippingPlanes = dstPlanes;
+        } else {
+            this.clippingPlanes = null;
+        }
+        this.clipIntersection = source.clipIntersection;
+        this.clipShadows = source.clipShadows;
+        this.alphaHash = source.alphaHash;
+        this.alphaToCoverage = source.alphaToCoverage;
+        this.shadowSide = source.shadowSide;
         return this;
+    }
+
+    clone(): Material {
+        return new Material().copy(this);
     }
 
     /// Dispatches "dispose": each renderer frees its state for this material

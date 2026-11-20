@@ -32,6 +32,8 @@ import { Vector } from "rive/vector";
 import { PointerEvent } from "rive/events";
 import { Object3D } from "../core/Object3D";
 import { Camera } from "../cameras/Camera";
+import { PerspectiveCamera } from "../cameras/PerspectiveCamera";
+import { OrthographicCamera } from "../cameras/OrthographicCamera";
 import { Raycaster } from "../core/Raycaster";
 import { Vector2 } from "../math/Vector2";
 import { Vector3 } from "../math/Vector3";
@@ -204,7 +206,7 @@ export class ArtboardOverlayRenderer {
             o.cameraDistance = _pos.distanceTo(_cameraPos);
             if (o instanceof Artboard3DObject) o.onScreen = this.place3D(o as Artboard3DObject, camera);
             else o.onScreen = this.place2D(o, camera);
-            o.occluded = o.onScreen && o.occlude && this.isOccluded(o, occluders);
+            o.occluded = o.onScreen && o.occlude && this.isOccluded(o, occluders, camera);
         }
         // Far to near: nearer ones draw (and take the pointer) on top.
         if (this.sortObjects) list.sort(byDistance);
@@ -347,15 +349,30 @@ export class ArtboardOverlayRenderer {
         return true;
     }
 
-    private isOccluded(o: ArtboardObject, occluders: Object3D): bool {
+    private isOccluded(o: ArtboardObject, occluders: Object3D, camera: Camera): bool {
         _pos.setFromMatrixPosition(o.matrixWorld);
-        _dir.copy(_pos).sub(_cameraPos);
-        const distance = _dir.length();
-        if (distance <= 0) return false;
-        _dir.divideScalar(distance);
         const r = this.raycaster;
-        r.set(_cameraPos, _dir);
-        r.far = Math.max(0, distance - this.occlusionBias);
+        r.camera = camera;
+        r.layers.mask = camera.layers.mask;
+        if (camera instanceof OrthographicCamera) {
+            const ortho = camera as OrthographicCamera;
+            _dir.set(0, 0, -1).transformDirection(camera.matrixWorld);
+            const distance = _origin.copy(_pos).sub(_cameraPos).dot(_dir);
+            const rayDist = distance - ortho.near;
+            if (rayDist <= 0) return false;
+            _origin.copy(_pos).addScaledVector(_dir, -rayDist);
+            r.set(_origin, _dir);
+            r.near = 0;
+            r.far = Math.max(0, rayDist - this.occlusionBias);
+        } else {
+            _dir.copy(_pos).sub(_cameraPos);
+            const distance = _dir.length();
+            if (distance <= 0) return false;
+            _dir.divideScalar(distance);
+            r.set(_cameraPos, _dir);
+            r.near = camera instanceof PerspectiveCamera ? (camera as PerspectiveCamera).near : 0;
+            r.far = Math.max(0, distance - this.occlusionBias);
+        }
         // A visible mesh or sprite in front, the walk ending at its first
         // hit (each mesh's at its first triangle).
         return ArtboardPicker.occluded(occluders, r);
@@ -392,6 +409,7 @@ function byDistance(a: ArtboardObject, b: ArtboardObject): i32 {
 
 const _pos = new Vector3();
 const _cameraPos = new Vector3();
+const _origin = new Vector3();
 const _dir = new Vector3();
 const _p = new Vector3();
 const _right = new Vector3();

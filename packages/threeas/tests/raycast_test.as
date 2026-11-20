@@ -11,6 +11,7 @@ import { Float32BufferAttribute } from "../three/core/BufferAttribute";
 import { Clock, Timer } from "../three/core/Clock";
 import { Mesh } from "../three/objects/Mesh";
 import { InstancedMesh } from "../three/objects/InstancedMesh";
+import { LOD } from "../three/objects/LOD";
 import { Line } from "../three/objects/Line";
 import { Points } from "../three/objects/Points";
 import { Sprite } from "../three/objects/Sprite";
@@ -18,6 +19,7 @@ import { PlaneGeometry } from "../three/geometries/PlaneGeometry";
 import { BoxGeometry } from "../three/geometries/BoxGeometry";
 import { MeshBasicMaterial } from "../three/materials/MeshBasicMaterial";
 import { PerspectiveCamera } from "../three/cameras/PerspectiveCamera";
+import { OrthographicCamera } from "../three/cameras/OrthographicCamera";
 import { OrbitControls } from "../three/addons/controls/OrbitControls";
 import { DoubleSide } from "../three/constants";
 
@@ -129,6 +131,59 @@ export class RaycastTests extends Tests {
                 // 90 degrees fov: the right edge is 45 degrees off axis.
                 near(expect, r.ray.direction.x, Math.SQRT1_2);
                 near(expect, r.ray.direction.z, -Math.SQRT1_2);
+            });
+            test("setFromCamera updates parented camera and places ortho ray on camera plane", (expect) => {
+                const rig = new Object3D();
+                rig.position.set(0, 0, 10);
+                const ortho = new OrthographicCamera(-2, 2, 2, -2, 1, 100);
+                rig.add(ortho);
+                // Parent was never updated manually: setFromCamera updates ancestors.
+                const r = new Raycaster();
+                r.setFromCamera(new Vector2(0.5, 0), ortho);
+                near(expect, r.ray.origin.x, 1);
+                near(expect, r.ray.origin.y, 0);
+                near(expect, r.ray.origin.z, 10);
+                near(expect, r.ray.direction.z, -1);
+                const plane = new Mesh(new PlaneGeometry(4, 4));
+                plane.updateMatrixWorld();
+                const hits = r.intersectObject(plane);
+                expect.that(<f64>hits.length).is(1);
+                near(expect, hits[0].distance, 10);
+            });
+            test("LOD.raycast hits only the active level and honours ortho zoom", (expect) => {
+                const lod = new LOD();
+                const high = new Mesh(new PlaneGeometry(2, 2));
+                const low = new Mesh(new PlaneGeometry(2, 2));
+                lod.addLevel(high, 0);
+                lod.addLevel(low, 10);
+                lod.updateMatrixWorld();
+
+                const cam = new PerspectiveCamera(50, 1, 0.1, 100);
+                cam.position.set(0, 0, 5);
+                const r = new Raycaster();
+                r.setFromCamera(new Vector2(0.1, 0.05), cam);
+                let hits = r.intersectObject(lod, true);
+                expect.that(<f64>hits.length).is(1);
+                expect.that(hits[0].object === high).is(true);
+
+                cam.position.set(0, 0, 15);
+                r.setFromCamera(new Vector2(0.1, 0.05), cam);
+                hits = r.intersectObject(lod, true);
+                expect.that(<f64>hits.length).is(1);
+                expect.that(hits[0].object === low).is(true);
+
+                // OrthographicCamera zoom divides effective LOD distance.
+                const ortho = new OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
+                ortho.position.set(0, 0, 15);
+                ortho.zoom = 2;
+                ortho.updateProjectionMatrix();
+                ortho.updateMatrixWorld();
+                lod.update(ortho);
+                expect.that(<f64>lod.getCurrentLevel()).is(0);
+                r.setFromCamera(new Vector2(0.1, 0.05), ortho);
+                hits = r.intersectObject(lod, true);
+                expect.that(<f64>hits.length).is(1);
+                expect.that(hits[0].object === high).is(true);
             });
         });
 

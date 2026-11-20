@@ -243,6 +243,27 @@ export class ShaderMaterial extends Material {
     override fillUniforms(u: MaterialUniforms): void {
         super.fillUniforms(u);
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof ShaderMaterial) {
+            const s = source as ShaderMaterial;
+            this.shader = s.shader;
+            this.vertexEntryPoint = s.vertexEntryPoint;
+            this.fragmentEntryPoint = s.fragmentEntryPoint;
+            this.lights = s.lights;
+            this.uniforms = new Map<string, UniformBase>();
+            const names = s.uniforms.keys();
+            for (let i = 0; i < names.length; i++) {
+                this.uniforms.set(names[i], s.uniforms.get(names[i]).clone());
+            }
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new ShaderMaterial().copy(this);
+    }
 }
 
 /// three.js's RawShaderMaterial: the same here (nothing is prepended to a
@@ -253,5 +274,9 @@ export class RawShaderMaterial extends ShaderMaterial {
     constructor(parameters: ShaderMaterialParameters? = null) {
         super(parameters);
         this.type = "RawShaderMaterial";
+    }
+
+    override clone(): Material {
+        return new RawShaderMaterial().copy(this);
     }
 }

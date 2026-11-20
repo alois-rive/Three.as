@@ -199,6 +199,12 @@ export class Texture extends ColorOrTexture {
     /// Frees GPU resources the renderers made for this texture (at their
     /// next render): dispatches "dispose", as three.js.
     dispose(): void {
+        const view = this.cachedView;
+        if (view != null) view.release();
+        this.cachedView = null;
+        this.cachedFor = null;
+        this.cachedW = 0;
+        this.cachedH = 0;
         if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }

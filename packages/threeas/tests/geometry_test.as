@@ -3,8 +3,13 @@
 // are unit length. rive . --test
 
 import { Expect, Tests } from "rive/test";
+import { Vector2 } from "../three/math/Vector2";
 import { Vector3 } from "../three/math/Vector3";
 import { BufferGeometry } from "../three/core/BufferGeometry";
+import { Float32BufferAttribute } from "../three/core/BufferAttribute";
+import { Shape } from "../three/extras/core/Shape";
+import { Path } from "../three/extras/core/Path";
+import { ExtrudeGeometry, ExtrudeGeometryOptions } from "../three/geometries/ExtrudeGeometry";
 import { BoxGeometry } from "../three/geometries/BoxGeometry";
 import { SphereGeometry } from "../three/geometries/SphereGeometry";
 import { PlaneGeometry } from "../three/geometries/PlaneGeometry";
@@ -118,9 +123,37 @@ export class GeometryTests extends Tests {
             test("torus", (expect) => { wellFormed(expect, new TorusGeometry(1, 0.3, 8, 16)); });
             test("torus knot", (expect) => { wellFormed(expect, new TorusKnotGeometry(1, 0.3, 64, 8)); });
             test("lathe", (expect) => {
-                // As three.js, the last profile point's normal is left
-                // unnormalized: check winding only.
-                expect.that(<f64>inwardFaces(new LatheGeometry())).is(0);
+                wellFormed(expect, new LatheGeometry());
+                // Unequal profile segment lengths still yield unit normals on every ring including the last.
+                const pts = [new Vector2(0.5, 0), new Vector2(1.5, 0.2), new Vector2(0.8, 3.0)];
+                wellFormed(expect, new LatheGeometry(pts, 12));
+            });
+            test("extrude CW outer contour with CW hole reverses hole winding", (expect) => {
+                // CW outer square: (0,0) -> (0,4) -> (4,4) -> (4,0)
+                const outer = new Shape([
+                    new Vector2(0, 0), new Vector2(0, 4), new Vector2(4, 4), new Vector2(4, 0),
+                ]);
+                // CW hole inside: (1,1) -> (1,3) -> (3,3) -> (3,1)
+                const hole = new Path([
+                    new Vector2(1, 1), new Vector2(1, 3), new Vector2(3, 3), new Vector2(3, 1),
+                ]);
+                outer.holes.push(hole);
+                const opts = new ExtrudeGeometryOptions();
+                opts.depth = 1;
+                opts.bevelEnabled = false;
+                const g = new ExtrudeGeometry([outer], opts);
+                expect.that(<f64>inwardFaces(g)).is(0);
+                // Hole sidewall at x = 1 (facing +X into the hole) must have normal +X.
+                const pos = g.getAttribute("position")!;
+                const nrm = g.getAttribute("normal")!;
+                let foundHoleWall = false;
+                for (let i = 0; i < pos.count; i++) {
+                    if (Math.abs(pos.getX(i) - 1) < 1e-4 && Math.abs(pos.getY(i) - 2) < 1.1 && Math.abs(nrm.getX(i)) > 0.5) {
+                        expect.that(nrm.getX(i)).greaterThan(0.9);
+                        foundHoleWall = true;
+                    }
+                }
+                expect.that(foundHoleWall).is(true);
             });
             test("capsule", (expect) => { wellFormed(expect, new CapsuleGeometry(0.5, 1, 4, 12, 2)); });
             test("icosahedron", (expect) => {
@@ -152,6 +185,30 @@ export class GeometryTests extends Tests {
                     expect.that(Math.abs(<f64>t.array[v * 4] - 1) < 1e-6 && Math.abs(<f64>t.array[v * 4 + 1]) < 1e-6
                         && <f64>t.array[v * 4 + 3] == 1).is(true);
                 }
+            });
+        });
+        group("morph bounds", () => {
+            test("computeBoundingBox and computeBoundingSphere include absolute and relative morphs", (expect) => {
+                // Absolute morph target.
+                const abs = new BufferGeometry();
+                abs.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0], 3));
+                abs.morphAttributes.set("position", [new Float32BufferAttribute([0, 0, 0, 1, 4, 0], 3)]);
+                abs.morphTargetsRelative = false;
+                abs.computeBoundingBox();
+                abs.computeBoundingSphere();
+                expect.that(Math.abs(abs.boundingBox!.max.y - 4) < 1e-6).is(true);
+                expect.that(abs.boundingSphere!.radius > 2.0).is(true);
+
+                // Relative morph target.
+                const rel = new BufferGeometry();
+                rel.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 2, 0, 0], 3));
+                rel.morphAttributes.set("position", [new Float32BufferAttribute([0, 0, 0, 3, 0, 0], 3)]);
+                rel.morphTargetsRelative = true;
+                rel.computeBoundingBox();
+                rel.computeBoundingSphere();
+                expect.that(Math.abs(rel.boundingBox!.max.x - 5) < 1e-6).is(true);
+                expect.that(Math.abs(rel.boundingSphere!.center.x - 2.5) < 1e-6).is(true);
+                expect.that(Math.abs(rel.boundingSphere!.radius - 2.5) < 1e-6).is(true);
             });
         });
     }

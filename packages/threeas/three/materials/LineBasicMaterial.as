@@ -57,4 +57,22 @@ export class LineBasicMaterial extends Material {
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_ALPHA] = this.alphaMap;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof LineBasicMaterial) {
+            const s = source as LineBasicMaterial;
+            this.color.copy(s.color);
+            this.linewidth = s.linewidth;
+            this.linecap = s.linecap;
+            this.linejoin = s.linejoin;
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new LineBasicMaterial().copy(this);
+    }
 }

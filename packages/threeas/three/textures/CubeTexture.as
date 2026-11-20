@@ -17,6 +17,7 @@ export class CubeTexture extends Texture {
     /// The faces as textures (internal; a cube render target's faces are
     /// its render target textures).
     faces: Array<Texture> = [];
+    private ownedFaces: Array<Texture> = [];
     /// Image cube maps are mirrored in x (three.js's flipEnvMap); faces
     /// rendered by a CubeCamera are not, and their rows run bottom up.
     flipX: bool = true;
@@ -29,7 +30,11 @@ export class CubeTexture extends Texture {
         this.flipY = false;
         this.colorSpace = SRGBColorSpace;
         this.premultiplyAlpha = true;   // Rive images are premultiplied
-        for (let i = 0; i < 6; i++) this.faces.push(new Texture(null));
+        for (let i = 0; i < 6; i++) {
+            const t = new Texture(null);
+            this.faces.push(t);
+            this.ownedFaces.push(t);
+        }
     }
 
     /// Face `i` as a texture, following `images`.
@@ -60,5 +65,10 @@ export class CubeTexture extends Texture {
     get ready(): bool {
         for (let i = 0; i < 6; i++) if (this.faceTexture(i).getView() == null) return false;
         return true;
+    }
+
+    override dispose(): void {
+        for (let i = 0; i < this.ownedFaces.length; i++) this.ownedFaces[i].dispose();
+        super.dispose();
     }
 }

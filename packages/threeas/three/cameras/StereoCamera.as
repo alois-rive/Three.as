@@ -8,8 +8,6 @@ import { Matrix4 } from "../math/Matrix4";
 import { DEG2RAD } from "../math/MathUtils";
 import { PerspectiveCamera } from "./PerspectiveCamera";
 
-const _eyeRight = new Matrix4();
-const _eyeLeft = new Matrix4();
 const _projectionMatrix = new Matrix4();
 
 export class StereoCamera {
@@ -22,6 +20,8 @@ export class StereoCamera {
     cameraL: PerspectiveCamera = new PerspectiveCamera();
     cameraR: PerspectiveCamera = new PerspectiveCamera();
 
+    private eyeLeft: Matrix4 = new Matrix4();
+    private eyeRight: Matrix4 = new Matrix4();
     private cacheFocus: f64 = NaN;
     private cacheFov: f64 = NaN;
     private cacheAspect: f64 = NaN;
@@ -50,14 +50,28 @@ export class StereoCamera {
             this.cacheZoom = camera.zoom;
             this.cacheEyeSep = this.eyeSep;
 
+            this.cameraL.near = this.cacheNear;
+            this.cameraL.far = this.cacheFar;
+            this.cameraL.fov = this.cacheFov;
+            this.cameraL.zoom = this.cacheZoom;
+            this.cameraL.focus = this.cacheFocus;
+            this.cameraL.aspect = this.cacheAspect;
+
+            this.cameraR.near = this.cacheNear;
+            this.cameraR.far = this.cacheFar;
+            this.cameraR.fov = this.cacheFov;
+            this.cameraR.zoom = this.cacheZoom;
+            this.cameraR.focus = this.cacheFocus;
+            this.cameraR.aspect = this.cacheAspect;
+
             _projectionMatrix.copy(camera.projectionMatrix);
             const eyeSepHalf = this.cacheEyeSep / 2;
             const eyeSepOnProjection = eyeSepHalf * this.cacheNear / this.cacheFocus;
             const ymax = (this.cacheNear * Math.tan(DEG2RAD * this.cacheFov * 0.5)) / this.cacheZoom;
             const e = _projectionMatrix.elements;
 
-            _eyeLeft.elements[12] = <f32>-eyeSepHalf;
-            _eyeRight.elements[12] = <f32>eyeSepHalf;
+            this.eyeLeft.elements[12] = <f32>-eyeSepHalf;
+            this.eyeRight.elements[12] = <f32>eyeSepHalf;
 
             // Left eye.
             let xmin = -ymax * this.cacheAspect + eyeSepOnProjection;
@@ -75,9 +89,9 @@ export class StereoCamera {
             this.cameraR.projectionMatrix.copy(_projectionMatrix);
             this.cameraR.projectionMatrixInverse.copy(_projectionMatrix).invert();
         }
-        camera.updateMatrixWorld();
-        this.cameraL.matrixWorld.copy(camera.matrixWorld).multiply(_eyeLeft);
-        this.cameraR.matrixWorld.copy(camera.matrixWorld).multiply(_eyeRight);
+        camera.updateWorldMatrix(true, false);
+        this.cameraL.matrixWorld.copy(camera.matrixWorld).multiply(this.eyeLeft);
+        this.cameraR.matrixWorld.copy(camera.matrixWorld).multiply(this.eyeRight);
         this.cameraL.matrixWorldInverse.copy(this.cameraL.matrixWorld).invert();
         this.cameraR.matrixWorldInverse.copy(this.cameraR.matrixWorld).invert();
     }

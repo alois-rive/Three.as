@@ -64,15 +64,14 @@ export class LatheGeometry extends BufferGeometry {
         for (let j = 0; j <= n - 1; j++) {
             if (j == 0) {
                 const dx = points[j + 1].x - points[j].x, dy = points[j + 1].y - points[j].y;
-                normal.set(dy, -dx, 0);
+                normal.set(dy, -dx, 0).normalize();
                 prevNormal.copy(normal);
-                normal.normalize();
                 initNormals.push(normal.x); initNormals.push(normal.y); initNormals.push(normal.z);
             } else if (j == n - 1) {
                 initNormals.push(prevNormal.x); initNormals.push(prevNormal.y); initNormals.push(prevNormal.z);
             } else {
                 const dx = points[j + 1].x - points[j].x, dy = points[j + 1].y - points[j].y;
-                normal.set(dy, -dx, 0);
+                normal.set(dy, -dx, 0).normalize();
                 curNormal.copy(normal);
                 normal.add(prevNormal).normalize();
                 initNormals.push(normal.x); initNormals.push(normal.y); initNormals.push(normal.z);

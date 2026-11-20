@@ -4,6 +4,7 @@
 
 import { Texture } from "../textures/Texture";
 import { Vector2 } from "../math/Vector2";
+import { Material } from "./Material";
 import { MeshStandardMaterial, MeshStandardMaterialParameters } from "./MeshStandardMaterial";
 import { Dynamic } from "rive/dynamic";
 import { JSONMeta, setNumber, setNumbers } from "../core/JSON";
@@ -160,7 +161,7 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
     /// The F0 reflectivity in [0, 1], tied to ior as three.js.
     get reflectivity(): f64 {
         const x = (this.ior - 1) / (this.ior + 1);
-        return Math.max(0, Math.min(1, 2.5 * (x * x)));
+        return Math.max(0, Math.min(1, 2.5 * x));
     }
 
     set reflectivity(value: f64) {
@@ -206,5 +207,48 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
         u.roles[ROLE_IRIDESCENCE] = this.iridescenceMap;
         u.roles[ROLE_IRIDESCENCE_THICKNESS] = this.iridescenceThicknessMap;
         u.roles[ROLE_ANISOTROPY] = this.anisotropyMap;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof MeshPhysicalMaterial) {
+            const s = source as MeshPhysicalMaterial;
+            this.clearcoat = s.clearcoat;
+            this.clearcoatRoughness = s.clearcoatRoughness;
+            this.sheen = s.sheen;
+            this.sheenColor.copy(s.sheenColor);
+            this.sheenRoughness = s.sheenRoughness;
+            this.ior = s.ior;
+            this.specularIntensity = s.specularIntensity;
+            this.specularColor.copy(s.specularColor);
+            this.clearcoatMap = s.clearcoatMap;
+            this.clearcoatRoughnessMap = s.clearcoatRoughnessMap;
+            this.clearcoatNormalMap = s.clearcoatNormalMap;
+            this.clearcoatNormalScale.copy(s.clearcoatNormalScale);
+            this.sheenColorMap = s.sheenColorMap;
+            this.sheenRoughnessMap = s.sheenRoughnessMap;
+            this.specularIntensityMap = s.specularIntensityMap;
+            this.specularColorMap = s.specularColorMap;
+            this.transmission = s.transmission;
+            this.transmissionMap = s.transmissionMap;
+            this.thickness = s.thickness;
+            this.thicknessMap = s.thicknessMap;
+            this.attenuationDistance = s.attenuationDistance;
+            this.attenuationColor.copy(s.attenuationColor);
+            this.dispersion = s.dispersion;
+            this.iridescence = s.iridescence;
+            this.iridescenceMap = s.iridescenceMap;
+            this.iridescenceIOR = s.iridescenceIOR;
+            this.iridescenceThicknessRange = s.iridescenceThicknessRange.slice();
+            this.iridescenceThicknessMap = s.iridescenceThicknessMap;
+            this.anisotropy = s.anisotropy;
+            this.anisotropyRotation = s.anisotropyRotation;
+            this.anisotropyMap = s.anisotropyMap;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new MeshPhysicalMaterial().copy(this);
     }
 }

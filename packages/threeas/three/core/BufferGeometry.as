@@ -238,8 +238,27 @@ export class BufferGeometry extends EventDispatcher {
             this.boundingBox = box;
         }
         const position = this.getAttribute("position");
-        if (position != null) box.setFromBufferAttribute(position);
-        else box.makeEmpty();
+        if (position != null) {
+            box.setFromBufferAttribute(position);
+            if (this.morphAttributes.has("position")) {
+                const morphs = this.morphAttributes.get("position");
+                for (let i = 0; i < morphs.length; i++) {
+                    _boxMorph.setFromBufferAttribute(morphs[i]);
+                    if (_boxMorph.isEmpty()) continue;
+                    if (this.morphTargetsRelative) {
+                        _v.addVectors(box.min, _boxMorph.min);
+                        box.expandByPoint(_v);
+                        _v.addVectors(box.max, _boxMorph.max);
+                        box.expandByPoint(_v);
+                    } else {
+                        box.expandByPoint(_boxMorph.min);
+                        box.expandByPoint(_boxMorph.max);
+                    }
+                }
+            }
+        } else {
+            box.makeEmpty();
+        }
     }
 
     computeBoundingSphere(): void {
@@ -254,11 +273,45 @@ export class BufferGeometry extends EventDispatcher {
             return;
         }
         const center = sphere.center;
-        _box.setFromBufferAttribute(position).getCenter(center);
+        _box.setFromBufferAttribute(position);
+        const hasMorph = this.morphAttributes.has("position");
+        if (hasMorph) {
+            const morphs = this.morphAttributes.get("position");
+            for (let i = 0; i < morphs.length; i++) {
+                _boxMorph.setFromBufferAttribute(morphs[i]);
+                if (_boxMorph.isEmpty()) continue;
+                if (this.morphTargetsRelative) {
+                    _v.addVectors(_box.min, _boxMorph.min);
+                    _box.expandByPoint(_v);
+                    _v.addVectors(_box.max, _boxMorph.max);
+                    _box.expandByPoint(_v);
+                } else {
+                    _box.expandByPoint(_boxMorph.min);
+                    _box.expandByPoint(_boxMorph.max);
+                }
+            }
+        }
+        _box.getCenter(center);
         let maxRadiusSq: f64 = 0;
         for (let i = 0, l = position.count; i < l; i++) {
             _v.set(position.getX(i), position.getY(i), position.getZ(i));
             maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(_v));
+        }
+        if (hasMorph) {
+            const morphs = this.morphAttributes.get("position");
+            const rel = this.morphTargetsRelative;
+            for (let i = 0; i < morphs.length; i++) {
+                const ma = morphs[i];
+                const n = rel ? min<i32>(ma.count, position.count) : ma.count;
+                for (let j = 0; j < n; j++) {
+                    _v.set(ma.getX(j), ma.getY(j), ma.getZ(j));
+                    if (rel) {
+                        _offset.set(position.getX(j), position.getY(j), position.getZ(j));
+                        _v.add(_offset);
+                    }
+                    maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(_v));
+                }
+            }
         }
         sphere.radius = Math.sqrt(maxRadiusSq);
     }
@@ -290,12 +343,13 @@ export class BufferGeometry extends EventDispatcher {
                 if (!isFinite(r)) continue;
                 const sx = (x1 * t2 - x2 * t1) * r, sy = (y1 * t2 - y2 * t1) * r, sz = (z1 * t2 - z2 * t1) * r;
                 const tx = (x2 * s1 - x1 * s2) * r, ty = (y2 * s1 - y1 * s2) * r, tz = (z2 * s1 - z1 * s2) * r;
-                const vs: StaticArray<i32> = [a, b, c];
-                for (let k = 0; k < 3; k++) {
-                    const v = vs[k] * 3;
-                    tan1[v] += sx; tan1[v + 1] += sy; tan1[v + 2] += sz;
-                    tan2[v] += tx; tan2[v + 1] += ty; tan2[v + 2] += tz;
-                }
+                const va = a * 3, vb = b * 3, vc = c * 3;
+                tan1[va] += sx; tan1[va + 1] += sy; tan1[va + 2] += sz;
+                tan2[va] += tx; tan2[va + 1] += ty; tan2[va + 2] += tz;
+                tan1[vb] += sx; tan1[vb + 1] += sy; tan1[vb + 2] += sz;
+                tan2[vb] += tx; tan2[vb + 1] += ty; tan2[vb + 2] += tz;
+                tan1[vc] += sx; tan1[vc + 1] += sy; tan1[vc + 2] += sz;
+                tan2[vc] += tx; tan2[vc + 1] += ty; tan2[vc + 2] += tz;
             }
         }
         const out = new Float32Array(count * 4);
@@ -450,8 +504,10 @@ function addTo(attribute: BufferAttribute, i: i32, v: Vector3): void {
 
 const _m: Matrix4 = new Matrix4();
 const _box: Box3 = new Box3();
+const _boxMorph: Box3 = new Box3();
 const _n: Matrix3 = new Matrix3();
 const _v: Vector3 = new Vector3();
+const _offset: Vector3 = new Vector3();
 const _min: Vector3 = new Vector3();
 const _max: Vector3 = new Vector3();
 const _pA: Vector3 = new Vector3();

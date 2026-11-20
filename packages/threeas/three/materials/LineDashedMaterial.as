@@ -1,6 +1,7 @@
 // three.js LineDashedMaterial: dashes along "lineDistance" (call
 // computeLineDistances() on the line first).
 
+import { Material } from "./Material";
 import { LineBasicMaterial, LineBasicMaterialParameters } from "./LineBasicMaterial";
 import { Dynamic } from "rive/dynamic";
 import { JSONMeta, setNumber } from "../core/JSON";
@@ -42,5 +43,20 @@ export class LineDashedMaterial extends LineBasicMaterial {
         u.dashSize = this.dashSize;
         u.gapSize = this.gapSize;
         u.dashScale = this.scale;
+    }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof LineDashedMaterial) {
+            const s = source as LineDashedMaterial;
+            this.scale = s.scale;
+            this.dashSize = s.dashSize;
+            this.gapSize = s.gapSize;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new LineDashedMaterial().copy(this);
     }
 }

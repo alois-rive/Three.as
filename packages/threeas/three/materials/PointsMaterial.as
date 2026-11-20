@@ -55,4 +55,21 @@ export class PointsMaterial extends Material {
         u.textures[SLOT_MAP] = this.map;
         u.textures[SLOT_ALPHA] = this.alphaMap;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof PointsMaterial) {
+            const s = source as PointsMaterial;
+            this.color.copy(s.color);
+            this.size = s.size;
+            this.sizeAttenuation = s.sizeAttenuation;
+            this.map = s.map;
+            this.alphaMap = s.alphaMap;
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new PointsMaterial().copy(this);
+    }
 }

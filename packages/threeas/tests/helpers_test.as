@@ -25,6 +25,11 @@ export class HelpersTests extends Tests {
                 const ph = new THREE.PlaneHelper(new THREE.Plane(new THREE.Vector3(0, 1, 0), -2), 4);
                 ph.updateMatrixWorld();
                 expect.that(Math.abs(ph.position.y - 2) < 1e-9).is(true);
+                expect.that(<f64>ph.fill.material.side).is(<f64>THREE.DoubleSide);
+                // BoxHelper with null object does not reuse stale _box from previous BoxHelper.
+                const emptyBox = new THREE.BoxHelper();
+                const ep = emptyBox.geometry.getAttribute("position")!.array;
+                expect.that(<f64>ep[0]).is(0);
                 const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2);
                 arrow.updateMatrixWorld();
                 const tip = new THREE.Vector3(0, 2, 0).applyQuaternion(arrow.quaternion);
@@ -51,6 +56,8 @@ export class HelpersTests extends Tests {
                 root.updateMatrixWorld();
                 const sk = new THREE.SkeletonHelper(root);
                 sk.updateMatrixWorld();
+                expect.that(sk.isSkeletonHelper).is(true);
+                expect.that(sk.frustumCulled).is(false);
                 expect.that(sk.geometry.getAttribute("position")!.count).is(2);
                 const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1));
                 expect.that(new VertexNormalsHelper(m, 0.5).geometry.getAttribute("position")!.count).is(8);

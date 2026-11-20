@@ -27,16 +27,21 @@ export class BoxHelper extends LineSegments {
     update(): void {
         const object = this.object;
         if (object != null) _box.setFromObject(object);
+        else _box.makeEmpty();
         if (_box.isEmpty()) return;
         const min = _box.min, max = _box.max;
         const a = this.geometry.getAttribute("position")!;
         const p = a.array;
-        const xs: StaticArray<f64> = [max.x, min.x, min.x, max.x, max.x, min.x, min.x, max.x];
-        const ys: StaticArray<f64> = [max.y, max.y, min.y, min.y, max.y, max.y, min.y, min.y];
-        const zs: StaticArray<f64> = [max.z, max.z, max.z, max.z, min.z, min.z, min.z, min.z];
-        for (let i = 0; i < 8; i++) {
-            p[i * 3] = <f32>xs[i]; p[i * 3 + 1] = <f32>ys[i]; p[i * 3 + 2] = <f32>zs[i];
-        }
+        const minX = <f32>min.x, minY = <f32>min.y, minZ = <f32>min.z;
+        const maxX = <f32>max.x, maxY = <f32>max.y, maxZ = <f32>max.z;
+        p[0] = maxX; p[1] = maxY; p[2] = maxZ;
+        p[3] = minX; p[4] = maxY; p[5] = maxZ;
+        p[6] = minX; p[7] = minY; p[8] = maxZ;
+        p[9] = maxX; p[10] = minY; p[11] = maxZ;
+        p[12] = maxX; p[13] = maxY; p[14] = minZ;
+        p[15] = minX; p[16] = maxY; p[17] = minZ;
+        p[18] = minX; p[19] = minY; p[20] = minZ;
+        p[21] = maxX; p[22] = minY; p[23] = minZ;
         a.needsUpdate = true;
         this.geometry.computeBoundingSphere();
     }

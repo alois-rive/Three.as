@@ -23,6 +23,7 @@ export class DataArrayTexture extends Texture {
 
     protected gpuTexture: GPUTexture? = null;
     protected gpuView: GPUTextureView? = null;
+    private allocatedDepth: u32 = 0;
     private uploadedVersion: i32 = -1;
 
     constructor(data: ArrayBufferView, width: u32 = 1, height: u32 = 1, depth: u32 = 1) {
@@ -52,7 +53,8 @@ export class DataArrayTexture extends Texture {
         if (this.dataWidth == 0 || this.dataHeight == 0 || this.depth == 0) return;
         const format = gpuFormat(this.format, this.type);
         let tex = this.gpuTexture;
-        if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight || tex.format != format) {
+        if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight
+                || this.allocatedDepth != this.depth || tex.format != format) {
             if (tex != null) tex.release();
             const view = this.gpuView;
             if (view != null) view.release();
@@ -64,6 +66,7 @@ export class DataArrayTexture extends Texture {
             desc.textureType = this.textureType();
             tex = new GPUTexture(desc);
             this.gpuTexture = tex;
+            this.allocatedDepth = this.depth;
             const vd = new GPUTextureViewDesc();
             vd.dimension = this.viewDimension();
             this.gpuView = tex.view(vd);
@@ -87,6 +90,7 @@ export class DataArrayTexture extends Texture {
         if (view != null) view.release();
         this.gpuTexture = null;
         this.gpuView = null;
+        this.allocatedDepth = 0;
         this.uploadedVersion = -1;
         super.dispose();
     }

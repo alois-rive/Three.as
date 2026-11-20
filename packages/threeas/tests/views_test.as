@@ -81,6 +81,42 @@ export class ViewsTests extends Tests {
                 expect.that(stereo.cameraL.layers.isEnabled(1)).is(true);
                 expect.that(stereo.cameraR.layers.isEnabled(2)).is(true);
             });
+            test("independent instances and synced camera parameters", (expect) => {
+                const cam = new PerspectiveCamera(65, 1.5, 0.25, 250);
+                cam.zoom = 1.25;
+                cam.focus = 12;
+                cam.position.set(0, 0, 4);
+                cam.updateProjectionMatrix();
+                cam.updateMatrixWorld();
+
+                const a = new StereoCamera();
+                a.eyeSep = 0.2;
+                const b = new StereoCamera();
+                b.eyeSep = 0.8;
+
+                a.update(cam);
+                b.update(cam);
+                // Updating a again with unchanged params must keep a's eyeSep (not b's!).
+                a.update(cam);
+                const al = new Vector3().setFromMatrixPosition(a.cameraL.matrixWorld);
+                const ar = new Vector3().setFromMatrixPosition(a.cameraR.matrixWorld);
+                const bl = new Vector3().setFromMatrixPosition(b.cameraL.matrixWorld);
+                expect.that(near(al.x, -0.1)).is(true);
+                expect.that(near(ar.x, 0.1)).is(true);
+                expect.that(near(bl.x, -0.4)).is(true);
+
+                // cameraL and cameraR sync near, far, fov, zoom, focus, aspect.
+                expect.that(a.cameraL.near).is(0.25);
+                expect.that(a.cameraL.far).is(250);
+                expect.that(a.cameraL.fov).is(65);
+                expect.that(a.cameraL.zoom).is(1.25);
+                expect.that(a.cameraL.focus).is(12);
+                expect.that(a.cameraR.near).is(0.25);
+                expect.that(a.cameraR.far).is(250);
+                expect.that(a.cameraR.fov).is(65);
+                expect.that(a.cameraR.zoom).is(1.25);
+                expect.that(a.cameraR.focus).is(12);
+            });
         });
         group("RenderTarget viewport", () => {
             test("whole target, reset by setSize", (expect) => {

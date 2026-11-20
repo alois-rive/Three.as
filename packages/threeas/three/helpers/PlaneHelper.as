@@ -8,7 +8,7 @@ import { Float32BufferAttribute } from "../core/BufferAttribute";
 import { LineBasicMaterial } from "../materials/LineBasicMaterial";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { Plane } from "../math/Plane";
-import { BackSide } from "../constants";
+import { DoubleSide } from "../constants";
 
 export class PlaneHelper extends Line {
     plane: Plane;
@@ -30,7 +30,7 @@ export class PlaneHelper extends Line {
             [1, 1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, -1, -1, 0, 1, -1, 0], 3));
         fill.computeBoundingSphere();
         this.fill = new Mesh(fill, new MeshBasicMaterial({
-            color: hex, opacity: 0.2, transparent: true, depthWrite: false, toneMapped: false, side: BackSide,
+            color: hex, opacity: 0.2, transparent: true, depthWrite: false, toneMapped: false, side: DoubleSide,
         }));
         this.add(this.fill);
     }
