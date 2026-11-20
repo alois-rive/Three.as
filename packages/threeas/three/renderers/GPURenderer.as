@@ -999,6 +999,7 @@ export class GPURenderer {
     private envLevels: u32 = 1;
     private captures: Array<SceneCapture> = [];
     private capturing: bool = false;
+    private renderPass: GPURenderPass? = null;
     private envPrefiltered: bool = false;
     private bgPrefiltered: bool = false;
     private frameGroupView: GPUTextureView? = null;
@@ -1567,7 +1568,8 @@ export class GPURenderer {
         pd.depthLoadOp = loadDepth ? LoadOp.load : LoadOp.clear;
         pd.depthStoreOp = targets.keepDepth || this.destKeepsDepth ? StoreOp.store : StoreOp.discard;
         pd.depthClearValue = 1;
-        const pass = canvas.beginRenderPass(pd);
+        const pass = canvas.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
         if (scissored && (clearColor || clearDepth || clearStencil)) {
             this.clearScissor(pass, clearColor, clearDepth, clearStencil, cr, cg, cb, <f32>a);
         }
@@ -1936,7 +1938,7 @@ export class GPURenderer {
                 const initial = this.textures.baseView(dst);
                 const created = this.textures.setCopyTarget(dst, tex, tex.view(), fmt);
                 if (initial != null) {
-                    this.copyPass(host!, initial!, created.view, fmt, 0, 0, 0, 0, <f64>dw, <f64>dh, false);
+                    this.copyPass(host!, initial!, created.view, fmt, 0, 0, 0, 0, <f64>dw, <f64>dh, false, true);
                 }
                 ct = created;
             }
@@ -1959,14 +1961,15 @@ export class GPURenderer {
         const dFlip = dst.flipY;
         const sTop = srcFlip ? <f64>sh - (sy + h) : sy;
         const dTop = dFlip ? <f64>dh - (dy + h) : dy;
-        this.copyPass(host!, src, view!, format, sx, sTop, dx, dTop, w, h, srcFlip != dFlip);
+        const fullTarget = dx == 0 && dy == 0 && w >= <f64>dw && h >= <f64>dh;
+        this.copyPass(host!, src, view!, format, sx, sTop, dx, dTop, w, h, srcFlip != dFlip, fullTarget);
         this.textures.invalidate(dst);
     }
 
     /// One copy pass: the `w` x `h` rectangle at (dx, dy) of `into` (rows
     /// top first) from (sx, sy) of `from`.
     private copyPass(host: GPUCanvas, from: GPUTextureView, into: GPUTextureView, format: u32, sx: f64, sy: f64,
-                     dx: f64, dy: f64, w: f64, h: f64, flipRows: bool): void {
+                     dx: f64, dy: f64, w: f64, h: f64, flipRows: bool, fullTarget: bool = false): void {
         let pipeline: GPUPipeline;
         if (this.copyPipelines.has(format)) pipeline = this.copyPipelines.get(format);
         else {
@@ -2002,7 +2005,7 @@ export class GPURenderer {
         }
         const color = this.copyColor;
         color.view = into;
-        color.loadOp = LoadOp.load;
+        color.loadOp = fullTarget ? LoadOp.dontCare : LoadOp.load;
         color.storeOp = StoreOp.store;
         const colors = this.copyColors;
         colors.length = 0;
@@ -2010,7 +2013,8 @@ export class GPURenderer {
         const pd = this.copyDesc;
         pd.label = "three copy";
         pd.color = colors;
-        const pass = host.beginRenderPass(pd);
+        const pass = host.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
         pass.setViewport(<f32>dx, <f32>dy, <f32>w, <f32>h, 0, 1);
         pass.setScissor(<u32>dx, <u32>dy, <u32>w, <u32>h);
         pass.setPipeline(pipeline);
@@ -2144,6 +2148,7 @@ export class GPURenderer {
         this.module = null;
         this.bgModule = null;
         this.utilModule = null;
+        this.renderPass = null;
         this.textures.reset();
         this.geometries.reset();
         // What draws and views kept.
@@ -2257,7 +2262,7 @@ export class GPURenderer {
             const morphRow = vertexLayout(MORPH_ROW_STRIDE, VertexFormat.float1, 13);
             morphRow.stepMode = VertexStepMode.instance;
             this.morphRowBuffers = this.vertexBuffers.concat([morphRow]);
-            this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES);
+            this.dummyBones = new GPUBuffer(BufferUsage.uniform, <u32>BONES_BYTES, new ArrayBuffer(BONES_BYTES), true);
             this.dummyMorph = new GPUBuffer(BufferUsage.uniform, <u32>MORPH_BYTES, new ArrayBuffer(MORPH_BYTES), true);
             const sd = new GPUTextureDesc();
             sd.width = 1; sd.height = 1;
@@ -3908,7 +3913,8 @@ export class GPURenderer {
         pd.depthLoadOp = LoadOp.clear;
         pd.depthStoreOp = StoreOp.discard;
         pd.depthClearValue = 1;
-        const pass = canvas.beginRenderPass(pd);
+        const pass = canvas.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
         if (background) {
             // The background module reads the frame block for linear output.
             let bgGroup = this.transmissionBgGroup;
@@ -4114,7 +4120,8 @@ export class GPURenderer {
             pd.depthLoadOp = LoadOp.clear;
             pd.depthStoreOp = StoreOp.store;
             pd.depthClearValue = 1;
-            const pass = canvas.beginRenderPass(pd);
+            const pass = canvas.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
             let lastKey = -1;
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];

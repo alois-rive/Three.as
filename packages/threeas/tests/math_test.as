@@ -57,6 +57,38 @@ export class MathTests extends Tests {
                 const v = new Vector3(1, 0, 0).applyMatrix4(t.clone().multiply(r));
                 nearVec(expect, v, 1, 1, 0);
             });
+            test("multiplyMatrices and invert handle affine, projective and aliasing", (expect) => {
+                const a = new Matrix4().compose(new Vector3(2, -3, 5),
+                    new Quaternion().setFromEuler(new Euler(0.4, -0.5, 0.6)), new Vector3(1.5, 2, 0.5));
+                const b = new Matrix4().compose(new Vector3(-1, 4, -2),
+                    new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 1.2), new Vector3(0.8, 1.2, 1));
+                // Affine aliasing: out === a, out === b, out === a === b
+                const ab = new Matrix4().multiplyMatrices(a, b);
+                const aliasA = a.clone();
+                aliasA.multiplyMatrices(aliasA, b);
+                const aliasB = b.clone();
+                aliasB.multiplyMatrices(a, aliasB);
+                for (let i = 0; i < 16; i++) {
+                    near(expect, aliasA.elements[i], ab.elements[i]);
+                    near(expect, aliasB.elements[i], ab.elements[i]);
+                }
+                const aa = new Matrix4().multiplyMatrices(a, a);
+                const aliasSelf = a.clone();
+                aliasSelf.multiplyMatrices(aliasSelf, aliasSelf);
+                for (let i = 0; i < 16; i++) near(expect, aliasSelf.elements[i], aa.elements[i]);
+                // Projective (non-affine bottom row) multiply and invert
+                const p = new Matrix4().makePerspective(-1, 1, 1, -1, 0.5, 50);
+                const pv = p.clone().multiply(a);
+                const pInv = p.clone().invert();
+                const id = new Matrix4().multiplyMatrices(pInv, p);
+                for (let i = 0; i < 16; i++) near(expect, id.elements[i], i % 5 == 0 ? 1 : 0);
+                // Re-project through pInv * (p * a) == a
+                const back = new Matrix4().multiplyMatrices(pInv, pv);
+                for (let i = 0; i < 16; i++) near(expect, back.elements[i], a.elements[i]);
+                // Singular affine matrix zeroes on invert
+                const singular = new Matrix4().makeScale(0, 1, 1).invert();
+                for (let i = 0; i < 16; i++) expect.that(<f64>singular.elements[i]).is(0);
+            });
         });
 
         group("Euler and Quaternion", () => {

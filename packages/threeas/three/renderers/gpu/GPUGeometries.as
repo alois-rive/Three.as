@@ -17,9 +17,21 @@ export const LINE_LOOP: i32 = 1;
 export const LINE_SEGMENTS: i32 = 2;
 export const LINE_WIREFRAME: i32 = 3;
 
+const MUT_POS: u32 = 1 << 0;
+const MUT_NRM: u32 = 1 << 1;
+const MUT_UV: u32 = 1 << 2;
+const MUT_UV1: u32 = 1 << 3;
+const MUT_COL: u32 = 1 << 4;
+const MUT_SKIN: u32 = 1 << 5;
+const MUT_IDX: u32 = 1 << 6;
+const MUT_LINE_SHIFT: u32 = 7;
+
 export class GeometryGPU extends RendererData {
     /// The render (view) it was last brought up to date in.
     frame: i32 = -1;
+    /// Slots whose GPUBuffer is mutable (buffers start immutable for static
+    /// meshes so the host keeps no CPU copy, and become mutable on first update).
+    mutableMask: u32 = 0;
     position: GPUBuffer? = null;
     normal: GPUBuffer? = null;
     uv: GPUBuffer? = null;
@@ -104,6 +116,7 @@ export class GeometryGPU extends RendererData {
         releaseBuffer(this.color); this.color = null;
         releaseBuffer(this.skin); this.skin = null;
         releaseBuffer(this.index); this.index = null;
+        this.mutableMask = 0;
     }
 }
 
@@ -144,7 +157,7 @@ export class GPUGeometries {
         g.vertexCount = vertexCount;
 
         if (resized || g.positionAttr !== position || g.positionVersion != position.version) {
-            g.position = upload(g.position, position.array);
+            g.position = uploadAttr(g, MUT_POS, g.position, position);
             g.positionAttr = position;
             g.positionVersion = position.version;
         }
@@ -159,7 +172,7 @@ export class GPUGeometries {
         const tv = hasTangent ? tangent!.version : -1;
         if (resized || g.normal == null || g.normalAttr !== (hasNormal ? normal : null) || g.normalVersion != nv
                 || g.tangentAttr !== (hasTangent ? tangent : null) || g.tangentVersion != tv) {
-            g.normal = upload(g.normal, interleaveNormalTangent(hasNormal ? normal!.array : null,
+            g.normal = upload(g, MUT_NRM, g.normal, interleaveNormalTangent(hasNormal ? normal!.array : null,
                 hasTangent ? tangent!.array : null, vertexCount));
             g.normalAttr = hasNormal ? normal : null;
             g.normalVersion = nv;
@@ -176,7 +189,7 @@ export class GPUGeometries {
                 if (resized || g.uvAttr !== d || g.uvVersion != d.version) {
                     const a = new Float32Array(vertexCount * 2);
                     for (let i = 0; i < vertexCount; i++) a[i * 2] = d.array[i];
-                    g.uv = upload(g.uv, a);
+                    g.uv = upload(g, MUT_UV, g.uv, a);
                     g.uvAttr = d;
                     g.uvVersion = d.version;
                 }
@@ -188,12 +201,12 @@ export class GPUGeometries {
         } else
         if (uv != null && uv.count == vertexCount) {
             if (resized || g.uvAttr !== uv || g.uvVersion != uv.version) {
-                g.uv = upload(g.uv, uv.array);
+                g.uv = uploadAttr(g, MUT_UV, g.uv, uv);
                 g.uvAttr = uv;
                 g.uvVersion = uv.version;
             }
         } else if (resized || g.uv == null || g.uvAttr != null) {
-            g.uv = upload(g.uv, new Float32Array(vertexCount * 2));
+            g.uv = upload(g, MUT_UV, g.uv, new Float32Array(vertexCount * 2));
             g.uvAttr = null;
         }
 
@@ -201,12 +214,15 @@ export class GPUGeometries {
         const uv1 = geometry.getAttribute("uv1");
         if (uv1 != null && uv1.itemSize == 2 && uv1.count == vertexCount) {
             if (resized || g.uv1Attr !== uv1 || g.uv1Version != uv1.version) {
-                g.uv1 = upload(g.uv1Attr != null ? g.uv1 : null, uv1.array);
+                g.uv1 = uploadAttr(g, MUT_UV1, g.uv1Attr != null ? g.uv1 : null, uv1);
                 g.uv1Attr = uv1;
                 g.uv1Version = uv1.version;
             }
         } else {
-            if (g.uv1Attr != null) releaseBuffer(g.uv1);
+            if (g.uv1Attr != null) {
+                releaseBuffer(g.uv1);
+                g.mutableMask &= ~MUT_UV1;
+            }
             g.uv1 = g.uv;
             g.uv1Attr = null;
         }
@@ -214,14 +230,16 @@ export class GPUGeometries {
         const color = geometry.getAttribute("color");
         if (color != null && color.count == vertexCount && (color.itemSize == 3 || color.itemSize == 4)) {
             if (resized || g.colorAttr !== color || g.colorVersion != color.version) {
-                g.color = upload(g.color, toRGBA(color, vertexCount));
+                g.color = color.itemSize == 4
+                    ? uploadAttr(g, MUT_COL, g.color, color)
+                    : upload(g, MUT_COL, g.color, toRGBA(color, vertexCount));
                 g.colorAttr = color;
                 g.colorVersion = color.version;
             }
         } else if (resized || g.color == null || g.colorAttr != null) {
             const white = new Float32Array(vertexCount * 4);
             white.fill(1);
-            g.color = upload(g.color, white);
+            g.color = upload(g, MUT_COL, g.color, white);
             g.colorAttr = null;
         }
 
@@ -230,7 +248,7 @@ export class GPUGeometries {
         if (si != null && sw != null && si.itemSize == 4 && sw.itemSize == 4 && si.count == vertexCount
                 && sw.count == vertexCount) {
             if (resized || g.skin == null || g.skinIndexVersion != si.version || g.skinWeightVersion != sw.version) {
-                g.skin = upload(g.skin, g.interleaveSkin(si.array, sw.array, vertexCount));
+                g.skin = upload(g, MUT_SKIN, g.skin, g.interleaveSkin(si.array, sw.array, vertexCount));
                 g.skinIndexVersion = si.version;
                 g.skinWeightVersion = sw.version;
             }
@@ -254,13 +272,17 @@ export class GPUGeometries {
                     bytes = wholeBuffer(src.buffer, src.byteOffset, src.byteLength);
                     g.indexFormat = IndexFormat.uint32;
                 }
-                g.index = uploadBytes(g.index, BufferUsage.index, bytes);
+                g.index = uploadBytes(g, MUT_IDX, g.index, BufferUsage.index, bytes);
                 g.indexVersion = index.version;
             }
             g.indexed = true;
             g.count = index.count;
         } else {
-            if (g.index != null) { releaseBuffer(g.index); g.index = null; }
+            if (g.index != null) {
+                releaseBuffer(g.index);
+                g.index = null;
+                g.mutableMask &= ~MUT_IDX;
+            }
             g.indexed = false;
             g.indexFormat = IndexFormat.none;
             g.count = vertexCount;
@@ -307,7 +329,7 @@ export class GPUGeometries {
             bytes = a.buffer;
             g.lineFormats[mode] = IndexFormat.uint32;
         }
-        g.lineBuffers[mode] = uploadBytes(g.lineBuffers[mode], BufferUsage.index, bytes);
+        g.lineBuffers[mode] = uploadBytes(g, <u32>1 << (MUT_LINE_SHIFT + <u32>mode), g.lineBuffers[mode], BufferUsage.index, bytes);
         return true;
     }
 
@@ -348,18 +370,37 @@ function seq(index: Uint32BufferAttribute?, i: i32): u32 {
     return index != null ? index.array[i] : <u32>i;
 }
 
-function upload(existing: GPUBuffer?, data: Float32Array): GPUBuffer {
-    return uploadBytes(existing, BufferUsage.vertex, wholeBuffer(data.buffer, data.byteOffset, data.byteLength));
+function uploadAttr(g: GeometryGPU, bit: u32, existing: GPUBuffer?, attr: BufferAttribute): GPUBuffer {
+    const blob = attr._blob;
+    if (existing == null && blob != null && blob.id != 0 && attr.version == 0
+            && attr._blobBytes > 0 && attr._blobBytes == <u32>attr.array.byteLength) {
+        g.mutableMask &= ~bit;
+        const buf = GPUBuffer.fromBlob(BufferUsage.vertex, blob, true, attr._blobBytes, attr._blobOffset);
+        attr._blob = null;
+        return buf;
+    }
+    return upload(g, bit, existing, attr.array);
 }
 
-function uploadBytes(existing: GPUBuffer?, usage: BufferUsage, bytes: ArrayBuffer): GPUBuffer {
+function upload(g: GeometryGPU, bit: u32, existing: GPUBuffer?, data: Float32Array): GPUBuffer {
+    return uploadBytes(g, bit, existing, BufferUsage.vertex, wholeBuffer(data.buffer, data.byteOffset, data.byteLength));
+}
+
+function uploadBytes(g: GeometryGPU, bit: u32, existing: GPUBuffer?, usage: BufferUsage, bytes: ArrayBuffer): GPUBuffer {
     const size = <u32>bytes.byteLength;
-    if (existing != null && existing.size == size) {
+    if (existing == null) {
+        // First upload: immutable so the host keeps no CPU shadow copy of
+        // static meshes.
+        g.mutableMask &= ~bit;
+        return new GPUBuffer(usage, size, bytes, true);
+    }
+    if ((g.mutableMask & bit) != 0 && existing.size == size) {
         existing.update(0, bytes);
         return existing;
     }
     releaseBuffer(existing);
-    return new GPUBuffer(usage, size, bytes);
+    g.mutableMask |= bit;
+    return new GPUBuffer(usage, size, bytes, false);
 }
 
 /// `buffer`'s bytes [offset, offset + length), without copying when that is

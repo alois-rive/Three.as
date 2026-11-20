@@ -7,12 +7,15 @@
 //     scene.add(new Mesh(geometry, new MeshStandardMaterial()));
 
 import { Context } from "rive/host";
+import { Jobs } from "rive/jobs";
 import { Promise } from "rive/promise";
+import { Blob } from "rive/shared";
+import { BinaryReader } from "rive/binary_reader";
 import { Loader } from "../../loaders/Loader";
 import { LoadingManager } from "../../loaders/LoadingManager";
 import { fetchBytes } from "../../loaders/FileLoader";
 import { BufferGeometry } from "../../core/BufferGeometry";
-import { BufferAttribute, Float32BufferAttribute } from "../../core/BufferAttribute";
+import { BufferAttribute } from "../../core/BufferAttribute";
 import { Color } from "../../math/Color";
 import { SRGBColorSpace } from "../../constants";
 
@@ -22,6 +25,58 @@ export class STLGeometry extends BufferGeometry {
     hasColors: bool = false;
     alpha: f64 = 1;
     groupNames: Array<string> = [];
+}
+
+/// Plain parsed arrays (no BufferGeometry construction, so safe inside `@job`).
+class STLParsed {
+    vertices: Float32Array = new Float32Array(0);
+    normals: Float32Array = new Float32Array(0);
+    colors: Float32Array = new Float32Array(0);
+    hasColors: bool = false;
+    alpha: f64 = 1;
+    groupStarts: Array<i32> = [];
+    groupCounts: Array<i32> = [];
+    groupNames: Array<string> = [];
+}
+
+/// What `decodeSTL` hands back from a Rive job: packed positions, normals and
+/// optional colours in a shared Blob, plus any ASCII solid groups.
+export class STLDecoded {
+    blob: Blob? = null;
+    vertexCount: i32 = 0;
+    hasColors: bool = false;
+    alpha: f64 = 1;
+    groupStarts: Int32Array = new Int32Array(0);
+    groupCounts: Int32Array = new Int32Array(0);
+    groupNames: Array<string> = [];
+}
+
+/// Decodes binary or ASCII STL off the main lane (the job behind loadAsync /
+/// parseAsync).
+@job export function decodeSTL(data: ArrayBuffer): STLDecoded {
+    const p = parseSTLData(data);
+    const out = new STLDecoded();
+    const floats = p.vertices.length;
+    out.vertexCount = floats / 3;
+    out.hasColors = p.hasColors && p.colors.length == floats;
+    out.alpha = p.alpha;
+    const total = out.hasColors ? floats * 3 : floats * 2;
+    if (total > 0) {
+        const packed = new Float32Array(total);
+        packed.set(p.vertices, 0);
+        packed.set(p.normals, floats);
+        if (out.hasColors) packed.set(p.colors, floats * 2);
+        out.blob = Blob.fromArray(packed);
+    }
+    const gn = p.groupStarts.length;
+    out.groupStarts = new Int32Array(gn);
+    out.groupCounts = new Int32Array(gn);
+    for (let i = 0; i < gn; i++) {
+        out.groupStarts[i] = p.groupStarts[i];
+        out.groupCounts[i] = p.groupCounts[i];
+    }
+    out.groupNames = p.groupNames;
+    return out;
 }
 
 export class STLLoader extends Loader {
@@ -41,27 +96,86 @@ export class STLLoader extends Loader {
         return this.parse(bytes!);
     }
 
-    /// An https: url or a blob asset name.
+    /// An https: url or a blob asset name, decoded in a Rive job.
     loadAsync(url: string): Promise<STLGeometry> {
         return loadSTL(this, url);
     }
 
+    /// As `parse`, decoding in a Rive job off the main lane.
+    parseAsync(data: ArrayBuffer): Promise<STLGeometry> {
+        return parseSTLAsync(data);
+    }
+
     parse(data: ArrayBuffer): STLGeometry {
-        const bytes = Uint8Array.wrap(data);
-        return isBinary(bytes) ? parseBinary(bytes) : parseASCII(String.UTF8.decode(data));
+        const p = parseSTLData(data);
+        const geometry = new STLGeometry();
+        geometry.setAttribute("position", new BufferAttribute(p.vertices, 3));
+        geometry.setAttribute("normal", new BufferAttribute(p.normals, 3));
+        if (p.hasColors) {
+            geometry.setAttribute("color", new BufferAttribute(p.colors, 3));
+            geometry.hasColors = true;
+            geometry.alpha = p.alpha;
+        }
+        for (let i = 0; i < p.groupStarts.length; i++) {
+            geometry.addGroup(p.groupStarts[i], p.groupCounts[i], i);
+        }
+        geometry.groupNames = p.groupNames;
+        return geometry;
     }
 }
 
 async function loadSTL(loader: STLLoader, url: string): Promise<STLGeometry> {
     const bytes = await fetchBytes(loader, url);
-    return loader.parse(bytes);
+    return await parseSTLAsync(bytes);
+}
+
+async function parseSTLAsync(data: ArrayBuffer): Promise<STLGeometry> {
+    const job = Jobs.run(decodeSTL, data);
+    const settled = await job.promise().settled();
+    job.release();
+    if (!settled.ok) return await Promise.reject<STLGeometry>(settled.error);
+    return buildSTLFromDecoded(settled.value);
+}
+
+export function buildSTLFromDecoded(decoded: STLDecoded): STLGeometry {
+    const g = new STLGeometry();
+    const floats = decoded.vertexCount * 3;
+    const blob = decoded.blob;
+    const pos = new Float32Array(floats);
+    const nrm = new Float32Array(floats);
+    if (blob != null && blob.id != 0 && floats > 0) {
+        blob.readInto(0, pos);
+        blob.readInto(<u32>(floats * 4), nrm);
+    }
+    const posAttr = new BufferAttribute(pos, 3);
+    if (blob != null && blob.id != 0 && floats > 0) posAttr.setBlob(blob, 0, <u32>(floats * 4));
+    g.setAttribute("position", posAttr);
+    g.setAttribute("normal", new BufferAttribute(nrm, 3));
+    if (decoded.hasColors) {
+        const col = new Float32Array(floats);
+        if (blob != null && blob.id != 0 && floats > 0) blob.readInto(<u32>(floats * 8), col);
+        g.setAttribute("color", new BufferAttribute(col, 3));
+        g.hasColors = true;
+        g.alpha = decoded.alpha;
+    }
+    for (let i = 0; i < decoded.groupStarts.length; i++) {
+        g.addGroup(decoded.groupStarts[i], decoded.groupCounts[i], i);
+    }
+    g.groupNames = decoded.groupNames;
+    return g;
+}
+
+function parseSTLData(data: ArrayBuffer): STLParsed {
+    const bytes = Uint8Array.wrap(data);
+    return isBinary(bytes) ? parseBinary(bytes) : parseASCII(String.UTF8.decode(data));
 }
 
 function isBinary(b: Uint8Array): bool {
     if (b.length < 84) return false;
-    const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    const faceSize = 32 / 8 * 3 + 32 / 8 * 3 * 3 + 16 / 8;
-    const faces = <i64>view.getUint32(80, true);
+    const reader = new BinaryReader(b.buffer, b.byteOffset, b.byteLength);
+    reader.position = 80;
+    const faceSize: i64 = 50;
+    const faces = <i64>reader.readUint32();
     if (84 + faces * faceSize == <i64>b.length) return true;
     // ASCII starts with "solid", maybe after a byte order mark.
     for (let off = 0; off < 5; off++) {
@@ -71,36 +185,44 @@ function isBinary(b: Uint8Array): bool {
     return true;
 }
 
-function parseBinary(b: Uint8Array): STLGeometry {
-    const reader = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    const faces = <i32>reader.getUint32(80, true);
+function parseBinary(b: Uint8Array): STLParsed {
+    const reader = new BinaryReader(b.buffer, b.byteOffset, b.byteLength);
     let r: f64 = 0, g: f64 = 0, bl: f64 = 0;
     let hasColors = false;
     let defaultR: f64 = 0, defaultG: f64 = 0, defaultB: f64 = 0, alpha: f64 = 1;
     // A default colour in the header: "COLOR=rgba".
-    for (let index = 0; index < 80 - 10; index++) {
-        if (reader.getUint32(index, false) == 0x434F4C4F && reader.getUint8(index + 4) == 0x52
-            && reader.getUint8(index + 5) == 0x3D) {
+    for (let index = 0; index <= 80 - 10; index++) {
+        if (b[index] == 0x43 && b[index + 1] == 0x4F && b[index + 2] == 0x4C && b[index + 3] == 0x4F
+            && b[index + 4] == 0x52 && b[index + 5] == 0x3D) {
             hasColors = true;
-            defaultR = <f64>reader.getUint8(index + 6) / 255;
-            defaultG = <f64>reader.getUint8(index + 7) / 255;
-            defaultB = <f64>reader.getUint8(index + 8) / 255;
-            alpha = <f64>reader.getUint8(index + 9) / 255;
+            defaultR = <f64>b[index + 6] / 255;
+            defaultG = <f64>b[index + 7] / 255;
+            defaultB = <f64>b[index + 8] / 255;
+            alpha = <f64>b[index + 9] / 255;
         }
     }
-    const dataOffset = 84;
-    const faceLength = 12 * 4 + 2;
-    const geometry = new STLGeometry();
+    reader.position = 80;
+    const rawFaces = reader.readUint32();
+    const maxFaces: u32 = b.length >= 84 ? <u32>((b.length - 84) / 50) : 0;
+    const faces = <i32>min<u32>(rawFaces, maxFaces);
+    const out = new STLParsed();
     const vertices = new Float32Array(faces * 9);
     const normals = new Float32Array(faces * 9);
     const colors = new Float32Array(hasColors ? faces * 9 : 0);
     const color = new Color();
     for (let face = 0; face < faces; face++) {
-        const start = dataOffset + face * faceLength;
-        if (start + faceLength > b.length) break;
-        const nx = reader.getFloat32(start, true), ny = reader.getFloat32(start + 4, true), nz = reader.getFloat32(start + 8, true);
+        const nx = reader.readFloat32(), ny = reader.readFloat32(), nz = reader.readFloat32();
+        const base = face * 9;
+        for (let i = 0; i < 3; i++) {
+            const c = base + i * 3;
+            vertices[c] = reader.readFloat32();
+            vertices[c + 1] = reader.readFloat32();
+            vertices[c + 2] = reader.readFloat32();
+            normals[c] = nx; normals[c + 1] = ny; normals[c + 2] = nz;
+        }
+        const packed = <i32>reader.readUint16();
+        if (reader.didOverflow) break;
         if (hasColors) {
-            const packed = <i32>reader.getUint16(start + 48, true);
             if ((packed & 0x8000) == 0) {
                 // The facet's own colour.
                 r = <f64>(packed & 0x1F) / 31;
@@ -109,28 +231,22 @@ function parseBinary(b: Uint8Array): STLGeometry {
             } else {
                 r = defaultR; g = defaultG; bl = defaultB;
             }
-        }
-        for (let i = 1; i <= 3; i++) {
-            const vs = start + i * 12;
-            const c = face * 9 + (i - 1) * 3;
-            vertices[c] = reader.getFloat32(vs, true);
-            vertices[c + 1] = reader.getFloat32(vs + 4, true);
-            vertices[c + 2] = reader.getFloat32(vs + 8, true);
-            normals[c] = nx; normals[c + 1] = ny; normals[c + 2] = nz;
-            if (hasColors) {
-                color.setRGB(r, g, bl, SRGBColorSpace);
-                colors[c] = <f32>color.r; colors[c + 1] = <f32>color.g; colors[c + 2] = <f32>color.b;
+            color.setRGB(r, g, bl, SRGBColorSpace);
+            const cr = <f32>color.r, cg = <f32>color.g, cb = <f32>color.b;
+            for (let i = 0; i < 3; i++) {
+                const c = base + i * 3;
+                colors[c] = cr; colors[c + 1] = cg; colors[c + 2] = cb;
             }
         }
     }
-    geometry.setAttribute("position", new BufferAttribute(vertices, 3));
-    geometry.setAttribute("normal", new BufferAttribute(normals, 3));
+    out.vertices = vertices;
+    out.normals = normals;
     if (hasColors) {
-        geometry.setAttribute("color", new BufferAttribute(colors, 3));
-        geometry.hasColors = true;
-        geometry.alpha = alpha;
+        out.colors = colors;
+        out.hasColors = true;
+        out.alpha = alpha;
     }
-    return geometry;
+    return out;
 }
 
 /// Whitespace-separated tokens of `text`.
@@ -159,12 +275,11 @@ function restOfLine(text: string, at: i32): string {
     return text.substring(at, end).trim();
 }
 
-function parseASCII(text: string): STLGeometry {
-    const geometry = new STLGeometry();
+function parseASCII(text: string): STLParsed {
+    const out = new STLParsed();
     const vertices: Array<f64> = [];
     const normals: Array<f64> = [];
     let nx: f64 = 0, ny: f64 = 0, nz: f64 = 0;
-    let groupCount = 0;
     let startVertex = 0;
     let endVertex = 0;
     let inSolid = false;
@@ -177,14 +292,14 @@ function parseASCII(text: string): STLGeometry {
             inSolid = true;
             startVertex = endVertex;
             const at = text.indexOf("solid", search);
-            geometry.groupNames.push(at >= 0 ? restOfLine(text, at + 5) : "");
+            out.groupNames.push(at >= 0 ? restOfLine(text, at + 5) : "");
             if (at >= 0) search = at + 5;
             // Skip the name's tokens up to the first facet.
             while (i + 1 < t.length && t[i + 1] != "facet" && t[i + 1] != "endsolid") i++;
         } else if (w == "endsolid") {
             if (inSolid) {
-                geometry.addGroup(startVertex, endVertex - startVertex, groupCount);
-                groupCount++;
+                out.groupStarts.push(startVertex);
+                out.groupCounts.push(endVertex - startVertex);
             }
             inSolid = false;
             const at = text.indexOf("endsolid", search);
@@ -200,7 +315,11 @@ function parseASCII(text: string): STLGeometry {
             i += 3;
         }
     }
-    geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute("normal", new Float32BufferAttribute(normals, 3));
-    return geometry;
+    const vArr = new Float32Array(vertices.length);
+    for (let i = 0; i < vertices.length; i++) vArr[i] = <f32>vertices[i];
+    const nArr = new Float32Array(normals.length);
+    for (let i = 0; i < normals.length; i++) nArr[i] = <f32>normals[i];
+    out.vertices = vArr;
+    out.normals = nArr;
+    return out;
 }

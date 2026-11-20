@@ -438,6 +438,8 @@ export class BufferGeometry extends EventDispatcher {
     /// Dispatches "dispose": each renderer that holds GPU state for the
     /// geometry frees it at its next render, as three.js.
     dispose(): void {
+        const vals = this.attributes.values();
+        for (let i = 0; i < vals.length; i++) vals[i]._blob = null;
         if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }

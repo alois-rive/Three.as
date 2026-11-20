@@ -11,7 +11,7 @@ import { Context } from "rive/host";
 import {
     GPUTarget, GPUTexture, GPUTextureDesc, GPUTextureView, GPUTextureViewDesc, GPUPipeline, GPUPipelineDesc,
     GPUColorTargetDesc, GPUBindGroup, GPUBindGroupTexture, GPUBindGroupSampler, GPUColorAttachment, GPUPassDesc,
-    GPUSampler, GPUShaderModule, GPUBuffer, GPUBindGroupUBO, GPUBindGroupLayout,
+    GPURenderPass, GPUSampler, GPUShaderModule, GPUBuffer, GPUBindGroupUBO, GPUBindGroupLayout,
 } from "rive/gpu";
 import { TextureFormat, Filter, WrapMode, LoadOp, StoreOp, BufferUsage } from "rive/gpu_enums";
 import { Texture } from "../../textures/Texture";
@@ -225,6 +225,7 @@ export class GPUTextures {
     private colorAttachment: GPUColorAttachment = new GPUColorAttachment();
     private colorList: Array<GPUColorAttachment> = [];
     private passDesc: GPUPassDesc = new GPUPassDesc();
+    private renderPass: GPURenderPass? = null;
     // Each texture's state is on the texture (TextureGPU, Disposal).
     private queue: DisposeQueue;
     private slot: RendererSlot;
@@ -378,6 +379,7 @@ export class GPUTextures {
         releaseSampler(this.pmremSampler); this.pmremSampler = null;
         this.mipModule = null;
         this.cubeModule = null;
+        this.renderPass = null;
     }
 
     private build(t: Texture, d: TextureGPU, source: GPUTextureView, w: u32, h: u32, old: MipChain?,
@@ -434,14 +436,14 @@ export class GPUTextures {
     private blit(pipeline: GPUPipeline, group: GPUBindGroup, into: GPUTextureView, target: GPUTarget): void {
         const color = this.colorAttachment;
         color.view = into;
-        color.loadOp = LoadOp.clear;
+        color.loadOp = LoadOp.dontCare;
         color.storeOp = StoreOp.store;
-        color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
         const pd = this.passDesc;
         pd.label = "three mip";
         pd.color = this.colorList;
         pd.depthView = null;
-        const pass = target.beginRenderPass(pd);
+        const pass = target.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
         pass.setPipeline(pipeline);
         pass.setBindGroup(0, group);
         pass.draw(3);
@@ -498,14 +500,14 @@ export class GPUTextures {
         }
         const color = this.colorAttachment;
         color.view = ce.view;
-        color.loadOp = LoadOp.clear;
+        color.loadOp = LoadOp.dontCare;
         color.storeOp = StoreOp.store;
-        color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
         const pd = this.passDesc;
         pd.label = "three cube";
         pd.color = this.colorList;
         pd.depthView = null;
-        const pass = target.beginRenderPass(pd);
+        const pass = target.beginRenderPass(pd, this.renderPass);
+        this.renderPass = pass;
         pass.setPipeline(this.cubePipeline!);
         pass.setBindGroup(0, group!);
         pass.draw(3);
@@ -580,14 +582,14 @@ export class GPUTextures {
             }
             const color = this.colorAttachment;
             color.view = e.levelViews[l];
-            color.loadOp = LoadOp.clear;
+            color.loadOp = LoadOp.dontCare;
             color.storeOp = StoreOp.store;
-            color.clearR = 0; color.clearG = 0; color.clearB = 0; color.clearA = 0;
             const pd = this.passDesc;
             pd.label = "three pmrem";
             pd.color = this.colorList;
             pd.depthView = null;
-            const pass = target.beginRenderPass(pd);
+            const pass = target.beginRenderPass(pd, this.renderPass);
+            this.renderPass = pass;
             pass.setPipeline(this.pmremPipeline!);
             pass.setBindGroup(0, group!);
             pass.draw(3);

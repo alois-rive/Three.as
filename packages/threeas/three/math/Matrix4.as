@@ -14,7 +14,7 @@ import { Matrix3 } from "./Matrix3";
 
 export class Matrix4 {
     /// The Rive matrix holding the elements. Shared, not a copy.
-    readonly mat4: Mat4 = Mat4.identity();
+    readonly mat4: Mat4 = new Mat4();
 
     /// Row-major arguments, as three.js; identity when omitted.
     constructor(
@@ -142,8 +142,14 @@ export class Matrix4 {
 
     /// this = a * b.
     multiplyMatrices(a: Matrix4, b: Matrix4): Matrix4 {
-        Mat4.multiply(_scratch, a.mat4, b.mat4);
-        return this.copyMat4(_scratch);
+        const ae = a.mat4.m, be = b.mat4.m;
+        if (ae[3] == 0 && ae[7] == 0 && ae[11] == 0 && ae[15] == 1
+                && be[3] == 0 && be[7] == 0 && be[11] == 0 && be[15] == 1) {
+            Mat4.multiplyAffine(this.mat4, a.mat4, b.mat4);
+        } else {
+            Mat4.multiply(this.mat4, a.mat4, b.mat4);
+        }
+        return this;
     }
 
     multiplyScalar(s: f64): Matrix4 {
@@ -188,8 +194,12 @@ export class Matrix4 {
 
     /// Inverts in place; a singular matrix becomes all zeros, as three.js.
     invert(): Matrix4 {
-        if (Mat4.invert(_scratch, this.mat4)) return this.copyMat4(_scratch);
         const te = this.mat4.m;
+        if (te[3] == 0 && te[7] == 0 && te[11] == 0 && te[15] == 1) {
+            if (Mat4.invertAffine(this.mat4, this.mat4)) return this;
+        } else if (Mat4.invert(_scratch, this.mat4)) {
+            return this.copyMat4(_scratch);
+        }
         for (let i = 0; i < 16; i++) te[i] = 0;
         return this;
     }
