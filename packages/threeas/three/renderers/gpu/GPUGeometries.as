@@ -2,18 +2,22 @@
 // WebGLGeometries: one vertex buffer per attribute (position, normal, uv;
 // zeros stand in for a missing normal or uv) and an index buffer, uint16
 // when every index fits. Re-uploaded when an attribute's version changes.
+// Kept on the geometry (Disposal), freed by geometry.dispose() or with the
+// geometry.
 
 import { GPUBuffer } from "rive/gpu";
 import { BufferUsage, IndexFormat } from "rive/gpu_enums";
 import { BufferGeometry } from "../../core/BufferGeometry";
 import { BufferAttribute, Uint32BufferAttribute } from "../../core/BufferAttribute";
+import { RendererData } from "../../core/RendererData";
+import { DisposeQueue, DisposeListener, DISPOSED_GEOMETRY, RendererSlot, dataOf, setDataOf, detach } from "./Disposal";
 
 export const LINE_STRIP: i32 = 0;
 export const LINE_LOOP: i32 = 1;
 export const LINE_SEGMENTS: i32 = 2;
 export const LINE_WIREFRAME: i32 = 3;
 
-export class GeometryGPU {
+export class GeometryGPU extends RendererData {
     /// The render (view) it was last brought up to date in.
     frame: i32 = -1;
     position: GPUBuffer? = null;
@@ -58,6 +62,12 @@ export class GeometryGPU {
     lineFormats: StaticArray<IndexFormat> = new StaticArray<IndexFormat>(4);
     lineCounts: StaticArray<i32> = new StaticArray<i32>(4);
     lineStamps: StaticArray<i64> = [-1, -1, -1, -1];
+    /// Its geometry's "dispose" (Disposal).
+    listener: DisposeListener? = null;
+    /// The renderer's morph texture and wide line segments of the geometry
+    /// (GPURenderer's MorphTargetsGPU and WideLineGPU), released with it.
+    morphTargets: RendererData? = null;
+    wideLine: RendererData? = null;
 
     /// Index then weight, 8 floats a vertex.
     interleaveSkin(index: Float32Array, weight: Float32Array, count: i32): Float32Array {
@@ -72,7 +82,15 @@ export class GeometryGPU {
         return out;
     }
 
-    release(): void {
+    override release(): void {
+        detach(this.listener);
+        this.listener = null;
+        const mt = this.morphTargets;
+        if (mt != null) mt.release();
+        this.morphTargets = null;
+        const wl = this.wideLine;
+        if (wl != null) wl.release();
+        this.wideLine = null;
         for (let i = 0; i < 4; i++) {
             releaseBuffer(this.lineBuffers[i]);
             this.lineBuffers[i] = null;
@@ -90,24 +108,36 @@ export class GeometryGPU {
 }
 
 export class GPUGeometries {
-    private map: Map<i32, GeometryGPU> = new Map<i32, GeometryGPU>();
+    private queue: DisposeQueue;
+    private slot: RendererSlot;
+    private _count: i32 = 0;
+
+    constructor(queue: DisposeQueue, slot: RendererSlot) {
+        this.queue = queue;
+        this.slot = slot;
+    }
+
+    /// The geometry's buffers as they are (null when none).
+    peek(geometry: BufferGeometry): GeometryGPU? {
+        const d = dataOf(geometry, this.slot);
+        return d != null ? d as GeometryGPU : null;
+    }
 
     /// The geometry's buffers, uploading what changed. Null when it has no
     /// position attribute. With a `frame` (the renderer's view counter), a
     /// geometry already checked in that view is returned as it is.
     get(geometry: BufferGeometry, frame: i32 = -1): GeometryGPU? {
-        let g: GeometryGPU;
-        const has = this.map.has(geometry.id);
-        if (has && frame >= 0) {
-            g = this.map.get(geometry.id);
-            if (g.frame == frame) return g;
-        }
+        const kept = dataOf(geometry, this.slot);
+        if (kept != null && frame >= 0 && (kept as GeometryGPU).frame == frame) return kept as GeometryGPU;
         const position = geometry.getAttribute("position");
         if (position == null || position.count == 0) return null;
-        if (has) g = this.map.get(geometry.id);
+        let g: GeometryGPU;
+        if (kept != null) g = kept as GeometryGPU;
         else {
             g = new GeometryGPU();
-            this.map.set(geometry.id, g);
+            setDataOf(geometry, this.slot, g);
+            g.listener = new DisposeListener(this.queue, DISPOSED_GEOMETRY, g).attach(geometry);
+            this._count++;
         }
         const vertexCount = position.count;
         const resized = vertexCount != g.vertexCount;
@@ -281,20 +311,22 @@ export class GPUGeometries {
         return true;
     }
 
-    dispose(id: i32): void {
-        if (this.map.has(id)) {
-            this.map.get(id).release();
-            this.map.delete(id);
-        }
+    /// Frees a disposed geometry's buffers.
+    free(g: GeometryGPU): void {
+        if (g.serial != this.slot.serial) return;
+        g.release();
+        g.serial = -1;
+        this._count--;
     }
 
-    /// Geometries with GPU buffers (renderer.info.memory.geometries).
-    get count(): i32 { return this.map.size; }
+    /// Geometries with GPU buffers, not disposed
+    /// (renderer.info.memory.geometries).
+    get count(): i32 { return this._count; }
 
-    disposeAll(): void {
-        const values = this.map.values();
-        for (let i = 0; i < values.length; i++) values[i].release();
-        this.map.clear();
+    /// renderer.dispose(): what is on geometries is left to be collected
+    /// (or released when replaced).
+    reset(): void {
+        this._count = 0;
     }
 }
 

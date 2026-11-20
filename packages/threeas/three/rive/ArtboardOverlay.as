@@ -68,18 +68,35 @@ export class ArtboardObject extends Object3D {
     cameraDistance: f64 = 0;
     /// Whether the last advance reported a change (it redraws either way).
     changed: bool = true;
+    /// Whether dispose() ran: the overlay renderer skips it.
+    disposed: bool = false;
+    // Whether it made the instance (and releases it on dispose).
+    private ownsArtboard: bool;
 
     /// Instances `artboard` (pass `instance = false` to use it as it is).
     constructor(artboard: Artboard, instance: bool = true) {
         super();
         this.artboard = instance ? artboard.instance() : artboard;
+        this.ownsArtboard = instance;
         this.artboard.advance(0);
     }
 
     /// Advances the artboard and its state machine.
     advance(seconds: f64): bool {
+        if (this.disposed) return false;
         this.changed = this.artboard.advance(seconds);
         return this.changed;
+    }
+
+    /// Releases the artboard instance it made (not one passed with
+    /// `instance = false`); the overlay renderer no longer draws, advances
+    /// or forwards events to it. Rive-only: a CSS object's element is the
+    /// page's to remove. Remove it from the scene as well.
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.onScreen = false;
+        if (this.ownsArtboard) this.artboard.release();
     }
 
     /// The artboard point under layout point (x, y), or null when the
@@ -94,6 +111,7 @@ export class ArtboardObject extends Object3D {
 
     /// Whether layout point (x, y) falls inside the artboard's bounds.
     contains(x: f64, y: f64): bool {
+        if (this.disposed) return false;
         const p = this.artboardPoint(x, y);
         if (p == null) return false;
         const b = this.artboard.bounds();
@@ -345,6 +363,7 @@ export class ArtboardOverlayRenderer {
 }
 
 function forward(o: ArtboardObject, event: PointerEvent, kind: i32): f64 {
+    if (o.disposed) return 0;
     const p = o.artboardPoint(<f64>event.position.x, <f64>event.position.y);
     if (p == null) return 0;
     const v = Vector.xy(<f32>p.x, <f32>p.y);
@@ -360,7 +379,9 @@ function forward(o: ArtboardObject, event: PointerEvent, kind: i32): f64 {
 // closures for traverseVisible).
 function collect(o: Object3D, camera: Camera, out: Array<ArtboardObject>): void {
     if (!o.visible) return;
-    if (o instanceof ArtboardObject && o.layers.test(camera.layers)) out.push(o as ArtboardObject);
+    if (o instanceof ArtboardObject && o.layers.test(camera.layers) && !(o as ArtboardObject).disposed) {
+        out.push(o as ArtboardObject);
+    }
     const children = o.children;
     for (let i = 0; i < children.length; i++) collect(children[i], camera, out);
 }

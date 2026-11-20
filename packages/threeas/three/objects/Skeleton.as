@@ -1,6 +1,7 @@
 // three.js Bone and Skeleton.
 
 import { Object3D } from "../core/Object3D";
+import { Event, EventDispatcher } from "../core/EventDispatcher";
 import { Matrix4 } from "../math/Matrix4";
 import { MathUtils } from "../math/MathUtils";
 import { Dynamic } from "rive/dynamic";
@@ -28,7 +29,7 @@ export class Bone extends Object3D {
 /// The bones deforming a SkinnedMesh, with the inverse of each bone's
 /// world transform at bind time. `boneMatrices` (bone.matrixWorld x
 /// boneInverse, 16 floats per bone) is refreshed by update().
-export class Skeleton {
+export class Skeleton extends EventDispatcher {
     bones: Array<Bone>;
     boneInverses: Array<Matrix4>;
     boneMatrices: Float32Array;
@@ -37,6 +38,7 @@ export class Skeleton {
     private _uuid: string = "";
 
     constructor(bones: Array<Bone> = [], boneInverses: Array<Matrix4> = []) {
+        super();
         this.bones = bones;
         this.boneInverses = boneInverses;
         this.boneMatrices = new Float32Array(bones.length * 16);
@@ -145,7 +147,12 @@ export class Skeleton {
         return new Skeleton(this.bones.slice(), inverses);
     }
 
-    dispose(): void {}
+    /// Frees the renderers' bone storage of the meshes it skins (three.js
+    /// frees its bone texture) at their next render: dispatches "dispose".
+    /// The meshes still draw; their bones are uploaded again.
+    dispose(): void {
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
+    }
 }
 
 const _offset: Matrix4 = new Matrix4();

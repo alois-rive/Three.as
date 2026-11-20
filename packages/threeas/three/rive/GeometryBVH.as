@@ -15,6 +15,12 @@
 // meshes with morph influences do not use one (their triangles move), nor
 // do draw ranges that do not start on a triangle. Hits come out in the
 // tree's order, not the index order (Raycaster sorts them anyway).
+//
+// Trees live in a table by geometry id (three-mesh-bvh keeps one on
+// `geometry.boundsTree`; scripts have no weak references): geometry.dispose()
+// or GeometryBVH.dispose(geometry) drops one, and past `GeometryBVH.maxTrees`
+// the least recently used goes, so geometries dropped without dispose()
+// cannot pile up (a raycast of an evicted one builds it again).
 
 import { Job, Jobs } from "rive/jobs";
 import { BufferGeometry } from "../core/BufferGeometry";
@@ -151,19 +157,46 @@ export class BVHData {
 }
 
 const _trees: Map<i32, GeometryBVH> = new Map<i32, GeometryBVH>();
+// The same trees, for eviction.
+const _treeList: Array<GeometryBVH> = [];
+// Bumped by every lookup: a tree's lastUsed orders evictions.
+let _clock: i32 = 0;
 let _stack: Int32Array = new Int32Array(128);
 
 class Disposer extends EventListener {
-    id: i32;
-    constructor(id: i32) {
+    tree: GeometryBVH;
+    constructor(tree: GeometryBVH) {
         super();
-        this.id = id;
+        this.tree = tree;
     }
     override handleEvent(event: Event): void {
-        if (!_trees.has(this.id)) return;
-        const tree = _trees.get(this.id);
-        _trees.delete(this.id);
-        tree.release();
+        forget(this.tree);
+    }
+}
+
+// Drops `tree` from the table, its dispose listener from its geometry, and
+// its data.
+function forget(tree: GeometryBVH): void {
+    const id = tree.geometryId;
+    if (_trees.has(id) && _trees.get(id) === tree) _trees.delete(id);
+    const i = _treeList.indexOf(tree);
+    if (i >= 0) _treeList.splice(i, 1);
+    const geometry = tree.geometry;
+    const disposer = tree.disposer;
+    if (geometry != null && disposer != null) geometry.removeEventListener("dispose", disposer);
+    tree.geometry = null;
+    tree.disposer = null;
+    tree.release();
+}
+
+// Makes room for one more tree: the least recently used ones go.
+function evict(): void {
+    while (_treeList.length > 0 && _treeList.length >= GeometryBVH.maxTrees) {
+        let oldest = 0;
+        for (let i = 1; i < _treeList.length; i++) {
+            if (_treeList[i].lastUsed < _treeList[oldest].lastUsed) oldest = i;
+        }
+        forget(_treeList[oldest]);
     }
 }
 
@@ -171,6 +204,11 @@ export class GeometryBVH {
     /// Geometries with at least this many triangles get a tree on their
     /// first raycast.
     static readonly AUTO_TRIANGLES: i32 = 4096;
+    /// Trees kept at most (the least recently used goes first).
+    static maxTrees: i32 = 64;
+
+    /// How many trees are kept (built or building).
+    static count(): i32 { return _treeList.length; }
 
     /// The tree, once built (null while its job runs).
     data: BVHData? = null;
@@ -182,6 +220,12 @@ export class GeometryBVH {
     private indexVersion: i32 = -1;
     // Candidates of the last query (triangle starts).
     private found: Int32Array = new Int32Array(256);
+    // The geometry it was built for, while in the table, and its dispose
+    // listener.
+    geometryId: i32 = -1;
+    geometry: BufferGeometry? = null;
+    disposer: Disposer? = null;
+    lastUsed: i32 = 0;
 
     /// Starts building `geometry`'s tree in a job, unless one is built or
     /// building for its current attributes.
@@ -210,7 +254,7 @@ export class GeometryBVH {
     /// Drops `geometry`'s tree (geometry.dispose() does too); the next
     /// raycast of a big geometry starts another.
     static dispose(geometry: BufferGeometry): void {
-        if (_trees.has(geometry.id)) _trees.get(geometry.id).release();
+        if (_trees.has(geometry.id)) forget(_trees.get(geometry.id));
     }
 
     /// For raycasts (`count`: the index or vertex count): the tree of a
@@ -229,10 +273,17 @@ export class GeometryBVH {
             tree = _trees.get(geometry.id);
         } else {
             if (!start) return null;
+            evict();
             tree = new GeometryBVH();
+            tree.geometryId = geometry.id;
+            tree.geometry = geometry;
+            const disposer = new Disposer(tree);
+            tree.disposer = disposer;
             _trees.set(geometry.id, tree);
-            geometry.addEventListener("dispose", new Disposer(geometry.id));
+            _treeList.push(tree);
+            geometry.addEventListener("dispose", disposer);
         }
+        tree.lastUsed = ++_clock;
         // (A build here replaces a job still running.)
         if (!tree.current(geometry) || (now && !tree.poll())) {
             if (!start) return null;

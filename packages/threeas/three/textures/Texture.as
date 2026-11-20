@@ -27,9 +27,6 @@ import {
 
 let _textureId: i32 = 0;
 
-/// Textures disposed since the renderer last looked (ids). Internal.
-export const disposedTextures: Array<i32> = [];
-
 export class Texture extends ColorOrTexture {
     readonly isTexture: bool = true;
     id: i32;
@@ -188,6 +185,9 @@ export class Texture extends ColorOrTexture {
         if (image == null || image.width == 0 || image.height == 0) return null;
         if (this.cachedView == null || this.cachedFor !== image
                 || this.cachedW != image.width || this.cachedH != image.height) {
+            // (Bind groups made over the old view hold it while they live.)
+            const old = this.cachedView;
+            if (old != null) old.release();
             this.cachedView = image.view();
             this.cachedFor = image;
             this.cachedW = image.width;
@@ -196,9 +196,9 @@ export class Texture extends ColorOrTexture {
         return this.cachedView;
     }
 
-    /// Frees GPU resources the renderer made for this texture.
+    /// Frees GPU resources the renderers made for this texture (at their
+    /// next render): dispatches "dispose", as three.js.
     dispose(): void {
-        disposedTextures.push(this.id);
         if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }

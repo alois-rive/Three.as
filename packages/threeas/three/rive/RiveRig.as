@@ -101,11 +101,29 @@ export class RiveRig {
     /// Loop the played timeline (else it holds its last frame).
     loop: bool = true;
     private animationName: string = "";
+    // Whether it made the instance (and releases it on dispose).
+    private ownsArtboard: bool;
+    /// Whether dispose() ran: advance and apply do nothing.
+    disposed: bool = false;
 
     /// Instances `artboard` (pass `instance = false` to read it as it is).
     constructor(artboard: Artboard, instance: bool = true) {
         this.artboard = instance ? artboard.instance() : artboard;
+        this.ownsArtboard = instance;
         this.artboard.advance(0);
+    }
+
+    /// Forgets the mappings and releases the played timeline and the
+    /// artboard instance it made (not one passed with `instance = false`).
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        const a = this.animation;
+        if (a != null) a.release();
+        this.animation = null;
+        this.animationName = "";
+        this.mappings.length = 0;
+        if (this.ownsArtboard) this.artboard.release();
     }
 
     /// Maps Rive node `name` onto `object`; false when the artboard has no
@@ -142,6 +160,7 @@ export class RiveRig {
     /// default state machine, which would pose it over the timeline).
     /// Returns false when there is no such timeline.
     play(name: string): bool {
+        if (this.disposed) return false;
         const a = this.artboard.animation(name);
         if (a == null) return false;
         this.animation = a;
@@ -162,6 +181,7 @@ export class RiveRig {
     /// `seconds`, then poses the mapped objects. Returns what the artboard's
     /// advance returns.
     advance(seconds: f64): bool {
+        if (this.disposed) return false;
         const a = this.animation;
         let changed: bool;
         if (a != null) {
@@ -211,6 +231,7 @@ export class RiveRig {
     /// after the object, which needs a name the mixer can find). The rig is
     /// left posed as before. Null when there is no such timeline.
     bake(name: string, fps: f64 = 30, clipName: string = ""): AnimationClip? {
+        if (this.disposed) return null;
         const a = this.artboard.animation(name);
         if (a == null) return null;
         const duration = a.duration;
@@ -261,6 +282,7 @@ export class RiveRig {
         const playing = this.animation;
         if (playing != null) playing.setTime(this.time);
         this.artboard.advance(0);
+        a.release();
         return new AnimationClip(clipName.length > 0 ? clipName : name, duration, tracks).optimize();
     }
 
@@ -268,6 +290,7 @@ export class RiveRig {
     /// (Rive units times `unitsPerPixel`, y flipped), for placing objects
     /// on a node without a mapping.
     worldPosition(name: string, target: Vector3): Vector3? {
+        if (this.disposed) return null;
         const node = this.artboard.node(name);
         if (node == null) return null;
         const w: Mat2D = node.worldTransform();

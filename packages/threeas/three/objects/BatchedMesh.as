@@ -21,6 +21,7 @@ import { Box3 } from "../math/Box3";
 import { Sphere } from "../math/Sphere";
 import { Vector3 } from "../math/Vector3";
 import { Object3D } from "../core/Object3D";
+import { Event } from "../core/EventDispatcher";
 import { Raycaster, Intersection } from "../core/Raycaster";
 import { raycastMesh, raycastAnyHit } from "./raycasting";
 
@@ -293,6 +294,15 @@ export class BatchedMesh extends Mesh {
         const s = this.boundingSphere != null ? this.boundingSphere! : new Sphere();
         this.boundingBox!.getBoundingSphere(s);
         this.boundingSphere = s;
+    }
+
+    /// Disposes its geometry (which it made) and, dispatching "dispose", the
+    /// renderers' instance buffers for it, at their next render (three.js
+    /// disposes its geometry and its matrix and colour textures).
+    dispose(): BatchedMesh {
+        this.geometry.dispose();
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
+        return this;
     }
 
     /// Compacts the shared buffers after deletions (three.js's optimize).

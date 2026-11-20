@@ -226,7 +226,14 @@ async function loadInJob(loader: DRACOLoader, url: string): Promise<BufferGeomet
 }
 
 async function decodeInJob(loader: DRACOLoader, buffer: ArrayBuffer, taskConfig: DRACOTaskConfig): Promise<BufferGeometry> {
-    const data = await Jobs.run(decodeDraco, buffer, taskConfig).promise();
+    const job = Jobs.run(decodeDraco, buffer, taskConfig);
+    const settled = await job.promise().settled();
+    job.release();   // the decoded value outlives the handle
+    if (!settled.ok) {
+        loader.error = settled.error;
+        return await Promise.reject<BufferGeometry>(settled.error);
+    }
+    const data = settled.value;
     if (data.error.length > 0) {
         loader.error = data.error;
         return await Promise.reject<BufferGeometry>(data.error);

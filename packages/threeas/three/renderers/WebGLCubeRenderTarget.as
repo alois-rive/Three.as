@@ -5,9 +5,10 @@
 
 import { RenderTarget, RenderTargetOptions } from "./RenderTarget";
 import { CubeTexture } from "../textures/CubeTexture";
+import { Event, EventDispatcher } from "../core/EventDispatcher";
 import { HalfFloatType, LinearMipmapLinearFilter, NoColorSpace } from "../constants";
 
-export class WebGLCubeRenderTarget {
+export class WebGLCubeRenderTarget extends EventDispatcher {
     readonly isWebGLCubeRenderTarget: bool = true;
     width: u32;
     height: u32;
@@ -15,6 +16,7 @@ export class WebGLCubeRenderTarget {
     texture: CubeTexture = new CubeTexture();
 
     constructor(size: u32 = 1, options: RenderTargetOptions? = null) {
+        super();
         this.width = size;
         this.height = size;
         let o = options;
@@ -43,8 +45,12 @@ export class WebGLCubeRenderTarget {
         this.texture.version++;
     }
 
+    /// Disposes its faces and its cube texture (the renderers' equirect
+    /// conversion, mip chain and PMREM of it), as three.js.
     dispose(): void {
         for (let i = 0; i < 6; i++) this.faces[i].dispose();
+        this.texture.dispose();
+        if (this.hasListeners("dispose")) this.dispatchEvent(new Event("dispose"));
     }
 }
 

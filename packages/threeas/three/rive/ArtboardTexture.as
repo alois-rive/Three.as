@@ -14,7 +14,9 @@
 // The canvas is redrawn on the frame after an advance that reported a
 // change (or `needsUpdate = true`), not every frame: a still artboard
 // costs nothing. `artboard` is the instance: read its nodes, bind its view
-// model (`artboard.data()`) or forward pointer events to it.
+// model (`artboard.data()`) or forward pointer events to it. `dispose()`
+// releases the canvas and the instance it made (not an artboard passed
+// with `instance = false`); the texture draws nothing afterwards.
 
 import { Context } from "rive/host";
 import { Artboard } from "rive/artboard";
@@ -44,6 +46,11 @@ export class ArtboardTexture extends Texture {
     private canvas: Canvas? = null;
     private drawnVersion: i32 = -1;
     private counted: bool = true;
+    // Whether it made the instance (and releases it on dispose).
+    private ownsArtboard: bool;
+    /// Whether dispose() ran: the artboard may be released, nothing draws,
+    /// advances or takes pointer events.
+    disposed: bool = false;
 
     /// How many ArtboardTextures exist (made and not disposed): with none,
     /// ThreeLayout does no pointer picking at all.
@@ -54,6 +61,7 @@ export class ArtboardTexture extends Texture {
     constructor(artboard: Artboard, width: u32 = 0, height: u32 = 0, instance: bool = true) {
         super(null);
         this.artboard = instance ? artboard.instance() : artboard;
+        this.ownsArtboard = instance;
         this.requestedWidth = width;
         this.requestedHeight = height;
         this.premultiplyAlpha = true;
@@ -65,6 +73,7 @@ export class ArtboardTexture extends Texture {
     /// Advances the artboard (and its state machine) by `seconds`. Returns
     /// what Artboard.advance returns: true while it keeps changing.
     advance(seconds: f64): bool {
+        if (this.disposed) return false;
         const changed = this.artboard.advance(seconds);
         if (changed) this.version++;
         return changed;
@@ -85,6 +94,7 @@ export class ArtboardTexture extends Texture {
     }
 
     private forward(kind: i32, uv: Vector2, id: f64): bool {
+        if (this.disposed) return false;
         const p = this.artboardPoint(uv);
         const types: StaticArray<string> = ["down", "move", "up", "exit"];
         const event = new PointerEvent(id, p, p, types[kind]);
@@ -99,12 +109,14 @@ export class ArtboardTexture extends Texture {
 
     override get width(): u32 {
         if (this.requestedWidth > 0) return this.requestedWidth;
+        if (this.disposed) return 1;
         const b = this.artboard.bounds();
         return <u32>Math.max(1, Math.ceil(<f64>(b.v1.x - b.v0.x)));
     }
 
     override get height(): u32 {
         if (this.requestedHeight > 0) return this.requestedHeight;
+        if (this.disposed) return 1;
         const b = this.artboard.bounds();
         return <u32>Math.max(1, Math.ceil(<f64>(b.v1.y - b.v0.y)));
     }
@@ -117,6 +129,7 @@ export class ArtboardTexture extends Texture {
     }
 
     override update(context: Context): void {
+        if (this.disposed) return;
         const w = this.width, h = this.height;
         let canvas = this.canvas;
         if (canvas == null) {
@@ -144,6 +157,9 @@ export class ArtboardTexture extends Texture {
         this.drawnVersion = this.version;
     }
 
+    /// Releases the canvas and, when it made it, the artboard instance
+    /// (Rive-only: three.js's dispose frees GPU memory only). Calling it
+    /// again only queues the texture again.
     override dispose(): void {
         const canvas = this.canvas;
         if (canvas != null) canvas.release();
@@ -151,6 +167,8 @@ export class ArtboardTexture extends Texture {
         this.image = null;
         if (this.counted) _live--;
         this.counted = false;
+        if (!this.disposed && this.ownsArtboard) this.artboard.release();
+        this.disposed = true;
         super.dispose();
     }
 }

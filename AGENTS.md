@@ -140,6 +140,12 @@ engine edit shows in the gallery without publishing:
   attribute instead (as three.wgsl's `vs_morph_instanced` does).
   `tools/check_glsl.py` fails on any plain uniform in the GLSL.
 - Write `T?`, never `T | null` (a union is a compile error in parameters).
+- Renderer state for an object, material, geometry, texture, skeleton or
+  render target lives on it (`_gpu`, a `core/RendererData` per renderer
+  index; `renderers/gpu/Disposal.as`), as three.js's WeakMaps: no renderer
+  `Map` keyed by their ids, which would keep dropped objects' GPU handles.
+  Free it at once from their "dispose" event (a listener queued for the
+  next render); only pooled indices (uniform arena slots) are swept.
 
 - A new example is a folder `packages/gallery/examples/<name>/` with
   `<name>.as` and `<name>.rml` (its artboard with `isComponent="true"`, so

@@ -7,19 +7,23 @@ import {
     MaterialUniforms, ROLE_TRANSMISSION, ROLE_THICKNESS, ROLE_LIGHT, ROLE_BUMP, ROLE_DISPLACEMENT, SLOT_ENV,
 } from "../three/materials/MaterialUniforms";
 import { Texture } from "../three/textures/Texture";
-import { disposedMaterials } from "../three/materials/Material";
+import { Event, EventListener } from "../three/core/EventDispatcher";
 import { AddOperation, ObjectSpaceNormalMap } from "../three/constants";
+
+class CountDisposes extends EventListener {
+    count: i32 = 0;
+    override handleEvent(event: Event): void { this.count++; }
+}
 
 export class MaterialTests extends Tests {
     override run(): void {
         group("Material.dispose", () => {
-            test("queues the material for the renderer to free", (expect) => {
+            test("dispatches dispose for the renderers to free their state", (expect) => {
                 const m = new MeshLambertMaterial();
-                const before = disposedMaterials.length;
+                const l = new CountDisposes();
+                m.addEventListener("dispose", l);
                 m.dispose();
-                expect.that(disposedMaterials.length).is(before + 1);
-                expect.that(disposedMaterials[disposedMaterials.length - 1]).is(m.id);
-                disposedMaterials.pop();
+                expect.that(l.count).is(1);
             });
         });
         group("MeshPhysicalMaterial", () => {

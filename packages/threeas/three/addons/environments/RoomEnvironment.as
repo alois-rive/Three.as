@@ -4,6 +4,8 @@
 
 import { Scene } from "../../scenes/Scene";
 import { BoxGeometry } from "../../geometries/BoxGeometry";
+import { BufferGeometry } from "../../core/BufferGeometry";
+import { Material } from "../../materials/Material";
 import { MeshStandardMaterial } from "../../materials/MeshStandardMaterial";
 import { MeshBasicMaterial } from "../../materials/MeshBasicMaterial";
 import { Mesh } from "../../objects/Mesh";
@@ -40,6 +42,21 @@ export class RoomEnvironment extends Scene {
         this.light(geometry, 43, -0.462, 8.89, 14.520, 4.38, 5.441, 0.088);    // +z
         this.light(geometry, 20, 3.235, 11.486, -12.541, 2.5, 2.0, 0.1);       // -z
         this.light(geometry, 100, 0.0, 20.0, 0.0, 1.0, 0.1, 1.0);              // +y
+    }
+
+    /// Disposes the geometry and materials of its meshes (three.js).
+    dispose(): void {
+        const geometries: Array<BufferGeometry> = [];
+        const materials: Array<Material> = [];
+        for (let i = 0; i < this.children.length; i++) {
+            const child = this.children[i];
+            if (!(child instanceof Mesh)) continue;
+            const mesh = child as Mesh;
+            if (geometries.indexOf(mesh.geometry) < 0) geometries.push(mesh.geometry);
+            if (materials.indexOf(mesh.material) < 0) materials.push(mesh.material);
+        }
+        for (let i = 0; i < geometries.length; i++) geometries[i].dispose();
+        for (let i = 0; i < materials.length; i++) materials[i].dispose();
     }
 
     private box(geometry: BoxGeometry, material: MeshStandardMaterial, x: f64, y: f64, z: f64, ry: f64,

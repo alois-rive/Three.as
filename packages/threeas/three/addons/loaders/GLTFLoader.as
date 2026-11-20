@@ -291,7 +291,13 @@ async function parseInJob(loader: GLTFLoader, data: ArrayBuffer, base: string): 
     }
     const draco = loader.dracoLoader != null;
     const job = Jobs.run(decodeGLTF, data, loader.meshoptDecoder != null, externalBuffers, externalIndices, draco);
-    const decoded = await job.promise();
+    const settledJob = await job.promise().settled();
+    job.release();   // the decoded value outlives the handle
+    if (!settledJob.ok) {
+        loader.error = settledJob.error;
+        return await Promise.reject<GLTF>(settledJob.error);
+    }
+    const decoded = settledJob.value;
     if (decoded.error.length > 0) {
         loader.error = decoded.error;
         return await Promise.reject<GLTF>(decoded.error);
