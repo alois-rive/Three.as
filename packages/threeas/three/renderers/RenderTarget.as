@@ -21,7 +21,10 @@ import { Texture } from "../textures/Texture";
 import { DepthTexture } from "../textures/DepthTexture";
 import { Vector4 } from "../math/Vector4";
 import { Event, EventDispatcher } from "../core/EventDispatcher";
-import { LinearFilter, SRGBColorSpace, NoColorSpace, UnsignedByteType } from "../constants";
+import { isFloat32 } from "../textures/DataUpload";
+import {
+    ClampToEdgeWrapping, LinearFilter, SRGBColorSpace, NoColorSpace, UnsignedByteType,
+} from "../constants";
 
 let _rtId: i32 = 0;
 
@@ -35,6 +38,16 @@ export class RenderTargetOptions {
     /// linear HDR colour in an rgba16float texture (no tone mapping or sRGB
     /// encoding when rendered into), as post-processing wants.
     type: i32 = UnsignedByteType;
+    /// "RGBA32F" with FloatType: an rgba32float texture where the device
+    /// renders into 32-bit floats (`colorBufferFloat`), rgba16float
+    /// elsewhere. Sample it nearest or with textureLoad (WebGPU does not
+    /// filter 32-bit floats); it does not blend, multisample or copy.
+    internalFormat: string? = null;
+    /// The textures' wrapping and filters, as three.js's options.
+    wrapS: i32 = ClampToEdgeWrapping;
+    wrapT: i32 = ClampToEdgeWrapping;
+    magFilter: i32 = LinearFilter;
+    minFilter: i32 = LinearFilter;
     /// Colour attachments (1 to 4): `textures` has one texture each.
     count: i32 = 1;
     /// Renders keep their depth in it, for shaders to read.
@@ -153,6 +166,12 @@ export class RenderTarget extends EventDispatcher {
         }
         for (let i = 0; i < count; i++) {
             const t = this.textures[i];
+            t.type = o.type;
+            t.internalFormat = o.internalFormat;
+            t.wrapS = o.wrapS;
+            t.wrapT = o.wrapT;
+            t.magFilter = o.magFilter;
+            t.minFilter = o.minFilter;
             if (o.type != UnsignedByteType) t.colorSpace = NoColorSpace;
             t.generateMipmaps = o.generateMipmaps;
             t.pixelWidth = width;
@@ -172,6 +191,12 @@ export class RenderTarget extends EventDispatcher {
         o.type = this.type;
         o.count = this.textures.length;
         o.generateMipmaps = this.texture.generateMipmaps;
+        const t = this.texture;
+        o.internalFormat = t.internalFormat;
+        o.wrapS = t.wrapS;
+        o.wrapT = t.wrapT;
+        o.magFilter = t.magFilter;
+        o.minFilter = t.minFilter;
         const d = this.depthTexture;
         if (d != null) o.depthTexture = new DepthTexture(this.width, this.height, d.type, d.format);
         return new RenderTarget(this.width, this.height, o);
@@ -202,9 +227,21 @@ export class RenderTarget extends EventDispatcher {
     /// Whether it holds linear HDR colour.
     get isHDR(): bool { return this.type != UnsignedByteType; }
 
-    /// The HDR texture behind the target (made on first use; internal).
-    ensureHDR(): GPUTextureView? {
-        return this.texture.ensureOwn(<u32>TextureFormat.rgba16float);
+    /// Whether it is a FloatType target whose texture asks for 32-bit
+    /// floats ("RGBA32F").
+    get wantsFloat32(): bool { return isFloat32(this.type, this.texture.internalFormat); }
+
+    /// The GPU format of an HDR target: rgba32float when it wantsFloat32
+    /// and the device renders 32-bit floats (`float32`:
+    /// `features().colorBufferFloat`), else rgba16float.
+    hdrFormat(float32: bool): u32 {
+        return float32 && this.wantsFloat32 ? <u32>TextureFormat.rgba32float : <u32>TextureFormat.rgba16float;
+    }
+
+    /// The HDR texture behind the target (made on first use, in `format`;
+    /// internal).
+    ensureHDR(format: u32 = <u32>TextureFormat.rgba16float): GPUTextureView? {
+        return this.texture.ensureOwn(format);
     }
 
     /// The canvas behind the target (made on first use; internal).

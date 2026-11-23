@@ -1121,7 +1121,12 @@ repository commits the gallery unbaked.
   (HalfFloatType) or a Float32Array (FloatType). Formats: RGBAFormat,
   RGBFormat (widened to RGBA), RGFormat, RedFormat. **FloatType uploads as
   half floats** (rgba16float; 32-bit float filtering is optional in
-  WebGPU). `toHalf` / `fromHalf` convert (three.js's DataUtils).
+  WebGPU), unless `internalFormat` (three.js's GL format override, only
+  its 32-bit float values are read) is "RGBA32F", "RGB32F", "RG32F" or
+  "R32F": then the texels upload as they are (rgba32float, rg32float,
+  r32float), for shaders that read them with `textureLoad` or a nearest
+  sampler (GPUComputationRenderer's initial values). `toHalf` / `fromHalf`
+  convert (three.js's DataUtils).
 - `DataArrayTexture` / `Data3DTexture` (same data rules) are for
   ShaderMaterials declaring `texture_2d_array<f32>` / `texture_3d<f32>`;
   built-in materials do not read them; `addLayerUpdate` is not ported.
@@ -1203,7 +1208,14 @@ repository commits the gallery unbaked.
   with `Renderer.drawImage`. `HalfFloatType` / `FloatType` targets are an
   rgba16float texture (FloatType too) holding **linear, not tone-mapped**
   colour, as three.js's renderer writes into float targets; they have no
-  `image`. Materials skip tone mapping and sRGB encoding into them.
+  `image`. Materials skip tone mapping and sRGB encoding into them. A
+  FloatType target with `internalFormat: "RGBA32F"` is rgba32float where
+  the device renders 32-bit floats (`features().colorBufferFloat`, checked
+  at each render; rgba16float elsewhere): read it with `textureLoad` or a
+  nearest sampler; it does not blend (draws into it replace), multisample
+  or take `copyFramebufferToTexture` / `copyTextureToTexture`. The options
+  also take three.js's `wrapS`, `wrapT`, `minFilter`, `magFilter`, set on
+  every texture (`texture.type` is the target's type, as three.js).
 - `EffectComposer`, `RenderPass`, `ShaderPass`, `OutputPass`, `FXAAPass`
   and `UnrealBloomPass` are in `three/addons/postprocessing/` (not
   `Three.as`). The composer's buffers are HalfFloatType; put an
