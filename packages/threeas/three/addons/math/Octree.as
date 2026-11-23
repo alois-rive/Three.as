@@ -208,12 +208,21 @@ export class Octree {
             }
         }
 
-        // three.js pops the triangles: last first.
+        // three.js pops the triangles: last first. The triangle's bounds
+        // are tested first (Box3.intersectsTriangle's box axes, without its
+        // nine cross products), which rejects most of the eight cells.
         const triangles = this.triangles;
         for (let t = triangles.length - 1; t >= 0; t--) {
             const triangle = triangles[t];
+            const a = triangle.a, b = triangle.b, c = triangle.c;
+            const minX = min3(a.x, b.x, c.x), maxX = max3(a.x, b.x, c.x);
+            const minY = min3(a.y, b.y, c.y), maxY = max3(a.y, b.y, c.y);
+            const minZ = min3(a.z, b.z, c.z), maxZ = max3(a.z, b.z, c.z);
             for (let i = 0; i < subTrees.length; i++) {
-                if (subTrees[i].box!.intersectsTriangle(triangle)) {
+                const box = subTrees[i].box!;
+                if (maxX < box.min.x || minX > box.max.x || maxY < box.min.y || minY > box.max.y
+                        || maxZ < box.min.z || minZ > box.max.z) continue;
+                if (box.intersectsTriangle(triangle)) {
                     subTrees[i].triangles.push(triangle);
                 }
             }

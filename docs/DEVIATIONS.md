@@ -1560,10 +1560,13 @@ differs:
   makes a `toNonIndexed()` copy, not ported): the same triangles in the
   same order. As three.js it takes every `Mesh` (subclasses included, an
   InstancedMesh's geometry once, at its own matrix), visible or not, that
-  shares a layer with `octree.layers`. It runs in one call: about
-  N ms for the gallery level (see PLAN M20; a script's `init` and each
-  frame have a ~200 ms budget headless), so build large worlds over
-  several frames with `addTriangle` and one `build()`.
+  shares a layer with `octree.layers`. It runs in one call: 50 ms
+  interpreted, 3.4 ms AOT for GamesFps's level (37 meshes, about 650
+  triangles); a script's `init` and each frame have a ~200 ms budget
+  headless, so for a much larger world, `addTriangle` its triangles over
+  several frames and `build()` once (`build` itself is not incremental).
+  `split` tests a triangle's bounds against a cell before
+  `Box3.intersectsTriangle` (a shortcut, same cells).
 - Capsule's `checkAABBAxis` is a module function, as in three.js (not a
   method). `OctreeHelper(octree, color = 0xffff00)` takes a hex number;
   `color` is kept as three.js (the material is made with it once).

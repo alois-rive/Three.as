@@ -174,15 +174,17 @@ export class Box3 {
         _f0.subVectors(_v1, _v0);
         _f1.subVectors(_v2, _v1);
         _f2.subVectors(_v0, _v2);
-        const axes: Array<f64> = [
-            0, -_f0.z, _f0.y, 0, -_f1.z, _f1.y, 0, -_f2.z, _f2.y,
-            _f0.z, 0, -_f0.x, _f1.z, 0, -_f1.x, _f2.z, 0, -_f2.x,
-            -_f0.y, _f0.x, 0, -_f1.y, _f1.x, 0, -_f2.y, _f2.x, 0,
-        ];
-        if (!satForAxes(axes, _v0, _v1, _v2, _extents)) return false;
-        if (!satForAxes([1, 0, 0, 0, 1, 0, 0, 0, 1], _v0, _v1, _v2, _extents)) return false;
+        // three.js's axes arrays, one axis at a time (no arrays to allocate:
+        // Octree.split calls this for every triangle and cell).
+        // The nine cross products of the box's axes and the edges:
+        if (!satAxis(0, -_f0.z, _f0.y) || !satAxis(0, -_f1.z, _f1.y) || !satAxis(0, -_f2.z, _f2.y)) return false;
+        if (!satAxis(_f0.z, 0, -_f0.x) || !satAxis(_f1.z, 0, -_f1.x) || !satAxis(_f2.z, 0, -_f2.x)) return false;
+        if (!satAxis(-_f0.y, _f0.x, 0) || !satAxis(-_f1.y, _f1.x, 0) || !satAxis(-_f2.y, _f2.x, 0)) return false;
+        // The box's axes:
+        if (!satAxis(1, 0, 0) || !satAxis(0, 1, 0) || !satAxis(0, 0, 1)) return false;
+        // The triangle's normal:
         _normal.crossVectors(_f0, _f1);
-        return satForAxes([_normal.x, _normal.y, _normal.z], _v0, _v1, _v2, _extents);
+        return satAxis(_normal.x, _normal.y, _normal.z);
     }
 
     clampPoint(point: Vector3, target: Vector3): Vector3 {
@@ -239,14 +241,13 @@ export class Box3 {
     equals(box: Box3): bool { return box.min.equals(this.min) && box.max.equals(this.max); }
 }
 
-function satForAxes(axes: Array<f64>, v0: Vector3, v1: Vector3, v2: Vector3, extents: Vector3): bool {
-    for (let i = 0, j = axes.length - 3; i <= j; i += 3) {
-        _testAxis.fromArray(axes, i);
-        const r = extents.x * Math.abs(_testAxis.x) + extents.y * Math.abs(_testAxis.y) + extents.z * Math.abs(_testAxis.z);
-        const p0 = v0.dot(_testAxis), p1 = v1.dot(_testAxis), p2 = v2.dot(_testAxis);
-        if (Math.max(-Math.max(p0, Math.max(p1, p2)), Math.min(p0, Math.min(p1, p2))) > r) return false;
-    }
-    return true;
+// three.js's satForAxes for one axis, on intersectsTriangle's _v0, _v1,
+// _v2 and _extents.
+function satAxis(x: f64, y: f64, z: f64): bool {
+    _testAxis.set(x, y, z);
+    const r = _extents.x * Math.abs(_testAxis.x) + _extents.y * Math.abs(_testAxis.y) + _extents.z * Math.abs(_testAxis.z);
+    const p0 = _v0.dot(_testAxis), p1 = _v1.dot(_testAxis), p2 = _v2.dot(_testAxis);
+    return !(Math.max(-Math.max(p0, Math.max(p1, p2)), Math.min(p0, Math.min(p1, p2))) > r);
 }
 
 const _v: Vector3 = new Vector3();

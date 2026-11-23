@@ -49,6 +49,21 @@ function walk(tree: Octree, depth: i32, w: Walk): void {
 export class OctreeTests extends Tests {
     override run(): void {
         group("octree", () => {
+            test("Box3.intersectsTriangle (the split's test)", (expect) => {
+                const b = new THREE.Box3(v(0, 0, 0), v(1, 1, 1));
+                // Inside, through, touching a face.
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(0.2, 0.2, 0.2), v(0.8, 0.2, 0.2), v(0.2, 0.8, 0.2)))).is(true);
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(-5, 0.5, -5), v(-5, 0.5, 5), v(5, 0.5, 0)))).is(true);
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(0, 1, 0), v(0, 1, 1), v(1, 1, 0)))).is(true);
+                // Beside (a box axis), beyond the corner (the normal), cutting
+                // the corner, and a wall past the corner (the normal).
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(1.1, 0, 0), v(2, 0, 0), v(2, 1, 0)))).is(false);
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(3.5, 0, 0), v(0, 3.5, 0), v(0, 0, 3.5)))).is(false);
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(3.5, 0, 0), v(0, 3.5, 0), v(0, 0, 1.5)))).is(true);
+                expect.that(b.intersectsTriangle(new THREE.Triangle(v(2.2, 0, -1), v(0, 2.2, -1), v(0, 2.2, 2)))).is(false);
+                expect.that(new THREE.Box3().intersectsTriangle(floorTriangle())).is(false);   // empty
+            });
+
             test("triangleSphereIntersect: face, edge, miss", (expect) => {
                 const o = new Octree();
                 const t = floorTriangle();
