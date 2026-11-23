@@ -1,0 +1,27 @@
+<Rive version="1" kind="fragment">
+    <!-- GpgpuBirds: three.js's webgl_gpgpu_birds, 1024 birds flocking on the
+         GPU with GPUComputationRenderer (position and velocity variables
+         ping-ponging between float render targets); the pointer is the
+         predator (examples/gpgpu_birds/gpgpu_birds.as, its compute and bird
+         shaders beside it). -->
+    <Artboard isComponent="true" defaultStateMachineId="0:4307" clip="true" y="9800" width="800" height="600" styleId="0:4301" name="GpgpuBirds" id="0:4300">
+        <LayoutComponentStyle name="Artboard Style" id="0:4301"/>
+        <LayoutComponent width="800" height="600" styleId="0:4303" name="Root" id="0:4302">
+            <LayoutComponentStyle layoutWidthScaleType="1" layoutHeightScaleType="1" widthUnitsValue="3" heightUnitsValue="3" name="Root Style" id="0:4303"/>
+            <ScriptedLayout scriptAssetId="0:4390" name="Scene" id="0:4304">
+                <ScriptInputNumber propertyValue="20" name="separation" id="0:4305"/>
+                <ScriptInputNumber propertyValue="20" name="alignment" id="0:4306"/>
+                <ScriptInputNumber propertyValue="20" name="cohesion" id="0:4312"/>
+            </ScriptedLayout>
+        </LayoutComponent>
+        <StateMachine name="State Machine 1" id="0:4307">
+            <StateMachineLayer name="Layer 1" id="0:4308">
+                <AnyState x="0" y="-120" id="0:4309"/>
+                <ExitState x="120" y="-120" id="0:4310"/>
+                <EntryState id="0:4311"/>
+            </StateMachineLayer>
+        </StateMachine>
+    </Artboard>
+
+    <ScriptAsset file="examples/gpgpu_birds/gpgpu_birds.as" name="gpgpu_birds" id="0:4390"/>
+</Rive>

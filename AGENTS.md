@@ -65,7 +65,8 @@ engine edit shows in the gallery without publishing:
   `git checkout` it after. Until then, an
   example that needs it can carry a copy under the engine's asset name
   (`packages/gallery/three/shaders/...`; M16's addon shaders were
-  carried that way until library v6), deleted once the library has it.
+  carried that way until library v6, M19's `misc/gpu_computation.wgsl`
+  until the library after v12), deleted once the library has it.
 - Likewise an example importing an engine module the published library
   lacks only builds with the override: `tools/release_build.sh` without
   `--override` (and tools/publish.sh's pre-publish release build) fails
