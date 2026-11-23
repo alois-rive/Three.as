@@ -10,7 +10,7 @@ wherever Water is placed (as Effects does). The stage is a ScriptedLayout
 under a panel and a caption. Clicks write view model properties
 (ListenerViewModelChange); the script reads them each frame:
 
-- four tabs write their index to `scene`; a tab's amber dot shows when
+- five tabs (two a row, the last one alone) write their index to `scene`; a tab's amber dot shows when
   `scene` is its index (opacity max(0, 1 - (scene - k)^2));
 - six setting rows, each a label (`label<r>`), a value (`value<r>`) and two
   buttons that write a command to `command`: 2r + 1 for "-", 2r + 2 for "+";
@@ -31,10 +31,14 @@ does not orbit for presses on it, and claims them so a drag there does not
 scroll the page.
 
 Ids: 0:45xx Water, 0:46xx WaterStage, 0:47xx the view model, 0:160100 and
-up generated. Text uses the gallery's IoskeleyMono and Inter font assets
+up generated (0:160500 and up for the tabs after the first four, so adding
+one leaves the others' ids alone). The ids the editor wrote into the block
+when the file was pushed are kept: an element without an id takes the one
+at the same place in the block it replaces (keep_editor_ids). Text uses the gallery's IoskeleyMono and Inter font assets
 (106:3, 106:2), compiled into the same document.
 """
 import os
+import re
 from xml.sax.saxutils import quoteattr
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -43,7 +47,10 @@ BEGIN = "    <!-- BEGIN Water (tools/make_water_ui.py) -->"
 END = "    <!-- END Water -->"
 
 # The scenes, in the order examples/water/water.as numbers them.
-SCENES = ["Ocean", "Pool", "Flow map", "Mirrors"]
+SCENES = ["Ocean", "Pool", "Flow map", "Mirrors", "Tropical"]
+# Tabs from here on take their ids from ADDED_IDS up, so the first ones'
+# (and everything generated after the tabs) keep theirs.
+FIRST_SCENES, ADDED_IDS = 4, 160500
 ROWS = 6
 TOGGLE_COMMAND = 99  # water.as's TOGGLE_COMMAND
 
@@ -71,11 +78,17 @@ TAB_W, TAB_H = (INNER - 4) // 2, 20
 LABEL_W, VALUE_W, STEP_W, ROW_H, ROW_GAP = 84, 68, 22, 20, 3
 
 _next = [160100]
+_added = [ADDED_IDS]
 
 
 def nid():
     _next[0] += 1
     return f"0:{_next[0]}"
+
+
+def swap_ids():
+    """Switches nid() between the first ids and the added ones."""
+    _next[0], _added[0] = _added[0], _next[0]
 
 
 def a(v):
@@ -179,19 +192,73 @@ def write_number(name, target, prop, value):
             f'</BindablePropertyNumber></ListenerViewModelChange></StateMachineListenerSingle>')
 
 
+TAG = re.compile(r'<(/?)([A-Za-z][\w.]*)((?:\s+[\w:.-]+="[^"]*")*)\s*(/?)>')
+
+
+def tag_paths(xml):
+    """Each tag of `xml`: (path, match, closing). A start tag's path is its
+    ancestors' and its own (tag, name, index among the siblings of the same
+    tag and name)."""
+    path, counters = [], [{}]
+    for m in TAG.finditer(xml):
+        closing, tag, attrs, empty = m.groups()
+        if closing:
+            path.pop()
+            counters.pop()
+            yield None, m, True
+            continue
+        name = re.search(r'\sname="([^"]*)"', attrs)
+        key = (tag, name.group(1) if name else None)
+        index = counters[-1].get(key, 0)
+        counters[-1][key] = index + 1
+        here = tuple(path) + ((key, index),)
+        yield here, m, False
+        if not empty:
+            path.append((key, index))
+            counters.append({})
+
+
+def keep_editor_ids(old, new):
+    """`new` with the ids the editor gave `old`'s id-less elements (a push
+    writes one on every object): an element of `new` without an id takes
+    the id of the element at the same path in `old`, so regenerating keeps
+    them and only what changed differs."""
+    ids = {}
+    for here, m, closing in tag_paths(old):
+        if not closing:
+            found = re.search(r'\sid="([^"]*)"', m.group(3))
+            if found:
+                ids[here] = found.group(1)
+    out, last = [], 0
+    for here, m, closing in tag_paths(new):
+        if closing or re.search(r'\sid="', m.group(3)) or here not in ids:
+            continue
+        out.append(new[last:m.end(3)])
+        out.append(f' id="{ids[here]}"')
+        last = m.end(3)
+    out.append(new[last:])
+    return "".join(out)
+
+
 def main():
     converters, listeners = [], []
     tabs = []
     for k, label in enumerate(SCENES):
+        if k == FIRST_SCENES:
+            swap_ids()
         cid, cxml = is_k(k)
         converters.append(cxml)
         dot = box(f"TabDot{k}", fill=AMBER, w="fixed", h="fixed", width=6, height=6, radius=3,
                   binds=bind(P_SCENE, K_OPACITY, cid))
         bid = nid()
+        # Two a row; an odd last one takes the whole row.
+        width = INNER if k == len(SCENES) - 1 and k % 2 == 0 else TAB_W
         tabs.append(box(f"Tab{k}", dot + text(f"TabLabel{k}", label.upper(), MONO, 10, WHITE),
-                        bid=bid, d="row", w="fixed", h="fixed", width=TAB_W, height=TAB_H, gap=6, pad=(0, 8, 0, 8),
+                        bid=bid, d="row", w="fixed", h="fixed", width=width, height=TAB_H, gap=6, pad=(0, 8, 0, 8),
                         radius=3, align="centerLeft", fill=BUTTON))
         listeners.append(write_number(f"Scene{k}", bid, P_SCENE, k))
+    if len(SCENES) > FIRST_SCENES:
+        swap_ids()
     rows = []
     for r in range(ROWS):
         cid, cxml = hidden_from(r)
@@ -267,7 +334,7 @@ def main():
           '</ViewModelInstance>\n    </ViewModel>')
     block = "\n".join([
         BEGIN,
-        "    <!-- Water: four water setups, a Rive scene picker and settings panel over them",
+        "    <!-- Water: five water setups, a Rive scene picker and settings panel over them",
         "         (examples/water/water.as). Generated: edit tools/make_water_ui.py, not this block. -->",
         water, stage, vm, "    " + "\n    ".join(converters),
         '    <ComponentAsset artboardId="0:4600" name="WaterStage" id="0:4699"/>', END])
@@ -275,6 +342,7 @@ def main():
     if BEGIN in src:
         start = src.index(BEGIN)
         end = src.index(END) + len(END)
+        block = keep_editor_ids(src[start:end], block)
         src = src[:start] + block + src[end:]
     else:
         i = src.index("\n\n    <ScriptAsset ")
