@@ -23,5 +23,5 @@
         </StateMachine>
     </Artboard>
 
-    <ScriptAsset file="examples/games_fps/games_fps.as" name="games_fps" id="0:4490"/>
+    <ScriptAsset file="examples/games_fps/games_fps.as" name="games_fps" id="0:4490" codeFileId="0:3590748"/>
 </Rive>
