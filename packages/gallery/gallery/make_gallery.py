@@ -93,7 +93,7 @@ EXAMPLES = [
     ("Audio", "0:4200", "0:4207", "Spatial audio: emitters orbiting you, a sound cone, ambience and a live spectrum, mixed on Rive's audio thread.", True),
     ("GpgpuBirds", "0:4300", "0:4307", "GPGPU flocking: 1024 birds computed in float textures by GPUComputationRenderer, fleeing the pointer.", True),
     ("GamesFps", "0:4400", "0:4407", "Octree collisions, as games_fps: a capsule player walks, jumps and slides along walls; thrown spheres bounce off everything.", True),
-    ("Water", "0:4500", "0:4507", "three.js's water: an ocean under a sky, a flowing pool, a flow map and mirrors with rippled glass, tuned live from a Rive panel.", True),
+    ("Water", "0:4500", "0:4507", "three.js's water: an ocean, a pool, a flow map, mirrors with rippled glass and a lagoon to dive into, tuned live from a Rive panel.", True),
 ]
 DEFAULT = 0  # FirstScene plays on load
 

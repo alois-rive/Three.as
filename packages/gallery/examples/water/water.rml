@@ -1,8 +1,10 @@
 <Rive version="1" kind="fragment">
     <!-- Water: three.js's water addons (examples/water/water.as): an ocean
-         (Water, Sky), a pool and a flow map stream (Water2) and mirrors with
-         rippled glass (Reflector, Refractor), picked and tuned from a Rive
-         panel. The water textures are in examples/shared. -->
+         (Water, Sky), a pool and a flow map stream (Water2), mirrors with
+         rippled glass (Reflector, Refractor) and a tropical lagoon to dive
+         into (Water2 with lagoon.wgsl over seabed.wgsl, undersurface.wgsl
+         from below), picked and tuned from a Rive panel. The water
+         textures are in examples/shared. -->
 
     <!-- BEGIN Water (tools/make_water_ui.py) -->
     <!-- Water: five water setups, a Rive scene picker and settings panel over them
