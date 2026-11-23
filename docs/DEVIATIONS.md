@@ -477,7 +477,9 @@ repository commits the gallery unbaked.
   compact port: translate/rotate/scale handles, plane handles, uniform
   scale, snapping, world/local space and its events, with a simpler gizmo
   (no view-aligned "E"/"XYZE" rotation rings). Events carry `object` /
-  `value` fields. ArcballControls and PointerLockControls are not ported. Import controls from
+  `value` fields. ArcballControls and PointerLockControls are not ported
+  (Rive has no pointer lock: GamesFps, three.js's games_fps, looks by
+  dragging and throws on a click). Import controls from
   `three/addons/controls/OrbitControls` (or `three/addons/Addons`).
 - **Time comes from `advance(seconds)`.** `Clock` has `tick(seconds)` to
   feed it (call it each advance); `Timer.update(seconds)` takes the frame's
