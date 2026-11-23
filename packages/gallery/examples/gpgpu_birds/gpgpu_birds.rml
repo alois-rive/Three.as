@@ -23,5 +23,5 @@
         </StateMachine>
     </Artboard>
 
-    <ScriptAsset file="examples/gpgpu_birds/gpgpu_birds.as" name="gpgpu_birds" id="0:4390"/>
+    <ScriptAsset file="examples/gpgpu_birds/gpgpu_birds.as" name="gpgpu_birds" id="0:4390" codeFileId="0:3580546"/>
 </Rive>
