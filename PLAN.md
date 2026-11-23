@@ -42,7 +42,7 @@ packages/threeas/   the engine, published as the Rive library "threeas"
     rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
     shaders/        WGSL (three.wgsl, mips, post/)
     addons/         three.js's examples/jsm ports, imported by path:
-                    controls/, loaders/, postprocessing/, shaders/
+                    controls/, loaders/, postprocessing/, shaders/, misc/ ...
   tests/            rive --test suites, fixtures/
 packages/gallery/   the gallery page and the example artboards
   gallery/          the landing page (gallery.rml, make_gallery.py)
@@ -698,6 +698,74 @@ renderer recording, as M14d does, on whatever the project contains.
   key, measured with `--bench`.
 - **Docs.** README: "Optimizing shaders for your project" (for library
   users, with the commands); AGENTS.md, DEVIATIONS.md, PERFORMANCE.md.
+
+### M19: GPGPU (`GPUComputationRenderer`) (done)
+
+three.js's `examples/jsm/misc/GPUComputationRenderer.js`: state kept in
+float textures, computed each frame by fullscreen fragment passes that
+read the previous state (two render targets a variable, ping-ponging), as
+three.js's `webgl_gpgpu_*` examples use it.
+
+- **Addon** `three/addons/misc/GPUComputationRenderer.as`, three.js's API
+  (`addVariable`, `setVariableDependencies`, `init` returning an error or
+  null, `compute`, `getCurrentRenderTarget`, `getAlternateRenderTarget`,
+  `createShaderMaterial`, `createRenderTarget`, `createTexture`,
+  `renderTexture`, `doRenderTarget`, `addResolutionDefine`,
+  `setDataType`, `dispose`), a typed `GPUComputationVariable` for the
+  variable literal.
+- **Shaders are WGSL assets** on the ShaderMaterial contract: `resolution`
+  first (three.js's define), then the caller's uniforms, then one texture
+  per dependency in declared order and their sampler; texels read with
+  `textureLoad`. A pass-through shader (`three/shaders/misc/gpu_computation`)
+  copies the initial values and is the template of compute shaders.
+- **Full precision.** FloatType state in rgba32float targets where the
+  device renders 32-bit floats (`features().colorBufferFloat`), rgba16float
+  otherwise; the initial DataTextures upload as 32-bit floats. Through
+  three.js's `internalFormat` ("RGBA32F") on DataTextures and FloatType
+  render targets, so nothing else changes format.
+- **Tests** of the CPU side (headless suites have no GPU): init's errors,
+  the targets and their options, dependency uniforms, ping-pong, the 32-bit
+  formats and uploads. Pixels on the example.
+- **Example** `GpgpuBirds`: `webgl_gpgpu_birds` (1024 birds, position and
+  velocity variables, the pointer as the predator, separation / alignment
+  / cohesion as script inputs).
+
+As built:
+
+- **Engine.** `three/addons/misc/GPUComputationRenderer.as` (exported from
+  `Addons.as`), `three/shaders/misc/gpu_computation.wgsl`. 32-bit floats
+  through three.js's `texture.internalFormat`: `DataUpload` keeps
+  "RGBA32F" / "RG32F" / "R32F" FloatType data as floats; a FloatType
+  `RenderTarget` with it is rgba32float when `features().colorBufferFloat`
+  (asked only for such targets, at each render), rgba16float otherwise;
+  the renderer drops blending (and MSAA) for rgba32float passes.
+  `RenderTargetOptions` gained `internalFormat`, `wrapS`, `wrapT`,
+  `minFilter`, `magFilter`; a target's textures carry its `type`.
+- **Checked first.** Rive's layouts mark a texture only `textureLoad`ed as
+  `unfilterable-float`, so rgba32float binds there (the manifest validates);
+  an unused declared sampler is dropped from the layout, so the contract's
+  sampler is kept with `_ = s_tex;`. Rive also compiles WGSL to HLSL,
+  which cannot place a `vec3` after a float at WGSL's offset: the birds'
+  `predator` uniform goes first.
+- **Deviations** (docs/DEVIATIONS.md, "GPGPU"): WGSL assets holding both
+  stages, the `resolution`-first binding order, `textureLoad`, `init()`
+  queuing the initial copies for the next `compute()` (renders only from
+  `draw()`), a nullable renderer for the headless suites, 0 for three.js's
+  null wrap and filter arguments.
+- **Tests.** `tests/gpu_computation_renderer_test.as` (10 cases) and
+  `tests/float_targets_test.as` (2); 529 in all pass.
+- **Example.** `GpgpuBirds` (artboard ids 0:4300-0:4390, card 29): the
+  flock gathers within 4 s, the pointer opens a hole in it (checked with
+  `--commands` frame by frame: plain `--advance` steps do not draw, so a
+  screenshot shows one compute step). 0.27 ms render p50 a frame
+  interpreted, 0.29 ms AOT (CPU: three renders; the GPU cost is the
+  1024 x 1024 neighbour loop). Release GLSL: engine 112 shaders, gallery
+  (override) 236, 0 failing; `validate_manifest.py --all` passes;
+  the other examples' screenshots are unchanged.
+- **Publish.** The gallery carries the new shader under its asset name
+  (`packages/gallery/three/shaders/misc/gpu_computation.wgsl`) and builds
+  only with the override until the engine library is republished; then
+  update the gallery and delete the copy.
 
 ## Deviations from three.js
 
