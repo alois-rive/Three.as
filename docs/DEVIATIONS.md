@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestones 1 through 18 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 1 through 19 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -1472,6 +1472,63 @@ through `material as ShaderMaterial` or a typed `shaderMaterial` getter
   (and warned about) but not written, where JavaScript drops the
   out-of-range writes. About 2.5 ms an update at resolution 28 with ten
   balls (interpreted).
+
+## GPGPU (GPUComputationRenderer)
+
+`three/addons/misc/GPUComputationRenderer.as` is three.js r170's
+`examples/jsm/misc/GPUComputationRenderer.js`, with its API, names and
+argument order (`addVariable`, `setVariableDependencies`, `init`,
+`compute`, `getCurrentRenderTarget`, `getAlternateRenderTarget`,
+`createShaderMaterial`, `createRenderTarget`, `createTexture`,
+`renderTexture`, `doRenderTarget`, `addResolutionDefine`, `setDataType`,
+`dispose`). The gallery's `GpgpuBirds` is `webgl_gpgpu_birds`. What
+differs:
+
+- **A variable is a `GPUComputationVariable`** (three.js's object
+  literal: `name`, `initialValueTexture`, `material`, `dependencies`,
+  `renderTargets`, `wrapS`, `wrapT`, `minFilter`, `magFilter`); `wrapS` /
+  `wrapT` 0 stand for three.js's null (ClampToEdgeWrapping), as do the 0
+  defaults of `createRenderTarget`'s arguments.
+- **Compute shaders are WGSL shader assets**, not GLSL strings:
+  `addVariable(name, "shaders/velocity", texture)` takes the asset's
+  project path. The asset holds the vertex stage too (one module draws;
+  copy it from `three/shaders/misc/gpu_computation.wgsl`, the pass-through
+  shader). Nothing is injected; the ShaderMaterial contract binds group 2
+  in insertion order: **`resolution` first** (a `vec2<f32>` uniform
+  `addResolutionDefine` sets, for three.js's `#define resolution`), then
+  the values the caller adds, then the textures: the caller's, then one
+  per dependency in `setVariableDependencies` order (added by `init()`,
+  named after the variable, for three.js's injected `uniform sampler2D`),
+  then their one sampler (the first texture's, nearest). Other `defines`
+  (birds' `BOUNDS`) are WGSL constants. Order the caller's uniforms so a
+  `vec3` starts a 16-byte row (Rive also compiles to HLSL, which packs a
+  `vec3` after a float into the same row).
+- **Read texels with `textureLoad`** at `@builtin(position)`, not
+  `textureSample` (32-bit floats are not filterable on WebGPU); declare the
+  sampler and keep it with `_ = s_tex;`. Rows: row 0 of a target is the
+  top (y down, WebGPU's frame coordinates) and row 0 of every texture it
+  reads, so texel (x, y) is data index `(y * sizeX + x) * 4` everywhere, as
+  in three.js (which counts both from the bottom).
+- **FloatType variables are rgba32float** where the device renders 32-bit
+  floats (`features().colorBufferFloat`), rgba16float elsewhere (WebGL2
+  without EXT_color_buffer_float); `init()` returns "No support for float
+  render targets." when neither renders (three.js checks vertex texture
+  support, which WebGPU always has), "No support for half float render
+  targets." for HalfFloatType without them; with no device known yet it
+  passes. `createTexture()`'s DataTexture has `internalFormat` "RGBA32F",
+  so the initial values upload at full precision. The targets have no
+  depth buffer (`depthBuffer: false`) and do not blend.
+- **`init()` renders nothing** (scripts render only from `draw()`): it makes
+  the targets and queues the initial values, which the next `compute()`
+  copies first (`flushInitialValues()` does it alone, from `draw()`).
+  Call `compute()` from `draw()` (ThreeLayout: override `renderFrame`).
+- `doRenderTarget` turns `renderer.shadowMap.autoUpdate` off around the
+  pass as three.js; there is no `renderer.xr`. `renderer` may be null (the
+  headless test suites have no Context): `init()` then skips the device
+  check and `compute()` swaps targets without drawing.
+- The birds' `reference`, `birdColor` and `birdVertex` attributes are the
+  geometry's `uv` and `color` (rgb, and the vertex number in alpha): a
+  ShaderMaterial receives position, normal, uv and colour only.
 
 ## Cube maps and CubeCamera
 
