@@ -421,7 +421,10 @@ export class GamesFps extends THREE.ThreeLayout {
 
     override onPointerUp(event: PointerEvent): void {
         this.release(event.id, true);
-        event.hit();
+        // Passed on (downs and moves stay claimed, so a drag never scrolls
+        // the gallery page): the state machine's "Focus on release" listener
+        // gives the Scene keyboard focus back after a click elsewhere.
+        event.hit(true);
     }
 
     override pointerExit(event: PointerEvent): void {
