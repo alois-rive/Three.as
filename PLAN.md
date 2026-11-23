@@ -42,7 +42,7 @@ packages/threeas/   the engine, published as the Rive library "threeas"
     rive/           Rive-only: ArtboardTexture, ThreeLayout, Rive paths/nodes
     shaders/        WGSL (three.wgsl, mips, post/)
     addons/         three.js's examples/jsm ports, imported by path:
-                    controls/, loaders/, postprocessing/, shaders/, misc/ ...
+                    controls/, loaders/, postprocessing/, shaders/, math/, misc/ ...
   tests/            rive --test suites, fixtures/
 packages/gallery/   the gallery page and the example artboards
   gallery/          the landing page (gallery.rml, make_gallery.py)
@@ -766,6 +766,72 @@ As built:
   (`packages/gallery/three/shaders/misc/gpu_computation.wgsl`) and builds
   only with the override until the engine library is republished; then
   update the gallery and delete the copy.
+
+### M20: collisions (`Octree` + `Capsule`) (done)
+
+three.js's `examples/jsm/math/Octree.js` and `Capsule.js` with
+`examples/jsm/helpers/OctreeHelper.js`: a world's triangles in an octree,
+spheres, capsules and boxes pushed out of it, rays cast into it, as
+three.js's `games_fps` uses them. CPU only.
+
+- **Addons** `three/addons/math/Capsule.as` (`start`, `end`, `radius`,
+  `set`, `clone`, `copy`, `getCenter`, `translate`, `intersectsBox`),
+  `three/addons/math/Octree.as` (`box`, `bounds`, `layers`,
+  `trianglesPerLeaf`, `maxLevel`, `subTrees`, `triangles`, `addTriangle`,
+  `calcBox`, `split`, `build`, the `get*Triangles` queries, the
+  `triangle*Intersect` tests, `sphereIntersect`, `capsuleIntersect`,
+  `boxIntersect`, `rayIntersect`, `fromGraphNode`, `clear`),
+  `three/addons/helpers/OctreeHelper.as`. three.js's object literals or
+  `false` become typed results or null.
+- **Budget.** `fromGraphNode` runs in one call: measure it on the
+  example's level against a script's ~200 ms budget.
+- **Tests** of the geometry (sphere, capsule and box against known
+  triangles: depth, normal, point), queries, build and split, transforms,
+  layers, `clear` and the helper.
+- **Example** `GamesFps`: `games_fps` on a level made of boxes, a ramp,
+  stairs, platforms and pillars (three.js's collision-world.glb is not
+  used): the capsule player with gravity, jumps and wall sliding, 100
+  thrown spheres colliding with the world, the player and each other.
+
+As built:
+
+- **Engine.** `three/addons/math/Capsule.as`, `three/addons/math/Octree.as`
+  (`OctreeCollision`, `OctreeTriangleCollision`, `OctreeRayHit`) and
+  `three/addons/helpers/OctreeHelper.as`, exported from `Addons.as`; from
+  three.js dev, so `triangleBoxIntersect`, `getBoxTriangles` and
+  `boxIntersect` too. No WGSL.
+- **A fix.** `split` ends the upper cells at the parent's max: three.js's
+  `min + 2 * half` can round below it and drop the triangles on the max
+  faces of the bounds (a test found the top of a level lost).
+- **Speed.** `split` checks a triangle's bounds against a cell before the
+  SAT test, and `Box3.intersectsTriangle` no longer allocates three axis
+  arrays a call (same arithmetic): `fromGraphNode` on the example's level
+  (37 meshes, ~650 triangles) went from 105 ms to 50 ms interpreted, 11
+  ms to 3.4 ms AOT. Well inside the budget, so no incremental variant;
+  DEVIATIONS says how to spread a larger world over frames.
+- **Deviations** (docs/DEVIATIONS.md, "Collisions"): the typed results,
+  the `split` fix, `fromGraphNode` reading through the index (no
+  `toNonIndexed`), `box` nullable.
+- **Tests.** `tests/capsule_test.as` (2 cases), `tests/octree_test.as`
+  (12, with `Box3.intersectsTriangle`); 543 in all pass.
+- **Example.** `GamesFps` (artboard ids 0:4400-0:4413, script 0:4490,
+  card 30): three.js's player and sphere physics as written (5 substeps,
+  capsule against the octree, spheres against the octree, the player and
+  each other). Input: drag to look (no pointer lock in Rive), click or
+  tap to throw (held longer, harder), WASD / arrows and Space through a
+  FocusData child, H for the OctreeHelper (three.js's debug checkbox);
+  an on-screen stick and jump button for touch; a gamepad's sticks,
+  south button and right trigger. Until the first input it looks around
+  and throws by itself, so the stage and its thumbnail show spheres.
+  `--arg fpsTrace=1` logs the player twice a second, which the checks
+  used: stairs climbed (0.2 m steps), wall sliding (x pinned at the
+  wall, z moving), jumps, the stick and button. `--bench` (autoplay,
+  spheres flying): advance p50 2.8 ms interpreted, 0.32 ms AOT; render
+  p50 0.85 ms / 1.0 ms. Release GLSL: engine 112 shaders, gallery
+  (override) 236, 0 failing (no new shader); `validate_manifest.py
+  --all` passes.
+- **Publish.** The example imports addons the published library lacks:
+  it builds only with the override until the engine is republished.
 
 ## Deviations from three.js
 

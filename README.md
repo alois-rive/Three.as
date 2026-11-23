@@ -129,6 +129,7 @@ rive . --artboard=Shadows                         # directional, spot and point 
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Addons                          # Water, Sky, Lensflare, Reflector, Refractor, metaballs
 rive . --artboard=GpgpuBirds                      # GPUComputationRenderer: 1024 flocking birds
+rive . --artboard=GamesFps                        # Octree + Capsule collisions: walk, jump, throw
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed
 rive . --screenshot=build/s.png --advance=1s      # headless render
 

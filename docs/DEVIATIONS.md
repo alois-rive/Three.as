@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestones 1 through 19 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 1 through 20 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -477,7 +477,9 @@ repository commits the gallery unbaked.
   compact port: translate/rotate/scale handles, plane handles, uniform
   scale, snapping, world/local space and its events, with a simpler gizmo
   (no view-aligned "E"/"XYZE" rotation rings). Events carry `object` /
-  `value` fields. ArcballControls and PointerLockControls are not ported. Import controls from
+  `value` fields. ArcballControls and PointerLockControls are not ported
+  (Rive has no pointer lock: GamesFps, three.js's games_fps, looks by
+  dragging and throws on a click). Import controls from
   `three/addons/controls/OrbitControls` (or `three/addons/Addons`).
 - **Time comes from `advance(seconds)`.** `Clock` has `tick(seconds)` to
   feed it (call it each advance); `Timer.update(seconds)` takes the frame's
@@ -1529,6 +1531,47 @@ differs:
 - The birds' `reference`, `birdColor` and `birdVertex` attributes are the
   geometry's `uv` and `color` (rgb, and the vertex number in alpha): a
   ShaderMaterial receives position, normal, uv and colour only.
+
+## Collisions (Octree, Capsule, OctreeHelper)
+
+`three/addons/math/Octree.as`, `three/addons/math/Capsule.as` and
+`three/addons/helpers/OctreeHelper.as` are three.js's
+`examples/jsm/math/Octree.js`, `Capsule.js` and
+`examples/jsm/helpers/OctreeHelper.js` (dev, with `triangleBoxIntersect`,
+`getBoxTriangles` and `boxIntersect`), with their names, fields
+(`box`, `bounds`, `layers`, `trianglesPerLeaf`, `maxLevel`, `subTrees`,
+`triangles`) and argument order. CPU only. The gallery's `GamesFps` is
+`games_fps`. What differs:
+
+- **Results are typed, and null for none** (three.js returns object
+  literals or `false`): `sphereIntersect`, `capsuleIntersect` and
+  `boxIntersect` return an `OctreeCollision?` (`normal`, `depth`);
+  `triangleSphereIntersect`, `triangleCapsuleIntersect` and
+  `triangleBoxIntersect` an `OctreeTriangleCollision?` (also `point`);
+  `rayIntersect` an `OctreeRayHit?` (`distance`, `triangle`, `position`).
+  The `normal` of `capsuleIntersect` and `boxIntersect` is a vector of its
+  own (three.js's is a module temporary that the next call overwrites).
+- **`split` covers its box exactly**: the upper children end at the
+  parent's `max` (three.js computes `min + 2 * half`, which can round
+  below it and drop the triangles lying on the max faces of the bounds,
+  such as the top of the highest platform). Otherwise the same cells, so
+  the same leaves. `split` returns the octree when `box` is null (three.js
+  returns undefined).
+- `box` is a `Box3?` (null before `build` / `calcBox` and after `clear`).
+- `fromGraphNode` reads indexed geometries through their index (three.js
+  makes a `toNonIndexed()` copy, not ported): the same triangles in the
+  same order. As three.js it takes every `Mesh` (subclasses included, an
+  InstancedMesh's geometry once, at its own matrix), visible or not, that
+  shares a layer with `octree.layers`. It runs in one call: 50 ms
+  interpreted, 3.4 ms AOT for GamesFps's level (37 meshes, about 650
+  triangles); a script's `init` and each frame have a ~200 ms budget
+  headless, so for a much larger world, `addTriangle` its triangles over
+  several frames and `build()` once (`build` itself is not incremental).
+  `split` tests a triangle's bounds against a cell before
+  `Box3.intersectsTriangle` (a shortcut, same cells).
+- Capsule's `checkAABBAxis` is a module function, as in three.js (not a
+  method). `OctreeHelper(octree, color = 0xffff00)` takes a hex number;
+  `color` is kept as three.js (the material is made with it once).
 
 ## Cube maps and CubeCamera
 

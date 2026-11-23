@@ -81,6 +81,8 @@ export class AudioExample extends THREE.ThreeLayout {
         camera.updateProjectionMatrix();
         camera.add(this.listener);
         camera.layers.enable(HUD_LAYER);
+        // The button is on the HUD layer: the raycaster tests layers too.
+        this.raycaster.layers.enable(HUD_LAYER);
         scene.add(camera);
         const controls = new OrbitControls(camera, this.renderer);
         controls.target.set(0, 1.6, 0);

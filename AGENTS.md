@@ -272,6 +272,13 @@ Gotchas: integer `/` truncates and `<f64>(a / b)` divides as floats (see
 DEVIATIONS.md); `Array.splice` cannot insert; arrays are invariant; Rive
 paints the first-declared shape on top; `Layout` already has an `update()`
 hook; generic code is only type-checked once instantiated, so test it.
+Keys need a focused `FocusData`: the `rive` player focuses the first one
+it finds, no other host does, so an example taking keys focuses its
+ScriptedLayout itself (a `FocusActionTarget` in its entry state, and on a
+pointer-up listener; see `examples/games_fps/games_fps.rml`). Test keys
+on it nested in another artboard, where the player's focus does not reach.
+A `Raycaster` tests layers: an object on another layer needs
+`raycaster.layers.enable(n)` to be hit.
 `context.viewModel()` on an artboard with no view model stops the script
 silently (nothing renders): go through `context.dataContext()`. A
 script's `init` and each `advance`/`draw` have a time budget (about
