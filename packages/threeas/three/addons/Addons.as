@@ -95,3 +95,7 @@ export * from "./objects/MarchingCubes";
 export * from "./shaders/WaterRefractionShader";
 // examples/jsm/misc (M19).
 export * from "./misc/GPUComputationRenderer";
+// examples/jsm/math/Octree, Capsule and helpers/OctreeHelper (M20).
+export * from "./math/Capsule";
+export * from "./math/Octree";
+export * from "./helpers/OctreeHelper";

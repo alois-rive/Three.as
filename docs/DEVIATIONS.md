@@ -6,7 +6,7 @@ code, examples and fixes taken from three.js sources can be ported without
 guessing. **When porting from three.js, read this first.** If you add a
 deviation, add it here in the same change.
 
-Status: Milestones 1 through 19 done (see [../PLAN.md](../PLAN.md); performance notes in
+Status: Milestones 1 through 20 done (see [../PLAN.md](../PLAN.md); performance notes in
 [PERFORMANCE.md](PERFORMANCE.md)). Features not yet ported
 are listed under [Not yet supported](#not-yet-supported); they are missing,
 not different.
@@ -1529,6 +1529,44 @@ differs:
 - The birds' `reference`, `birdColor` and `birdVertex` attributes are the
   geometry's `uv` and `color` (rgb, and the vertex number in alpha): a
   ShaderMaterial receives position, normal, uv and colour only.
+
+## Collisions (Octree, Capsule, OctreeHelper)
+
+`three/addons/math/Octree.as`, `three/addons/math/Capsule.as` and
+`three/addons/helpers/OctreeHelper.as` are three.js's
+`examples/jsm/math/Octree.js`, `Capsule.js` and
+`examples/jsm/helpers/OctreeHelper.js` (dev, with `triangleBoxIntersect`,
+`getBoxTriangles` and `boxIntersect`), with their names, fields
+(`box`, `bounds`, `layers`, `trianglesPerLeaf`, `maxLevel`, `subTrees`,
+`triangles`) and argument order. CPU only. The gallery's `GamesFps` is
+`games_fps`. What differs:
+
+- **Results are typed, and null for none** (three.js returns object
+  literals or `false`): `sphereIntersect`, `capsuleIntersect` and
+  `boxIntersect` return an `OctreeCollision?` (`normal`, `depth`);
+  `triangleSphereIntersect`, `triangleCapsuleIntersect` and
+  `triangleBoxIntersect` an `OctreeTriangleCollision?` (also `point`);
+  `rayIntersect` an `OctreeRayHit?` (`distance`, `triangle`, `position`).
+  The `normal` of `capsuleIntersect` and `boxIntersect` is a vector of its
+  own (three.js's is a module temporary that the next call overwrites).
+- **`split` covers its box exactly**: the upper children end at the
+  parent's `max` (three.js computes `min + 2 * half`, which can round
+  below it and drop the triangles lying on the max faces of the bounds,
+  such as the top of the highest platform). Otherwise the same cells, so
+  the same leaves. `split` returns the octree when `box` is null (three.js
+  returns undefined).
+- `box` is a `Box3?` (null before `build` / `calcBox` and after `clear`).
+- `fromGraphNode` reads indexed geometries through their index (three.js
+  makes a `toNonIndexed()` copy, not ported): the same triangles in the
+  same order. As three.js it takes every `Mesh` (subclasses included, an
+  InstancedMesh's geometry once, at its own matrix), visible or not, that
+  shares a layer with `octree.layers`. It runs in one call: about
+  N ms for the gallery level (see PLAN M20; a script's `init` and each
+  frame have a ~200 ms budget headless), so build large worlds over
+  several frames with `addTriangle` and one `build()`.
+- Capsule's `checkAABBAxis` is a module function, as in three.js (not a
+  method). `OctreeHelper(octree, color = 0xffff00)` takes a hex number;
+  `color` is kept as three.js (the material is made with it once).
 
 ## Cube maps and CubeCamera
 
