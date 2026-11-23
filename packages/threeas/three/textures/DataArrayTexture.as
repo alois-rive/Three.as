@@ -8,7 +8,7 @@ import { GPUTexture, GPUTextureDesc, GPUTextureView, GPUTextureViewDesc } from "
 import { TextureType, TextureViewDimension } from "rive/gpu_enums";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { Texture } from "./Texture";
-import { gpuFormat, isFloatType, uploadBytes } from "./DataUpload";
+import { gpuFormat, isFloat32, isFloatType, uploadBytes } from "./DataUpload";
 import { NearestFilter, RGBAFormat, UnsignedByteType, ClampToEdgeWrapping } from "../constants";
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
@@ -43,7 +43,7 @@ export class DataArrayTexture extends Texture {
 
     override get width(): u32 { return this.dataWidth; }
     override get height(): u32 { return this.dataHeight; }
-    override get isHDRSource(): bool { return isFloatType(this.type); }
+    override get isHDRSource(): bool { return isFloatType(this.type) && !isFloat32(this.type, this.internalFormat); }
 
     protected textureType(): TextureType { return TextureType.array2D; }
     protected viewDimension(): TextureViewDimension { return TextureViewDimension.array2D; }
@@ -51,7 +51,7 @@ export class DataArrayTexture extends Texture {
     override update(context: Context): void {
         if (this.uploadedVersion == this.version) return;
         if (this.dataWidth == 0 || this.dataHeight == 0 || this.depth == 0) return;
-        const format = gpuFormat(this.format, this.type);
+        const format = gpuFormat(this.format, this.type, this.internalFormat);
         let tex = this.gpuTexture;
         if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight
                 || this.allocatedDepth != this.depth || tex.format != format) {
@@ -72,7 +72,7 @@ export class DataArrayTexture extends Texture {
             this.gpuView = tex.view(vd);
         }
         const bytes = uploadBytes(this.data, this.format, this.type,
-            <i32>(this.dataWidth * this.dataHeight * this.depth));
+            <i32>(this.dataWidth * this.dataHeight * this.depth), isFloat32(this.type, this.internalFormat));
         uploadRegion.width = this.dataWidth;
         uploadRegion.height = this.dataHeight;
         uploadRegion.depth = this.depth;

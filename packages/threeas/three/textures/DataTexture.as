@@ -1,15 +1,17 @@
 // three.js DataTexture: raw texels, bottom row first (flipY false), nearest
 // filtering, as three.js. `data` is a Uint8Array (UnsignedByteType), a
 // Uint16Array of half floats (HalfFloatType) or a Float32Array (FloatType,
-// uploaded as half floats), in RGBAFormat, RGBFormat (widened to RGBA),
-// RGFormat or RedFormat. Set `needsUpdate = true` after changing `data`.
+// uploaded as half floats; as 32-bit floats when `internalFormat` is
+// "RGBA32F", "RG32F" or "R32F", for nearest sampling or textureLoad), in
+// RGBAFormat, RGBFormat (widened to RGBA), RGFormat or RedFormat. Set
+// `needsUpdate = true` after changing `data`.
 
 import { Context } from "rive/host";
 import { GPUTexture, GPUTextureDesc, GPUTextureView } from "rive/gpu";
 import { rive_gpu_texture_upload_v1 } from "rive/bindings";
 import { Texture } from "./Texture";
 import { Dynamic } from "rive/dynamic";
-import { gpuFormat, isFloatType, uploadBytes } from "./DataUpload";
+import { gpuFormat, isFloat32, isFloatType, uploadBytes } from "./DataUpload";
 import { NearestFilter, RGBAFormat, UnsignedByteType } from "../constants";
 
 const uploadRegion = new rive_gpu_texture_upload_v1();
@@ -75,12 +77,12 @@ export class DataTexture extends Texture {
 
     override get width(): u32 { return this.dataWidth; }
     override get height(): u32 { return this.dataHeight; }
-    override get isHDRSource(): bool { return isFloatType(this.type); }
+    override get isHDRSource(): bool { return isFloatType(this.type) && !isFloat32(this.type, this.internalFormat); }
 
     override update(context: Context): void {
         if (this.uploadedVersion == this.version) return;
         if (this.dataWidth == 0 || this.dataHeight == 0) return;
-        const format = gpuFormat(this.format, this.type);
+        const format = gpuFormat(this.format, this.type, this.internalFormat);
         let tex = this.gpuTexture;
         if (tex == null || tex.width != this.dataWidth || tex.height != this.dataHeight || tex.format != format) {
             if (tex != null) tex.release();
@@ -97,7 +99,7 @@ export class DataTexture extends Texture {
         uploadRegion.width = this.dataWidth;
         uploadRegion.height = this.dataHeight;
         tex.upload(uploadRegion, uploadBytes(this.data, this.format, this.type,
-            <i32>(this.dataWidth * this.dataHeight)));
+            <i32>(this.dataWidth * this.dataHeight), isFloat32(this.type, this.internalFormat)));
         this.uploadedVersion = this.version;
     }
 

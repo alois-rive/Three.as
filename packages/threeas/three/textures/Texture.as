@@ -43,6 +43,12 @@ export class Texture extends ColorOrTexture {
     anisotropy: i32 = 1;
     format: i32 = RGBAFormat;
     type: i32 = UnsignedByteType;
+    /// three.js's GPU format override. Only the 32-bit float ones are read:
+    /// "RGBA32F" (or "RG32F" / "R32F", by `format`) keeps a FloatType
+    /// DataTexture or render target in 32-bit floats instead of half floats
+    /// (nearest filtering only: WebGPU does not filter them; see
+    /// RenderTarget and DataUpload). Null: the format follows type.
+    internalFormat: string? = null;
 
     /// UV transform, as three.js: `matrix` is made from offset, repeat,
     /// rotation (radians) and center when matrixAutoUpdate is set.

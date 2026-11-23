@@ -91,6 +91,7 @@ EXAMPLES = [
     ("Views", "0:3000", "0:3007", "Viewports and scissors: an ArrayCamera, a StereoCamera and two scenes in one canvas.", False),
     ("Benchmark", "0:1500", "0:1507", "1000 meshes and 10000 instances, all moving.", False),
     ("Audio", "0:4200", "0:4207", "Spatial audio: emitters orbiting you, a sound cone, ambience and a live spectrum, mixed on Rive's audio thread.", True),
+    ("GpgpuBirds", "0:4300", "0:4307", "GPGPU flocking: 1024 birds computed in float textures by GPUComputationRenderer, fleeing the pointer.", True),
 ]
 DEFAULT = 0  # FirstScene plays on load
 
@@ -102,6 +103,8 @@ def hint(name, interactive):
         return "PICK A PASS · DRAG TO ORBIT"
     if name == "Audio":
         return "CLICK ▶ TO PLAY · DRAG TO LOOK AROUND"
+    if name == "GpgpuBirds":
+        return "MOVE THE POINTER TO SCATTER THE FLOCK"
     if name == "RiveDriven":
         return "CLICK A LABEL · DAY / NIGHT · DRAG TO ORBIT"
     return "DRAG TO ORBIT · SCROLL TO ZOOM" if interactive else "AUTOPLAY"

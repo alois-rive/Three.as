@@ -65,7 +65,8 @@ engine edit shows in the gallery without publishing:
   `git checkout` it after. Until then, an
   example that needs it can carry a copy under the engine's asset name
   (`packages/gallery/three/shaders/...`; M16's addon shaders were
-  carried that way until library v6), deleted once the library has it.
+  carried that way until library v6, M19's `misc/gpu_computation.wgsl`
+  until v13), deleted once the library has it.
 - Likewise an example importing an engine module the published library
   lacks only builds with the override: `tools/release_build.sh` without
   `--override` (and tools/publish.sh's pre-publish release build) fails
@@ -225,7 +226,7 @@ backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
 `gl_1`), and it fails on GLSL shadow samplers (a WGSL `sampler_comparison`,
 see Rules), which compile but crash the web runtime, and on naga's
 emulation uniforms (`naga_vs_first_instance`, a precaution). The gallery's
-release has 116 GLSL shaders (the engine's 110 and the examples' 6).
+release has 124 GLSL shaders (the engine's 112 and the examples' 12).
 
 ## Publishing
 

@@ -93,3 +93,5 @@ export * from "./objects/Sky";
 export * from "./objects/Lensflare";
 export * from "./objects/MarchingCubes";
 export * from "./shaders/WaterRefractionShader";
+// examples/jsm/misc (M19).
+export * from "./misc/GPUComputationRenderer";

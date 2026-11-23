@@ -1,7 +1,9 @@
 // How data textures reach the GPU (internal): the GPU format of a three.js
 // format and type, and the bytes to upload. FloatType data uploads as half
 // floats (rgba16float and friends filter everywhere; 32-bit floats need a
-// feature WebGPU makes optional).
+// feature WebGPU makes optional), unless the texture's `internalFormat`
+// asks for 32-bit floats ("RGBA32F", "RG32F", "R32F": sampled nearest or
+// with textureLoad only, as GPUComputationRenderer's textures are).
 
 import { TextureFormat } from "rive/gpu_enums";
 import {
@@ -15,8 +17,19 @@ export function gpuChannels(format: i32): i32 {
     return 4;
 }
 
-export function gpuFormat(format: i32, type: i32): TextureFormat {
+/// Whether a texture of `type` and `internalFormat` keeps 32-bit floats
+/// on the GPU (three.js's "RGBA32F", "RGB32F", "RG32F", "R32F").
+export function isFloat32(type: i32, internalFormat: string?): bool {
+    if (type != FloatType || internalFormat == null) return false;
+    const f = internalFormat!;
+    return f == "RGBA32F" || f == "RGB32F" || f == "RG32F" || f == "R32F";
+}
+
+export function gpuFormat(format: i32, type: i32, internalFormat: string? = null): TextureFormat {
     const channels = gpuChannels(format);
+    if (isFloat32(type, internalFormat)) {
+        return channels == 1 ? TextureFormat.r32float : channels == 2 ? TextureFormat.rg32float : TextureFormat.rgba32float;
+    }
     if (type == FloatType || type == HalfFloatType) {
         return channels == 1 ? TextureFormat.r16float : channels == 2 ? TextureFormat.rg16float : TextureFormat.rgba16float;
     }
@@ -67,10 +80,23 @@ export function fromHalf(h: u16): f32 {
 
 /// The bytes of `data` (texels in `format` and `type`, `count` texels) as
 /// the GPU format wants them: RGB widened to RGBA (alpha 1), floats to
-/// halves. Shares `data`'s buffer when nothing changes.
-export function uploadBytes(data: ArrayBufferView, format: i32, type: i32, count: i32): ArrayBuffer {
+/// halves (kept as floats when `float32`, see isFloat32). Shares `data`'s
+/// buffer when nothing changes.
+export function uploadBytes(data: ArrayBufferView, format: i32, type: i32, count: i32,
+                            float32: bool = false): ArrayBuffer {
     const inChannels = format == RGBFormat ? 3 : gpuChannels(format);
     const outChannels = gpuChannels(format);
+    if (type == FloatType && float32) {
+        if (inChannels == outChannels) return whole(data, count * outChannels * 4);
+        const src = Float32Array.wrap(data.buffer, data.byteOffset, count * inChannels);
+        const out = new Float32Array(count * outChannels);
+        for (let i = 0; i < count; i++) {
+            for (let c = 0; c < outChannels; c++) {
+                out[i * outChannels + c] = c < inChannels ? src[i * inChannels + c] : 1;
+            }
+        }
+        return out.buffer;
+    }
     if (type == FloatType) {
         const src = Float32Array.wrap(data.buffer, data.byteOffset, count * inChannels);
         const out = new Uint16Array(count * outChannels);

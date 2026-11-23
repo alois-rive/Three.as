@@ -30,7 +30,7 @@ libraries:
   "threeas":
     fileId: 38630
     libraryId: 761
-    version: 12
+    version: 13
     # Build against the engine sources next door instead of the published
     # snapshot in .libraries/, so engine edits show without republishing.
     # Only honoured while ../threeas/rive.yaml pushes to this fileId (its

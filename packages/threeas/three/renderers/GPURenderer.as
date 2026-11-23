@@ -1346,8 +1346,11 @@ export class GPURenderer {
             const host = this.ensureCanvas();
             if (host == null) return false;
             canvas = host;
-            target = rt.ensureHDR();
-            this.pipelineFormat = <u32>TextureFormat.rgba16float;
+            // FloatType "RGBA32F" targets: rgba32float where the device
+            // renders 32-bit floats (GPUComputationRenderer's state).
+            const format = rt.hdrFormat(rt.wantsFloat32 && this.context.features().colorBufferFloat);
+            target = rt.ensureHDR(format);
+            this.pipelineFormat = format;
             this.linearOutput = true;
         } else {
             target = canvas.view;
@@ -1356,6 +1359,8 @@ export class GPURenderer {
         if (target == null) return false;
         if (!this.ensureSetup(canvas)) return false;
         this.passSamples = rt != null ? (rt.samples > 1 ? this.samples : 1) : this.samples;
+        // 32-bit float colour neither multisamples nor blends (WebGPU).
+        if (this.pipelineFormat == <u32>TextureFormat.rgba32float) this.passSamples = 1;
         this.passWidth = pw;
         this.passHeight = ph;
         // A multiple render target's extra attachments; a depth texture
@@ -2430,6 +2435,8 @@ export class GPURenderer {
     /// outputs every location), else masked (built-in materials write
     /// location 0 only, and WebGPU wants no writes where nothing is output).
     private colorTargets(target: GPUColorTargetDesc, written: bool): Array<GPUColorTargetDesc> {
+        // 32-bit float targets do not blend (WebGPU): draws replace.
+        if (target.format == TextureFormat.rgba32float) target.blend = null;
         const out: Array<GPUColorTargetDesc> = [target];
         for (let i = 1; i < this.pipelineCount; i++) {
             const t = new GPUColorTargetDesc();
