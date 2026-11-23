@@ -128,6 +128,7 @@ rive . --artboard=Batched                         # BatchedMesh: 600 instances, 
 rive . --artboard=Shadows                         # directional, spot and point shadows
 rive . --artboard=PostProcessing                  # EffectComposer: bloom, tone mapping, FXAA
 rive . --artboard=Addons                          # Water, Sky, Lensflare, Reflector, Refractor, metaballs
+rive . --artboard=Water                           # Water, Water2, Reflector, Refractor, tuned live
 rive . --artboard=GpgpuBirds                      # GPUComputationRenderer: 1024 flocking birds
 rive . --artboard=GamesFps                        # Octree + Capsule collisions: walk, jump, throw
 rive . --artboard=Benchmark --bench=300           # 1000 meshes + 10000 instances, timed
