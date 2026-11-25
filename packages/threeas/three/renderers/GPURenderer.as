@@ -905,7 +905,6 @@ export class GPURenderer {
     private lastSweep: i32 = 0;
     private disposeQueue: DisposeQueue = new DisposeQueue();
     private rslot: RendererSlot = new RendererSlot();
-    private slotDirty: Uint8Array = new Uint8Array(0);
     private dirtyLo: i32 = 0x7fffffff;
     private dirtyHi: i32 = -1;
     private uploadAll: bool = false;
@@ -2065,7 +2064,6 @@ export class GPURenderer {
         this.freeSlots = [];
         this.slotFrame = new Int32Array(0);
         this.slotGen = new Int32Array(0);
-        this.slotDirty = new Uint8Array(0);
         this.dirtyLo = 0x7fffffff;
         this.dirtyHi = -1;
         this.uploadAll = false;
@@ -4538,9 +4536,6 @@ export class GPURenderer {
         const staging = new ArrayBuffer(capacity * OBJ_BYTES);
         const bytes = Uint8Array.wrap(staging);
         if (this.slotCount > 0) bytes.set(this.arenaBytes.subarray(0, this.slotCount * OBJ_BYTES));
-        const dirty = new Uint8Array(capacity);
-        if (this.slotDirty.length > 0) dirty.set(this.slotDirty);
-        this.slotDirty = dirty;
         const frames = new Int32Array(capacity);
         frames.fill(-1);
         if (this.slotFrame.length > 0) frames.set(this.slotFrame);
@@ -4563,38 +4558,27 @@ export class GPURenderer {
 
     /// Marks a slot for upload at the next flush.
     private markSlot(slot: i32): void {
-        unchecked(this.slotDirty[slot] = 1);
         if (slot < this.dirtyLo) this.dirtyLo = slot;
         if (slot > this.dirtyHi) this.dirtyHi = slot;
     }
 
-    /// Uploads the slots written since the last flush: runs of them (short
-    /// gaps included) as one update each, or everything after the arena grew.
+    /// Uploads the slots written since the last flush in one update, from
+    /// the first to the last (the clean slots between them go too: staging
+    /// holds their blocks), or everything after the arena grew. One write,
+    /// not one per run of slots: on the web (WebGL2 through ANGLE on Metal)
+    /// a write into the arena while the GPU still reads it can stall the
+    /// GPU process, and as slots fragment over a long session a scene that
+    /// moves every frame made dozens of runs a frame (a game slid from 52
+    /// to 18 fps over 90 s; one write kept it at 52).
     private flushArena(): void {
         const arena = this.arena;
         if (arena == null) return;
         const staging = this.arenaStaging;
-        const dirty = this.slotDirty;
         if (this.uploadAll) {
             if (this.slotCount > 0) arena.update(0, staging, <u32>(this.slotCount * OBJ_BYTES), 0);
-            if (this.dirtyHi >= this.dirtyLo) dirty.fill(0, this.dirtyLo, this.dirtyHi + 1);
         } else if (this.dirtyHi >= this.dirtyLo) {
-            const hi = this.dirtyHi;
-            let s = this.dirtyLo;
-            while (s <= hi) {
-                if (unchecked(dirty[s]) == 0) { s++; continue; }
-                // A run: dirty slots with gaps of at most two clean ones.
-                let end = s;
-                let k = s + 1;
-                while (k <= hi && k - end <= 3) {
-                    if (unchecked(dirty[k]) != 0) end = k;
-                    k++;
-                }
-                for (let j = s; j <= end; j++) unchecked(dirty[j] = 0);
-                const offset = <u32>(s * OBJ_BYTES);
-                arena.update(offset, staging, <u32>((end - s + 1) * OBJ_BYTES), offset);
-                s = end + 1;
-            }
+            const offset = <u32>(this.dirtyLo * OBJ_BYTES);
+            arena.update(offset, staging, <u32>((this.dirtyHi - this.dirtyLo + 1) * OBJ_BYTES), offset);
         }
         this.uploadAll = false;
         this.dirtyLo = 0x7fffffff;
