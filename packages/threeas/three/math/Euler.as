@@ -83,7 +83,11 @@ export class Euler {
         const m31: f64 = e[2], m32: f64 = e[6], m33: f64 = e[10];
         const o = this._order;
         const lim = 0.9999999;
-        if (o == "YXZ") {
+        if (o == "XYZ") {
+            this._y = Math.asin(clamp1(m13));
+            if (Math.abs(m13) < lim) { this._x = Math.atan2(-m23, m33); this._z = Math.atan2(-m12, m11); }
+            else { this._x = Math.atan2(m32, m22); this._z = 0; }
+        } else if (o == "YXZ") {
             this._x = Math.asin(-clamp1(m23));
             if (Math.abs(m23) < lim) { this._y = Math.atan2(m13, m33); this._z = Math.atan2(m21, m22); }
             else { this._y = Math.atan2(-m31, m11); this._z = 0; }
@@ -103,7 +107,7 @@ export class Euler {
             this._z = Math.asin(-clamp1(m12));
             if (Math.abs(m12) < lim) { this._x = Math.atan2(m32, m22); this._y = Math.atan2(m13, m11); }
             else { this._x = Math.atan2(-m23, m33); this._y = 0; }
-        } else { // XYZ
+        } else {
             this._y = Math.asin(clamp1(m13));
             if (Math.abs(m13) < lim) { this._x = Math.atan2(-m23, m33); this._z = Math.atan2(-m12, m11); }
             else { this._x = Math.atan2(m32, m22); this._z = 0; }

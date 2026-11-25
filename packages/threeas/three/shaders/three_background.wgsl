@@ -77,8 +77,12 @@ fn fs_background(in: BgOut) -> @location(0) vec4<f32> {
     var uv: vec2<f32>;
     if (F.bg_flags.x == MAPPING_EQUIRECT) {
         let far = F.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
-        let near = F.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
-        var dir = normalize(far.xyz / far.w - near.xyz / near.w);
+        var origin = F.camera_pos.xyz;
+        if (F.camera_pos.w > 0.5) {
+            let near = F.inv_view_proj * vec4<f32>(in.ndc, 0.0, 1.0);
+            origin = near.xyz / near.w;
+        }
+        var dir = normalize(far.xyz / far.w - origin);
         dir = (F.bg_rotation * vec4<f32>(dir, 0.0)).xyz;
         uv = vec2<f32>(atan2(dir.z, dir.x) * 0.5 * RECIPROCAL_PI + 0.5,
                        asin(clamp(dir.y, -1.0, 1.0)) * RECIPROCAL_PI + 0.5);

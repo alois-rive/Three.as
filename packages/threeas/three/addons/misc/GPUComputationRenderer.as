@@ -147,9 +147,33 @@ export class GPUComputationRenderer {
                 f.colorBufferHalfFloat);
             if (error != null) return error;
         }
+        // Validate all dependencies before creating any render targets.
         for (let i = 0; i < this.variables.length; i++) {
             const variable = this.variables[i];
-            // Creates rendertargets and initialize them with input texture
+            const deps = variable.dependencies;
+            if (deps == null) continue;
+            for (let d = 0; d < deps.length; d++) {
+                const depVar = deps[d];
+                if (depVar.name == variable.name) continue;
+                let found = false;
+                for (let j = 0; j < this.variables.length; j++) {
+                    if (depVar.name == this.variables[j].name) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    return "Variable dependency not found. Variable=" + variable.name + ", dependency="
+                        + depVar.name;
+                }
+            }
+        }
+        this.pendingInputs.length = 0;
+        this.pendingOutputs.length = 0;
+        for (let i = 0; i < this.variables.length; i++) {
+            const variable = this.variables[i];
+            // Dispose previous render targets on re-init.
+            for (let j = 0; j < variable.renderTargets.length; j++) variable.renderTargets[j].dispose();
             variable.renderTargets.length = 0;
             variable.renderTargets.push(this.createRenderTarget(this.sizeX, this.sizeY, variable.wrapS, variable.wrapT,
                 variable.minFilter, variable.magFilter));
@@ -163,20 +187,6 @@ export class GPUComputationRenderer {
             if (deps != null) {
                 for (let d = 0; d < deps.length; d++) {
                     const depVar = deps[d];
-                    if (depVar.name != variable.name) {
-                        // Checks if variable exists
-                        let found = false;
-                        for (let j = 0; j < this.variables.length; j++) {
-                            if (depVar.name == this.variables[j].name) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            return "Variable dependency not found. Variable=" + variable.name + ", dependency="
-                                + depVar.name;
-                        }
-                    }
                     variable.material.uniforms.set(depVar.name, new Uniform<Texture>(new Texture()));
                 }
             }
@@ -232,18 +242,22 @@ export class GPUComputationRenderer {
         return variable.renderTargets[this.currentTextureIndex == 0 ? 1 : 0];
     }
 
-    /// Frees the quad, the initial textures and the render targets.
+    /// Frees the quad, materials, initial textures and render targets.
     dispose(): void {
         this.quad.dispose();
+        this.passThruShader.dispose();
         this.pendingInputs.length = 0;
         this.pendingOutputs.length = 0;
         const variables = this.variables;
         for (let i = 0; i < variables.length; i++) {
             const variable = variables[i];
+            variable.material.dispose();
             variable.initialValueTexture.dispose();
             const renderTargets = variable.renderTargets;
             for (let j = 0; j < renderTargets.length; j++) renderTargets[j].dispose();
+            renderTargets.length = 0;
         }
+        variables.length = 0;
     }
 
     /// Sets the material's `resolution` uniform (three.js's define) to the

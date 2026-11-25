@@ -71,6 +71,9 @@ export class MeshDepthMaterial extends Material {
         u.displacementBias = this.displacementBias;
     }
 
+    override displacementMapOf(): Texture? { return this.displacementMap; }
+    override mapOf(): Texture? { return this.map; }
+
     override copy(source: Material): Material {
         super.copy(source);
         if (source instanceof MeshDepthMaterial) {

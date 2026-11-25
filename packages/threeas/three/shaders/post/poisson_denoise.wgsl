@@ -116,11 +116,14 @@ fn get_view_normal(uv: vec2<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let depth = get_depth(in.uv);
-    let view_normal = get_view_normal(in.uv);
-    let texel = textureSampleLevel(tDiffuse, s_tex, in.uv, 0.0);
-    if (depth == 1.0 || dot(view_normal, view_normal) == 0.0) {
+    if (depth == 1.0) {
         discard;
     }
+    let view_normal = get_view_normal(in.uv);
+    if (dot(view_normal, view_normal) == 0.0) {
+        discard;
+    }
+    let texel = textureSampleLevel(tDiffuse, s_tex, in.uv, 0.0);
     let center = texel.rgb;
     let view_pos = get_view_position(in.uv, depth);
 

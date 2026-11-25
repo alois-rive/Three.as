@@ -68,15 +68,15 @@ fn fs_cube_to_equirect(in: BlitOut) -> @location(0) vec4<f32> {
     if (P.flags.y > 0.5) {
         st.y = 1.0 - st.y;
     }
-    let c0 = textureSampleLevel(t_px, s_face, st, 0.0);
-    let c1 = textureSampleLevel(t_nx, s_face, st, 0.0);
-    let c2 = textureSampleLevel(t_py, s_face, st, 0.0);
-    let c3 = textureSampleLevel(t_ny, s_face, st, 0.0);
-    let c4 = textureSampleLevel(t_pz, s_face, st, 0.0);
-    let c5 = textureSampleLevel(t_nz, s_face, st, 0.0);
-    var c = c0;
-    if (face == 1) { c = c1; } else if (face == 2) { c = c2; } else if (face == 3) { c = c3; }
-    else if (face == 4) { c = c4; } else if (face == 5) { c = c5; }
+    var c: vec4<f32>;
+    switch face {
+        case 0: { c = textureSampleLevel(t_px, s_face, st, 0.0); }
+        case 1: { c = textureSampleLevel(t_nx, s_face, st, 0.0); }
+        case 2: { c = textureSampleLevel(t_py, s_face, st, 0.0); }
+        case 3: { c = textureSampleLevel(t_ny, s_face, st, 0.0); }
+        case 4: { c = textureSampleLevel(t_pz, s_face, st, 0.0); }
+        default: { c = textureSampleLevel(t_nz, s_face, st, 0.0); }
+    }
     if (P.flags.w > 0.5 && c.a > 0.0) {
         c = vec4<f32>(c.rgb / c.a, c.a);
     }

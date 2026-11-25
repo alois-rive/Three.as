@@ -65,15 +65,25 @@ export class EventDispatcher {
         if (map == null || !map.has(type)) return;
         const list = map.get(type);
         const i = list.indexOf(listener);
-        if (i >= 0) list.splice(i, 1);
+        if (i >= 0) {
+            list.splice(i, 1);
+            if (list.length == 0) map.delete(type);
+        }
     }
 
     dispatchEvent(event: Event): void {
         const map = this._listeners;
         if (map == null || !map.has(event.type)) return;
+        const listeners = map.get(event.type);
+        const n = listeners.length;
+        if (n == 0) return;
         event.target = this;
-        const list = map.get(event.type).slice();   // listeners may remove themselves
-        for (let i = 0; i < list.length; i++) list[i].handleEvent(event);
+        if (n == 1) {
+            listeners[0].handleEvent(event);
+        } else {
+            const list = listeners.slice();   // listeners may remove themselves
+            for (let i = 0; i < list.length; i++) list[i].handleEvent(event);
+        }
         event.target = null;
     }
 }

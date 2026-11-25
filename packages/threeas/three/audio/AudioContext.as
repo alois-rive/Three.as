@@ -153,6 +153,7 @@ export class AudioContext {
             const node = this.analysers[i];
             if (node != null) this.releaseAnalyser(node);
         }
+        for (let i = 0; i < MIX_MAX_BUFFERS; i++) this.buffers[i] = null;
     }
 
     // ------------------------------------------------------ the plumbing
@@ -262,7 +263,18 @@ export class AudioContext {
                 if (state != VOICE_IDLE && <i32>sdata[v * S_STRIDE + S_SOURCE] == i) { used = true; break; }
                 if (hasProcessor && <i32>pdata[v * P_STRIDE + P_SOURCE] == i) { used = true; break; }
             }
-            if (!used) this.buffers[i] = null;
+            if (!used) {
+                this.buffers[i] = null;
+                if (hasProcessor) {
+                    const m = new MixBuffer();
+                    m.slot = i;
+                    m.blobId = 0;
+                    m.channels = 0;
+                    m.sampleRate = 0;
+                    m.frames = 0;
+                    this.inputs.buffers.send(m);
+                }
+            }
         }
     }
 

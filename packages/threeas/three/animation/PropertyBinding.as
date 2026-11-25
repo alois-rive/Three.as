@@ -82,6 +82,8 @@ export class PropertyBinding {
     /// The component of "position[x]" (0-3), or -1 for the whole value.
     private component: i32 = -1;
     private materialIndex: i32 = -1;
+    private boundMaterial: Material? = null;
+    private boundColor: Color? = null;
 
     constructor(rootNode: Object3D, path: string) {
         this.rootNode = rootNode;
@@ -181,6 +183,8 @@ export class PropertyBinding {
         this.node = node;
         this.kind = P_NONE;
         this.component = -1;
+        this.boundMaterial = null;
+        this.boundColor = null;
         if (node == null) return;
         const name = p.propertyName;
         if (p.objectName == "material") {
@@ -193,10 +197,15 @@ export class PropertyBinding {
             }
             const m = this.material();
             if (m == null) return;
-            if (name == "color" && colorOf(m) != null) this.kind = P_COLOR;
-            else if (name == "opacity") this.kind = P_OPACITY;
-            else if (name == "emissive" && emissiveOf(m) != null) this.kind = P_EMISSIVE;
-            else if (name == "emissiveIntensity" && emissiveOf(m) != null) this.kind = P_EMISSIVE_INTENSITY;
+            this.boundMaterial = m;
+            if (name == "color") {
+                const col = colorOf(m);
+                if (col != null) { this.kind = P_COLOR; this.boundColor = col; }
+            } else if (name == "opacity") this.kind = P_OPACITY;
+            else if (name == "emissive") {
+                const col = emissiveOf(m);
+                if (col != null) { this.kind = P_EMISSIVE; this.boundColor = col; }
+            } else if (name == "emissiveIntensity" && emissiveOf(m) != null) this.kind = P_EMISSIVE_INTENSITY;
             else if (name == "roughness" && m instanceof MeshStandardMaterial) this.kind = P_ROUGHNESS;
             else if (name == "metalness" && m instanceof MeshStandardMaterial) this.kind = P_METALNESS;
             if (this.isColor && p.propertyIndex.length > 0) {
@@ -237,6 +246,8 @@ export class PropertyBinding {
 
     unbind(): void {
         this.node = null;
+        this.boundMaterial = null;
+        this.boundColor = null;
         this.kind = P_NONE;
     }
 
@@ -284,7 +295,14 @@ export class PropertyBinding {
             else if (k == P_ROUGHNESS) out[0] = (m as MeshStandardMaterial).roughness;
             else if (k == P_METALNESS) out[0] = (m as MeshStandardMaterial).metalness;
             else {
-                const col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                let col: Color?;
+                if (m === this.boundMaterial) {
+                    col = this.boundColor;
+                } else {
+                    col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                    this.boundMaterial = m;
+                    this.boundColor = col;
+                }
                 if (col != null) read3(out, c, col.r, col.g, col.b);
             }
         }
@@ -324,7 +342,14 @@ export class PropertyBinding {
             else if (k == P_ROUGHNESS) (m as MeshStandardMaterial).roughness = v[0];
             else if (k == P_METALNESS) (m as MeshStandardMaterial).metalness = v[0];
             else {
-                const col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                let col: Color?;
+                if (m === this.boundMaterial) {
+                    col = this.boundColor;
+                } else {
+                    col = k == P_COLOR ? colorOf(m) : emissiveOf(m);
+                    this.boundMaterial = m;
+                    this.boundColor = col;
+                }
                 if (col != null) write3(col, c, v);
             }
         }
@@ -411,19 +436,21 @@ export class PropertyBindingComposite extends PropertyBinding {
 
     /// Drops the bindings of objects the group has uncached.
     prune(): void {
-        const keep = new Map<i32, PropertyBinding>();
+        if (this.bindings.size == 0) return;
         const g = this.group;
-        for (let i = 0; i < g.activeObjects.length; i++) {
-            const id = g.activeObjects[i].id;
-            if (this.bindings.has(id)) keep.set(id, this.bindings.get(id));
+        _keepIds.clear();
+        for (let i = 0; i < g.activeObjects.length; i++) _keepIds.add(g.activeObjects[i].id);
+        for (let i = 0; i < g.cachedObjects.length; i++) _keepIds.add(g.cachedObjects[i].id);
+        const keys = this.bindings.keys();
+        for (let i = 0; i < keys.length; i++) {
+            const id = keys[i];
+            if (!_keepIds.has(id)) this.bindings.delete(id);
         }
-        for (let i = 0; i < g.cachedObjects.length; i++) {
-            const id = g.cachedObjects[i].id;
-            if (this.bindings.has(id)) keep.set(id, this.bindings.get(id));
-        }
-        this.bindings = keep;
+        _keepIds.clear();
     }
 }
+
+const _keepIds: Set<i32> = new Set<i32>();
 
 function parseNonNegativeInt(s: string): i32 {
     if (s.length == 0) return -1;

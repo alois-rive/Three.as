@@ -29,6 +29,7 @@ import { Vector2 } from "../math/Vector2";
 
 // ArtboardTextures made and not disposed (ArtboardTexture.live()).
 let _live: i32 = 0;
+const _pointerTypes: StaticArray<string> = ["down", "move", "up", "exit"];
 
 export class ArtboardTexture extends Texture {
     readonly isArtboardTexture: bool = true;
@@ -46,6 +47,7 @@ export class ArtboardTexture extends Texture {
     private canvas: Canvas? = null;
     private drawnVersion: i32 = -1;
     private counted: bool = true;
+    private wasHit: bool = false;
     // Whether it made the instance (and releases it on dispose).
     private ownsArtboard: bool;
     /// Whether dispose() ran: the artboard may be released, nothing draws,
@@ -96,15 +98,16 @@ export class ArtboardTexture extends Texture {
     private forward(kind: i32, uv: Vector2, id: f64): bool {
         if (this.disposed) return false;
         const p = this.artboardPoint(uv);
-        const types: StaticArray<string> = ["down", "move", "up", "exit"];
-        const event = new PointerEvent(id, p, p, types[kind]);
+        const event = new PointerEvent(id, p, p, _pointerTypes[kind]);
         let hit: f64 = 0;
         if (kind == 0) hit = this.artboard.pointerDown(event);
         else if (kind == 1) hit = this.artboard.pointerMove(event);
         else if (kind == 2) hit = this.artboard.pointerUp(event);
         else hit = this.artboard.pointerExit(event);
-        this.version++;   // a hover or press may change what it draws
-        return hit != 0;
+        const isHit = hit != 0;
+        if (isHit || this.wasHit || kind != 1) this.version++;   // a hover/unhover or press may change what it draws
+        this.wasHit = isHit && kind != 3;
+        return isHit;
     }
 
     override get width(): u32 {

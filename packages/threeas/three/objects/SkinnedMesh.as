@@ -7,6 +7,7 @@ import { Object3D } from "../core/Object3D";
 import { Mesh } from "./Mesh";
 import { Skeleton } from "./Skeleton";
 import { BufferGeometry } from "../core/BufferGeometry";
+import { BufferAttribute } from "../core/BufferAttribute";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { Matrix4 } from "../math/Matrix4";
@@ -114,6 +115,101 @@ export class SkinnedMesh extends Mesh {
         return vector.applyMatrix4(this.bindMatrixInverse);
     }
 
+    /// Poses every vertex (morph targets + skeleton) into `out` (3 floats per
+    /// vertex), updating `skeleton.boneMatrices` once instead of multiplying
+    /// bone matrices per vertex.
+    poseVertices(out: Float32Array): void {
+        const geometry = this.geometry;
+        const p = geometry.getAttribute("position");
+        if (p == null) return;
+        const count = p.count;
+        const skeleton = this.skeleton;
+        const si = geometry.getAttribute("skinIndex");
+        const sw = geometry.getAttribute("skinWeight");
+        const hasSkin = skeleton != null && si != null && sw != null;
+        if (hasSkin) skeleton!.update();
+        const bm = hasSkin ? skeleton!.boneMatrices : null;
+        const boneCount = hasSkin ? skeleton!.bones.length : 0;
+        const influences = this.morphTargetInfluences;
+        const hasMorph = influences.length > 0 && geometry.morphAttributes.has("position");
+        const morph = hasMorph ? geometry.morphAttributes.get("position") : null;
+        const morphRel = geometry.morphTargetsRelative;
+        const pArr = p.array;
+        const pStride = p.itemSize;
+        for (let i = 0; i < count; i++) {
+            const po = i * pStride;
+            _point.set(<f64>pArr[po], <f64>pArr[po + 1], <f64>pArr[po + 2]);
+            if (hasMorph) this.applyMorph(i, _point, morph!, influences, morphRel);
+            if (hasSkin) this.applyBoneMatrices(i, _point, si!, sw!, bm!, boneCount);
+            out[i * 3] = <f32>_point.x;
+            out[i * 3 + 1] = <f32>_point.y;
+            out[i * 3 + 2] = <f32>_point.z;
+        }
+    }
+
+    private applyMorph(index: i32, target: Vector3, morph: Array<BufferAttribute>, influences: Array<f64>, relative: bool): void {
+        let mx: f64 = 0, my: f64 = 0, mz: f64 = 0;
+        for (let i = 0; i < influences.length && i < morph.length; i++) {
+            const w = influences[i];
+            if (w == 0) continue;
+            const m = morph[i];
+            let dx = m.getX(index), dy = m.getY(index), dz = m.getZ(index);
+            if (!relative) { dx -= target.x; dy -= target.y; dz -= target.z; }
+            mx += dx * w; my += dy * w; mz += dz * w;
+        }
+        target.x += mx; target.y += my; target.z += mz;
+    }
+
+    private applyBoneMatrices(index: i32, vector: Vector3, si: BufferAttribute, sw: BufferAttribute,
+                              bm: Float32Array, boneCount: i32): Vector3 {
+        const w0 = sw.getX(index), w1 = sw.getY(index), w2 = sw.getZ(index), w3 = sw.getW(index);
+        _base.copy(vector).applyMatrix4(this.bindMatrix);
+        const bx = _base.x, by = _base.y, bz = _base.z;
+        let vx: f64 = 0, vy: f64 = 0, vz: f64 = 0;
+        if (w0 != 0) {
+            const b = <i32>si.getX(index);
+            if (b >= 0 && b < boneCount) {
+                const o = b * 16;
+                const iw = 1 / (<f64>bm[o + 3] * bx + <f64>bm[o + 7] * by + <f64>bm[o + 11] * bz + <f64>bm[o + 15]);
+                vx += (<f64>bm[o] * bx + <f64>bm[o + 4] * by + <f64>bm[o + 8] * bz + <f64>bm[o + 12]) * iw * w0;
+                vy += (<f64>bm[o + 1] * bx + <f64>bm[o + 5] * by + <f64>bm[o + 9] * bz + <f64>bm[o + 13]) * iw * w0;
+                vz += (<f64>bm[o + 2] * bx + <f64>bm[o + 6] * by + <f64>bm[o + 10] * bz + <f64>bm[o + 14]) * iw * w0;
+            }
+        }
+        if (w1 != 0) {
+            const b = <i32>si.getY(index);
+            if (b >= 0 && b < boneCount) {
+                const o = b * 16;
+                const iw = 1 / (<f64>bm[o + 3] * bx + <f64>bm[o + 7] * by + <f64>bm[o + 11] * bz + <f64>bm[o + 15]);
+                vx += (<f64>bm[o] * bx + <f64>bm[o + 4] * by + <f64>bm[o + 8] * bz + <f64>bm[o + 12]) * iw * w1;
+                vy += (<f64>bm[o + 1] * bx + <f64>bm[o + 5] * by + <f64>bm[o + 9] * bz + <f64>bm[o + 13]) * iw * w1;
+                vz += (<f64>bm[o + 2] * bx + <f64>bm[o + 6] * by + <f64>bm[o + 10] * bz + <f64>bm[o + 14]) * iw * w1;
+            }
+        }
+        if (w2 != 0) {
+            const b = <i32>si.getZ(index);
+            if (b >= 0 && b < boneCount) {
+                const o = b * 16;
+                const iw = 1 / (<f64>bm[o + 3] * bx + <f64>bm[o + 7] * by + <f64>bm[o + 11] * bz + <f64>bm[o + 15]);
+                vx += (<f64>bm[o] * bx + <f64>bm[o + 4] * by + <f64>bm[o + 8] * bz + <f64>bm[o + 12]) * iw * w2;
+                vy += (<f64>bm[o + 1] * bx + <f64>bm[o + 5] * by + <f64>bm[o + 9] * bz + <f64>bm[o + 13]) * iw * w2;
+                vz += (<f64>bm[o + 2] * bx + <f64>bm[o + 6] * by + <f64>bm[o + 10] * bz + <f64>bm[o + 14]) * iw * w2;
+            }
+        }
+        if (w3 != 0) {
+            const b = <i32>si.getW(index);
+            if (b >= 0 && b < boneCount) {
+                const o = b * 16;
+                const iw = 1 / (<f64>bm[o + 3] * bx + <f64>bm[o + 7] * by + <f64>bm[o + 11] * bz + <f64>bm[o + 15]);
+                vx += (<f64>bm[o] * bx + <f64>bm[o + 4] * by + <f64>bm[o + 8] * bz + <f64>bm[o + 12]) * iw * w3;
+                vy += (<f64>bm[o + 1] * bx + <f64>bm[o + 5] * by + <f64>bm[o + 9] * bz + <f64>bm[o + 13]) * iw * w3;
+                vz += (<f64>bm[o + 2] * bx + <f64>bm[o + 6] * by + <f64>bm[o + 10] * bz + <f64>bm[o + 14]) * iw * w3;
+            }
+        }
+        vector.set(vx, vy, vz);
+        return vector.applyMatrix4(this.bindMatrixInverse);
+    }
+
     computeBoundingBox(): void {
         let box = this.boundingBox;
         if (box == null) {
@@ -121,9 +217,29 @@ export class SkinnedMesh extends Mesh {
             this.boundingBox = box;
         }
         box.makeEmpty();
-        const p = this.geometry.getAttribute("position");
+        const geometry = this.geometry;
+        const p = geometry.getAttribute("position");
         if (p == null) return;
-        for (let i = 0; i < p.count; i++) box.expandByPoint(this.getVertexPosition(i, _point));
+        const skeleton = this.skeleton;
+        const si = geometry.getAttribute("skinIndex");
+        const sw = geometry.getAttribute("skinWeight");
+        const hasSkin = skeleton != null && si != null && sw != null;
+        if (hasSkin) skeleton!.update();
+        const bm = hasSkin ? skeleton!.boneMatrices : null;
+        const boneCount = hasSkin ? skeleton!.bones.length : 0;
+        const influences = this.morphTargetInfluences;
+        const hasMorph = influences.length > 0 && geometry.morphAttributes.has("position");
+        const morph = hasMorph ? geometry.morphAttributes.get("position") : null;
+        const morphRel = geometry.morphTargetsRelative;
+        const pArr = p.array;
+        const pStride = p.itemSize;
+        for (let i = 0; i < p.count; i++) {
+            const po = i * pStride;
+            _point.set(<f64>pArr[po], <f64>pArr[po + 1], <f64>pArr[po + 2]);
+            if (hasMorph) this.applyMorph(i, _point, morph!, influences, morphRel);
+            if (hasSkin) this.applyBoneMatrices(i, _point, si!, sw!, bm!, boneCount);
+            box.expandByPoint(_point);
+        }
     }
 
     computeBoundingSphere(): void {
@@ -133,9 +249,29 @@ export class SkinnedMesh extends Mesh {
             this.boundingSphere = sphere;
         }
         sphere.makeEmpty();
-        const p = this.geometry.getAttribute("position");
+        const geometry = this.geometry;
+        const p = geometry.getAttribute("position");
         if (p == null) return;
-        for (let i = 0; i < p.count; i++) sphere.expandByPoint(this.getVertexPosition(i, _point));
+        const skeleton = this.skeleton;
+        const si = geometry.getAttribute("skinIndex");
+        const sw = geometry.getAttribute("skinWeight");
+        const hasSkin = skeleton != null && si != null && sw != null;
+        if (hasSkin) skeleton!.update();
+        const bm = hasSkin ? skeleton!.boneMatrices : null;
+        const boneCount = hasSkin ? skeleton!.bones.length : 0;
+        const influences = this.morphTargetInfluences;
+        const hasMorph = influences.length > 0 && geometry.morphAttributes.has("position");
+        const morph = hasMorph ? geometry.morphAttributes.get("position") : null;
+        const morphRel = geometry.morphTargetsRelative;
+        const pArr = p.array;
+        const pStride = p.itemSize;
+        for (let i = 0; i < p.count; i++) {
+            const po = i * pStride;
+            _point.set(<f64>pArr[po], <f64>pArr[po + 1], <f64>pArr[po + 2]);
+            if (hasMorph) this.applyMorph(i, _point, morph!, influences, morphRel);
+            if (hasSkin) this.applyBoneMatrices(i, _point, si!, sw!, bm!, boneCount);
+            sphere.expandByPoint(_point);
+        }
     }
 
     override raycast(raycaster: Raycaster, intersects: Array<Intersection>): bool {

@@ -62,37 +62,42 @@ fn get_view_z(depth: f32) -> f32 {
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let inv_size = 1.0 / u.size;
     let depth = get_depth(in.uv);
-    var weight_sum = u.sampleWeights[0].x;
-    var diffuse_sum = textureSampleLevel(tDiffuse, s_tex, in.uv, 0.0) * weight_sum;
     if (depth >= 1.0 - EPSILON) {
         discard;
     }
+    var weight_sum = u.sampleWeights[0].x;
+    var diffuse_sum = textureSampleLevel(tDiffuse, s_tex, in.uv, 0.0) * weight_sum;
     let center_view_z = -get_view_z(depth);
     var r_break = false;
     var l_break = false;
     let radius = min(i32(u.kernelRadius), MAX_KERNEL_RADIUS);
     for (var i = 1; i <= radius; i++) {
+        if (r_break && l_break) {
+            break;
+        }
         let sample_weight = u.sampleWeights[i].x;
         let sample_uv_offset = u.sampleUvOffsets[i].xy * inv_size;
 
-        var sample_uv = in.uv + sample_uv_offset;
-        var view_z = -get_view_z(get_depth(sample_uv));
-        if (abs(view_z - center_view_z) > u.depthCutoff) {
-            r_break = true;
-        }
         if (!r_break) {
-            diffuse_sum += textureSampleLevel(tDiffuse, s_tex, sample_uv, 0.0) * sample_weight;
-            weight_sum += sample_weight;
+            let sample_uv = in.uv + sample_uv_offset;
+            let view_z = -get_view_z(get_depth(sample_uv));
+            if (abs(view_z - center_view_z) > u.depthCutoff) {
+                r_break = true;
+            } else {
+                diffuse_sum += textureSampleLevel(tDiffuse, s_tex, sample_uv, 0.0) * sample_weight;
+                weight_sum += sample_weight;
+            }
         }
 
-        sample_uv = in.uv - sample_uv_offset;
-        view_z = -get_view_z(get_depth(sample_uv));
-        if (abs(view_z - center_view_z) > u.depthCutoff) {
-            l_break = true;
-        }
         if (!l_break) {
-            diffuse_sum += textureSampleLevel(tDiffuse, s_tex, sample_uv, 0.0) * sample_weight;
-            weight_sum += sample_weight;
+            let sample_uv = in.uv - sample_uv_offset;
+            let view_z = -get_view_z(get_depth(sample_uv));
+            if (abs(view_z - center_view_z) > u.depthCutoff) {
+                l_break = true;
+            } else {
+                diffuse_sum += textureSampleLevel(tDiffuse, s_tex, sample_uv, 0.0) * sample_weight;
+                weight_sum += sample_weight;
+            }
         }
     }
     return diffuse_sum / weight_sum;

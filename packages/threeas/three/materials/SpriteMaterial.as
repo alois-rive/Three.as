@@ -62,6 +62,8 @@ export class SpriteMaterial extends Material {
         u.textures[SLOT_ALPHA] = this.alphaMap;
     }
 
+    override mapOf(): Texture? { return this.map; }
+
     override copy(source: Material): Material {
         super.copy(source);
         if (source instanceof SpriteMaterial) {

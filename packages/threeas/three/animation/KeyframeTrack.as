@@ -192,27 +192,48 @@ export class KeyframeTrack {
 
     /// Writes the value at `time` into `out` (getValueSize() entries).
     evaluate(time: f64, out: Float64Array): void {
+        this.evaluateCached(time, out, 0);
+    }
+
+    /// Writes the value at `time` into `out`, starting the key search at
+    /// interval `hint` (O(1) for sequential playback), and returns the new
+    /// interval index.
+    evaluateCached(time: f64, out: Float64Array, hint: i32): i32 {
         const times = this.times;
         const n = times.length;
         const size = this.getValueSize();
-        if (n == 0) return;
+        if (n == 0) return 0;
         const cubic = this.interpolation == InterpolateGLTFCubicSpline;
         const stride = cubic ? size * 3 : size;
         const valueOffset = cubic ? size : 0;
         if (n == 1 || time <= <f64>times[0]) {
             this.copyKey(0, stride, valueOffset, size, out);
-            return;
+            return 0;
         }
-        if (time >= <f64>times[n - 1]) {
-            this.copyKey(n - 1, stride, valueOffset, size, out);
-            return;
+        const last = n - 1;
+        if (time >= <f64>times[last]) {
+            this.copyKey(last, stride, valueOffset, size, out);
+            return last - 1;
         }
-        // Binary search for the key interval [i, i + 1].
-        let lo = 0, hi = n - 1;
-        while (hi - lo > 1) {
-            const mid = (lo + hi) >> 1;
-            if (<f64>times[mid] <= time) lo = mid; else hi = mid;
+        // Check cached interval, then immediate neighbours, else binary search.
+        let lo = -1;
+        if (hint >= 0 && hint < last) {
+            if (<f64>times[hint] <= time) {
+                if (time < <f64>times[hint + 1]) lo = hint;
+                else if (hint + 2 <= last && time < <f64>times[hint + 2]) lo = hint + 1;
+            } else if (hint > 0 && <f64>times[hint - 1] <= time) {
+                lo = hint - 1;
+            }
         }
+        if (lo < 0) {
+            lo = 0;
+            let hi = last;
+            while (hi - lo > 1) {
+                const mid = (lo + hi) >> 1;
+                if (<f64>times[mid] <= time) lo = mid; else hi = mid;
+            }
+        }
+        const hi = lo + 1;
         const t0: f64 = times[lo], t1: f64 = times[hi];
         const dt = t1 - t0;
         const t = dt > 0 ? (time - t0) / dt : 0;
@@ -225,6 +246,7 @@ export class KeyframeTrack {
         } else {
             this.lerp(lo, hi, t, size, out);
         }
+        return lo;
     }
 
     protected copyKey(i: i32, stride: i32, valueOffset: i32, size: i32, out: Float64Array): void {

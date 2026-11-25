@@ -100,16 +100,21 @@ export function uploadBytes(data: ArrayBufferView, format: i32, type: i32, count
     if (type == FloatType) {
         const src = Float32Array.wrap(data.buffer, data.byteOffset, count * inChannels);
         const out = new Uint16Array(count * outChannels);
-        for (let i = 0; i < count; i++) {
-            for (let c = 0; c < outChannels; c++) {
-                out[i * outChannels + c] = c < inChannels ? toHalf(src[i * inChannels + c]) : 0x3c00;
+        if (inChannels == outChannels) {
+            const total = count * outChannels;
+            for (let i = 0; i < total; i++) out[i] = toHalf(src[i]);
+        } else {
+            for (let i = 0; i < count; i++) {
+                for (let c = 0; c < outChannels; c++) {
+                    out[i * outChannels + c] = c < inChannels ? toHalf(src[i * inChannels + c]) : 0x3c00;
+                }
             }
         }
         return out.buffer;
     }
     if (type == HalfFloatType) {
-        const src = Uint16Array.wrap(data.buffer, data.byteOffset, count * inChannels);
         if (inChannels == outChannels) return whole(data, count * outChannels * 2);
+        const src = Uint16Array.wrap(data.buffer, data.byteOffset, count * inChannels);
         const out = new Uint16Array(count * outChannels);
         for (let i = 0; i < count; i++) {
             for (let c = 0; c < outChannels; c++) {
@@ -118,8 +123,8 @@ export function uploadBytes(data: ArrayBufferView, format: i32, type: i32, count
         }
         return out.buffer;
     }
-    const src = Uint8Array.wrap(data.buffer, data.byteOffset, count * inChannels);
     if (inChannels == outChannels) return whole(data, count * outChannels);
+    const src = Uint8Array.wrap(data.buffer, data.byteOffset, count * inChannels);
     const out = new Uint8Array(count * outChannels);
     for (let i = 0; i < count; i++) {
         for (let c = 0; c < outChannels; c++) out[i * outChannels + c] = c < inChannels ? src[i * inChannels + c] : 255;

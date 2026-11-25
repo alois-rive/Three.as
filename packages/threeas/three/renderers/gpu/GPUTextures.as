@@ -98,6 +98,7 @@ class CubeEquirect {
         const g = this.group;
         if (g != null) g.release();
         this.group = null;
+        for (let i = 0; i < 6; i++) this.faces[i] = null;
         this.params.release();
         this.view.release();
         this.texture.release();
@@ -207,6 +208,7 @@ export class GPUTextures {
     private context: Context;
     private mipModule: GPUShaderModule? = null;
     private mipPipeline: GPUPipeline? = null;
+    private cubeFaceViews: StaticArray<GPUTextureView?> = new StaticArray<GPUTextureView?>(6);
     private mipPipelineHDR: GPUPipeline? = null;
     private cubeModule: GPUShaderModule? = null;
     private cubePipeline: GPUPipeline? = null;
@@ -365,8 +367,10 @@ export class GPUTextures {
     /// renderer.dispose(): releases the pipelines and samplers (made again
     /// on use); the state on textures is left to be collected, or released
     /// when replaced.
-    reset(): void {
+    reset(queue: DisposeQueue): void {
         this._count = 0;
+        this.queue = queue;
+        this.colorAttachment.view = null;
         releasePipeline(this.mipPipeline); this.mipPipeline = null;
         releasePipeline(this.mipPipelineHDR); this.mipPipelineHDR = null;
         releasePipeline(this.cubePipeline); this.cubePipeline = null;
@@ -380,6 +384,7 @@ export class GPUTextures {
         this.mipModule = null;
         this.cubeModule = null;
         this.renderPass = null;
+        for (let i = 0; i < 6; i++) this.cubeFaceViews[i] = null;
     }
 
     private build(t: Texture, d: TextureGPU, source: GPUTextureView, w: u32, h: u32, old: MipChain?,
@@ -448,6 +453,7 @@ export class GPUTextures {
         pass.setBindGroup(0, group);
         pass.draw(3);
         pass.finish();
+        color.view = null;
     }
 
     /// The equirectangular conversion of a cube texture, redrawn when a face
@@ -471,13 +477,16 @@ export class GPUTextures {
             d.cube = ce;
         }
         let changed = ce.version != t.version;
-        const views: Array<GPUTextureView> = [];
+        const views = this.cubeFaceViews;
         for (let i = 0; i < 6; i++) {
             const v = t.faceTexture(i).getView()!;
-            views.push(v);
+            views[i] = v;
             if (ce.faces[i] !== v) changed = true;
         }
-        if (!changed) return ce;
+        if (!changed) {
+            for (let i = 0; i < 6; i++) views[i] = null;
+            return ce;
+        }
         const p = this.cubeStaging;
         p[0] = t.flipX ? 1 : 0;
         p[1] = t.flipRows ? 1 : 0;
@@ -490,7 +499,7 @@ export class GPUTextures {
         if (facesChanged) {
             const textures: Array<GPUBindGroupTexture> = [];
             for (let i = 0; i < 6; i++) {
-                textures.push(new GPUBindGroupTexture(<u32>i, views[i]));
+                textures.push(new GPUBindGroupTexture(<u32>i, views[i]!));
                 ce.faces[i] = views[i];
             }
             if (group != null) group.release();
@@ -498,6 +507,7 @@ export class GPUTextures {
                 [new GPUBindGroupSampler(6, this.mipSampler!)]);
             ce.group = group;
         }
+        for (let i = 0; i < 6; i++) views[i] = null;
         const color = this.colorAttachment;
         color.view = ce.view;
         color.loadOp = LoadOp.dontCare;
@@ -512,6 +522,7 @@ export class GPUTextures {
         pass.setBindGroup(0, group!);
         pass.draw(3);
         pass.finish();
+        color.view = null;
         ce.version = t.version;
         return ce;
     }
@@ -594,6 +605,7 @@ export class GPUTextures {
             pass.setBindGroup(0, group!);
             pass.draw(3);
             pass.finish();
+            color.view = null;
         }
         e.groupSource = src;
         e.source = src;

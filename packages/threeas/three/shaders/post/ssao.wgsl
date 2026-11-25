@@ -87,14 +87,13 @@ fn get_view_position(uv: vec2<f32>, depth: f32, view_z: f32) -> vec3<f32> {
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let depth = get_depth(in.uv);
-    // The normals (packed) and the noise, read before any branch.
+    if (depth == 1.0) {
+        return vec4<f32>(1.0);   // don't influence the background
+    }
     let packed = textureSampleLevel(tNormal, s_tex, in.uv, 0.0).xyz;
     let noise_size = vec2<i32>(textureDimensions(tNoise));
     let np = vec2<i32>(floor(in.uv * u.resolution)) % noise_size;
     let random = textureLoad(tNoise, np, 0).xyz;
-    if (depth == 1.0) {
-        return vec4<f32>(1.0);   // don't influence the background
-    }
     let view_z = get_view_z(depth);
     let view_position = get_view_position(in.uv, depth, view_z);
     let view_normal = packed * 2.0 - 1.0;

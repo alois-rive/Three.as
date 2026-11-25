@@ -67,6 +67,7 @@ export class SAOPass extends Pass {
     vBlurMaterial: ShaderMaterial;
     hBlurMaterial: ShaderMaterial;
     materialCopy: ShaderMaterial;
+    private screenCopyMaterial: ShaderMaterial;
     fsQuad: FullScreenQuad;
 
     private _oldClearColor: Color = new Color();
@@ -118,6 +119,11 @@ export class SAOPass extends Pass {
         this.materialCopy.depthTest = false;
         this.materialCopy.depthWrite = false;
         this.materialCopy.blending = MultiplyBlending;
+        this.screenCopyMaterial = CopyShader.createMaterial();
+        this.screenCopyMaterial.transparent = true;
+        this.screenCopyMaterial.depthTest = false;
+        this.screenCopyMaterial.depthWrite = false;
+        this.screenCopyMaterial.blending = NoBlending;
         this.fsQuad = new FullScreenQuad();
     }
 
@@ -135,9 +141,8 @@ export class SAOPass extends Pass {
                     maskActive: bool): void {
         // The read buffer first when rendering to the screen.
         if (this.renderToScreen) {
-            this.materialCopy.blending = NoBlending;
-            this.materialCopy.uniform<Texture>("tDiffuse").value = readBuffer.texture;
-            aoRenderPass(renderer, this.fsQuad, this.materialCopy, null);
+            this.screenCopyMaterial.uniform<Texture>("tDiffuse").value = readBuffer.texture;
+            aoRenderPass(renderer, this.fsQuad, this.screenCopyMaterial, null);
         }
         renderer.getClearColor(this._oldClearColor);
         this.oldClearAlpha = renderer.getClearAlpha();
@@ -161,13 +166,16 @@ export class SAOPass extends Pass {
         sao.uniform<Matrix4>("cameraInverseProjectionMatrix").value.copy(this.camera.projectionMatrixInverse);
 
         const depthCutoff = p.saoBlurDepthCutoff * (far - near);
-        const blurs: StaticArray<ShaderMaterial> = [this.vBlurMaterial, this.hBlurMaterial];
-        for (let i = 0; i < 2; i++) {
-            blurs[i].uniform<f64>("perspective").value = perspective;
-            blurs[i].uniform<f64>("depthCutoff").value = depthCutoff;
-            blurs[i].uniform<f64>("cameraNear").value = near;
-            blurs[i].uniform<f64>("cameraFar").value = far;
-        }
+        const vb = this.vBlurMaterial;
+        vb.uniform<f64>("perspective").value = perspective;
+        vb.uniform<f64>("depthCutoff").value = depthCutoff;
+        vb.uniform<f64>("cameraNear").value = near;
+        vb.uniform<f64>("cameraFar").value = far;
+        const hb = this.hBlurMaterial;
+        hb.uniform<f64>("perspective").value = perspective;
+        hb.uniform<f64>("depthCutoff").value = depthCutoff;
+        hb.uniform<f64>("cameraNear").value = near;
+        hb.uniform<f64>("cameraFar").value = far;
         p.saoBlurRadius = Math.floor(p.saoBlurRadius);
         if (this.prevStdDev != p.saoBlurStdDev || this.prevNumSamples != p.saoBlurRadius) {
             BlurShaderUtils.configure(this.vBlurMaterial, <i32>p.saoBlurRadius, p.saoBlurStdDev, new Vector2(0, 1));
@@ -218,6 +226,7 @@ export class SAOPass extends Pass {
         this.vBlurMaterial.dispose();
         this.hBlurMaterial.dispose();
         this.materialCopy.dispose();
+        this.screenCopyMaterial.dispose();
         this.fsQuad.dispose();
     }
 }

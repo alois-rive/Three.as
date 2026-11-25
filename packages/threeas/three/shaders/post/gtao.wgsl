@@ -125,10 +125,10 @@ fn get_scene_uv_and_depth(sample_view_pos: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let depth = get_depth(in.uv);
-    let view_normal = get_view_normal(in.uv);
     if (depth >= 1.0) {
         discard;
     }
+    let view_normal = get_view_normal(in.uv);
     let view_pos = get_view_position(in.uv, depth);
 
     var radius_to_use = u.radius;
@@ -159,13 +159,13 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let samples = i32(u.samples);
     let directions = select(5, 3, samples < 30);
     let steps = (samples + directions - 1) / directions;
+    let view_dir = normalize(-view_pos);
     var ao = 0.0;
     for (var i = 0; i < directions; i++) {
         let angle = f32(i) / f32(directions) * PI;
         var sample_dir = vec4<f32>(cos(angle), sin(angle), 0.0, 0.5 + 0.5 * noise_texel.w);
         sample_dir = vec4<f32>(normalize(kernel_matrix * sample_dir.xyz), sample_dir.w);
 
-        let view_dir = normalize(-view_pos);
         let slice_bitangent = normalize(cross(sample_dir.xyz, view_dir));
         let slice_tangent = cross(slice_bitangent, view_dir);
         let normal_in_slice = normalize(view_normal - slice_bitangent * dot(view_normal, slice_bitangent));

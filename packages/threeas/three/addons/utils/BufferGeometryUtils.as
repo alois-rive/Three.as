@@ -16,6 +16,7 @@ export function mergeGeometries(geometries: Array<BufferGeometry>, useGroups: bo
     const names = first.attributes.keys();
     const merged = new BufferGeometry();
     let offset = 0;
+    let vertexOffset = 0;
     const indices: Array<i32> = [];
     for (let i = 0; i < geometries.length; i++) {
         const g = geometries[i];
@@ -30,10 +31,10 @@ export function mergeGeometries(geometries: Array<BufferGeometry>, useGroups: bo
             offset += count;
         }
         if (indexed) {
-            const base = mergedVertexCount(geometries, i);
             const idx = g.index!.array;
-            for (let k = 0; k < idx.length; k++) indices.push(<i32>idx[k] + base);
+            for (let k = 0; k < idx.length; k++) indices.push(<i32>idx[k] + vertexOffset);
         }
+        vertexOffset += vertexCount;
     }
     for (let n = 0; n < names.length; n++) {
         const list: Array<BufferAttribute> = [];
@@ -44,15 +45,6 @@ export function mergeGeometries(geometries: Array<BufferGeometry>, useGroups: bo
     }
     if (indexed) merged.setIndex(indices);
     return merged;
-}
-
-function mergedVertexCount(geometries: Array<BufferGeometry>, upTo: i32): i32 {
-    let n = 0;
-    for (let i = 0; i < upTo; i++) {
-        const p = geometries[i].getAttribute("position");
-        if (p != null) n += p.count;
-    }
-    return n;
 }
 
 /// The attributes one after the other (same itemSize and normalized).
@@ -87,24 +79,35 @@ export function mergeVertices(geometry: BufferGeometry, tolerance: f64 = 1e-4): 
     const indexCount = source != null ? source.count : vertexCount;
     const map = new Map<string, i32>();
     const newIndices: Array<i32> = [];
+    const attrs: Array<BufferAttribute> = [];
     const out: Array<Array<f64>> = [];
-    for (let n = 0; n < names.length; n++) out.push([]);
+    for (let n = 0; n < names.length; n++) {
+        attrs.push(geometry.attributes.get(names[n]));
+        out.push([]);
+    }
     let next = 0;
     for (let i = 0; i < indexCount; i++) {
         const v = source != null ? <i32>source.array[i] : i;
         let hash = "";
-        for (let n = 0; n < names.length; n++) {
-            const a = geometry.attributes.get(names[n]);
-            for (let k = 0; k < a.itemSize; k++) {
-                hash += (Math.round(<f64>a.array[v * a.itemSize + k] * factor)).toString() + ",";
+        for (let n = 0; n < attrs.length; n++) {
+            const a = attrs[n];
+            const stride = a.itemSize;
+            const arr = a.array;
+            const base = v * stride;
+            for (let k = 0; k < stride; k++) {
+                hash += (Math.round(<f64>arr[base + k] * factor)).toString() + ",";
             }
         }
         if (map.has(hash)) {
             newIndices.push(map.get(hash));
         } else {
-            for (let n = 0; n < names.length; n++) {
-                const a = geometry.attributes.get(names[n]);
-                for (let k = 0; k < a.itemSize; k++) out[n].push(<f64>a.array[v * a.itemSize + k]);
+            for (let n = 0; n < attrs.length; n++) {
+                const a = attrs[n];
+                const stride = a.itemSize;
+                const arr = a.array;
+                const base = v * stride;
+                const dst = out[n];
+                for (let k = 0; k < stride; k++) dst.push(<f64>arr[base + k]);
             }
             map.set(hash, next);
             newIndices.push(next);
@@ -112,7 +115,7 @@ export function mergeVertices(geometry: BufferGeometry, tolerance: f64 = 1e-4): 
         }
     }
     for (let n = 0; n < names.length; n++) {
-        const a = geometry.attributes.get(names[n]);
+        const a = attrs[n];
         const data = new Float32Array(out[n].length);
         for (let k = 0; k < data.length; k++) data[k] = <f32>out[n][k];
         result.setAttribute(names[n], new BufferAttribute(data, a.itemSize, a.normalized));

@@ -91,6 +91,7 @@ export class BufferAttribute {
         this.array = source.array.slice();
         this.itemSize = source.itemSize;
         this.normalized = source.normalized;
+        this._blob = null;
         return this;
     }
 

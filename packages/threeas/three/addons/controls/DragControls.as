@@ -66,6 +66,7 @@ export class DragControls extends Controls {
         this.raycaster.intersectObjects(this.objects, this.recursive, this.intersections);
         if (this.intersections.length == 0) return;
         const hit = this.transformGroup ? this.objects[0] : this.intersections[0].object;
+        this.intersections.length = 0;
         this.selected = hit;
         this.camera.getWorldDirection(this.plane.normal);
         this.plane.setFromNormalAndCoplanarPoint(this.plane.normal, _worldPosition.setFromMatrixPosition(hit.matrixWorld));
@@ -94,6 +95,7 @@ export class DragControls extends Controls {
         this.raycaster.intersectObjects(this.objects, this.recursive, this.intersections);
         const hit: Object3D? = this.intersections.length > 0
             ? (this.transformGroup ? this.objects[0] : this.intersections[0].object) : null;
+        this.intersections.length = 0;
         if (hit !== this.hovered) {
             const old = this.hovered;
             if (old != null) this.emit("hoveroff", old);
@@ -108,5 +110,13 @@ export class DragControls extends Controls {
         this.emit("dragend", selected);
         this.selected = null;
         event.hit();
+    }
+
+    override dispose(): void {
+        this.selected = null;
+        this.hovered = null;
+        this.intersections.length = 0;
+        this.domElement = null;
+        super.dispose();
     }
 }

@@ -460,6 +460,7 @@ export class CatmullRomCurve3 extends Curve<Vector3> {
     private px: CubicPoly = new CubicPoly();
     private py: CubicPoly = new CubicPoly();
     private pz: CubicPoly = new CubicPoly();
+    private tmp0: Vector3 = new Vector3();
     private tmp: Vector3 = new Vector3();
 
     constructor(points: Array<Vector3> = [], closed: bool = false, curveType: string = "centripetal",
@@ -489,7 +490,7 @@ export class CatmullRomCurve3 extends Curve<Vector3> {
         if (this.closed || intPoint > 0) {
             p0 = points[(intPoint - 1) % l];
         } else {
-            p0 = new Vector3().subVectors(points[0], points[1]).add(points[0]);
+            p0 = this.tmp0.subVectors(points[0], points[1]).add(points[0]);
         }
         const p1 = points[intPoint % l];
         const p2 = points[(intPoint + 1) % l];
@@ -499,10 +500,14 @@ export class CatmullRomCurve3 extends Curve<Vector3> {
             p3 = this.tmp.subVectors(points[l - 1], points[l - 2]).add(points[l - 1]);
         }
         if (this.curveType == "centripetal" || this.curveType == "chordal") {
-            const pw = this.curveType == "chordal" ? 0.5 : 0.25;
-            let dt0 = Math.pow(p0.distanceToSquared(p1), pw);
-            let dt1 = Math.pow(p1.distanceToSquared(p2), pw);
-            let dt2 = Math.pow(p2.distanceToSquared(p3), pw);
+            let dt0 = Math.sqrt(p0.distanceToSquared(p1));
+            let dt1 = Math.sqrt(p1.distanceToSquared(p2));
+            let dt2 = Math.sqrt(p2.distanceToSquared(p3));
+            if (this.curveType == "centripetal") {
+                dt0 = Math.sqrt(dt0);
+                dt1 = Math.sqrt(dt1);
+                dt2 = Math.sqrt(dt2);
+            }
             if (dt1 < 1e-4) dt1 = 1.0;
             if (dt0 < 1e-4) dt0 = dt1;
             if (dt2 < 1e-4) dt2 = dt1;

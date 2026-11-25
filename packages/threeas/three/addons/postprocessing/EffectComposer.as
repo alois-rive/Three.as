@@ -145,6 +145,7 @@ export class EffectComposer {
             if (pass instanceof MaskPass) this.mask = pass as MaskPass;
             else if (!maskActive) this.mask = null;
         }
+        this.mask = null;
         this.renderer.setRenderTarget(current);
     }
 
@@ -210,6 +211,8 @@ export class EffectComposer {
         const h = <u32>Math.max(1, height * this._pixelRatio);
         this.renderTarget1.setSize(w, h);
         this.renderTarget2.setSize(w, h);
+        const backup = this.maskBackup;
+        if (backup != null) backup.setSize(w, h);
         for (let i = 0; i < this.passes.length; i++) this.passes[i].setSize(<f64>w, <f64>h);
     }
 
@@ -223,6 +226,8 @@ export class EffectComposer {
         this.renderTarget2.dispose();
         const backup = this.maskBackup;
         if (backup != null) backup.dispose();
+        this.maskBackup = null;
+        this.mask = null;
         this.copyPass.dispose();
         this.maskMaterial.dispose();
         this.maskQuad.dispose();

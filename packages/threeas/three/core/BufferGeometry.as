@@ -2,6 +2,7 @@
 // "uv") and an optional index.
 
 import { EventDispatcher, Event } from "./EventDispatcher";
+import { RendererData } from "./RendererData";
 import { BufferAttribute, Uint32BufferAttribute } from "./BufferAttribute";
 import { Matrix3 } from "../math/Matrix3";
 import { Matrix4 } from "../math/Matrix4";
@@ -52,6 +53,8 @@ export class BufferGeometry extends EventDispatcher {
     /// Set by computeBoundingSphere; the renderer computes it on first
     /// use for frustum culling. Recompute after moving vertices by hand.
     boundingSphere: Sphere? = null;
+    /// Cached GeometryBVH for raycasting (internal, set by rive/GeometryBVH).
+    _bvh: RendererData? = null;
     private _uuid: string = "";
     private _userData: Dynamic? = null;
 
@@ -242,19 +245,21 @@ export class BufferGeometry extends EventDispatcher {
             box.setFromBufferAttribute(position);
             if (this.morphAttributes.has("position")) {
                 const morphs = this.morphAttributes.get("position");
+                _boxMorphTargets.makeEmpty();
                 for (let i = 0; i < morphs.length; i++) {
                     _boxMorph.setFromBufferAttribute(morphs[i]);
                     if (_boxMorph.isEmpty()) continue;
                     if (this.morphTargetsRelative) {
                         _v.addVectors(box.min, _boxMorph.min);
-                        box.expandByPoint(_v);
+                        _boxMorphTargets.expandByPoint(_v);
                         _v.addVectors(box.max, _boxMorph.max);
-                        box.expandByPoint(_v);
+                        _boxMorphTargets.expandByPoint(_v);
                     } else {
-                        box.expandByPoint(_boxMorph.min);
-                        box.expandByPoint(_boxMorph.max);
+                        _boxMorphTargets.expandByPoint(_boxMorph.min);
+                        _boxMorphTargets.expandByPoint(_boxMorph.max);
                     }
                 }
+                box.union(_boxMorphTargets);
             }
         } else {
             box.makeEmpty();
@@ -277,19 +282,21 @@ export class BufferGeometry extends EventDispatcher {
         const hasMorph = this.morphAttributes.has("position");
         if (hasMorph) {
             const morphs = this.morphAttributes.get("position");
+            _boxMorphTargets.makeEmpty();
             for (let i = 0; i < morphs.length; i++) {
                 _boxMorph.setFromBufferAttribute(morphs[i]);
                 if (_boxMorph.isEmpty()) continue;
                 if (this.morphTargetsRelative) {
                     _v.addVectors(_box.min, _boxMorph.min);
-                    _box.expandByPoint(_v);
+                    _boxMorphTargets.expandByPoint(_v);
                     _v.addVectors(_box.max, _boxMorph.max);
-                    _box.expandByPoint(_v);
+                    _boxMorphTargets.expandByPoint(_v);
                 } else {
-                    _box.expandByPoint(_boxMorph.min);
-                    _box.expandByPoint(_boxMorph.max);
+                    _boxMorphTargets.expandByPoint(_boxMorph.min);
+                    _boxMorphTargets.expandByPoint(_boxMorph.max);
                 }
             }
+            _box.union(_boxMorphTargets);
         }
         _box.getCenter(center);
         let maxRadiusSq: f64 = 0;
@@ -505,6 +512,7 @@ function addTo(attribute: BufferAttribute, i: i32, v: Vector3): void {
 const _m: Matrix4 = new Matrix4();
 const _box: Box3 = new Box3();
 const _boxMorph: Box3 = new Box3();
+const _boxMorphTargets: Box3 = new Box3();
 const _n: Matrix3 = new Matrix3();
 const _v: Vector3 = new Vector3();
 const _offset: Vector3 = new Vector3();

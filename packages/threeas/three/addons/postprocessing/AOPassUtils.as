@@ -35,11 +35,15 @@ export function isPerspective(camera: Camera): f64 {
     return camera instanceof OrthographicCamera ? 0 : 1;
 }
 
+const _hideStack: Array<Object3D> = [];
+
 /// Hides the visible points and lines under `scene` (they do not take part
 /// in ambient occlusion), remembering them in `hidden`.
 export function hidePointsAndLines(scene: Object3D, hidden: Array<Object3D>): void {
     hidden.length = 0;
-    const stack: Array<Object3D> = [scene];
+    const stack = _hideStack;
+    stack.length = 0;
+    stack.push(scene);
     while (stack.length > 0) {
         const o = stack.pop();
         if ((o instanceof Points || o instanceof Line) && o.visible) {

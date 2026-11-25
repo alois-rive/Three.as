@@ -94,11 +94,33 @@ export class BiquadFilterNode extends AudioNode {
     gain: AudioParam = new AudioParam(0);
     detune: AudioParam = new AudioParam(0);
 
+    private cachedType: string = "";
+    private cachedFreq: f64 = NaN;
+    private cachedQ: f64 = NaN;
+    private cachedGain: f64 = NaN;
+    private cachedDetune: f64 = NaN;
+    private cachedRate: f64 = NaN;
+    private cached: StaticArray<f64> = new StaticArray<f64>(5);
+
     /// Its normalized coefficients (b0, b1, b2, a1, a2) at `sampleRate`
     /// into `out` at `offset`.
     coefficients(sampleRate: f64, out: StaticArray<f64>, offset: i32): void {
-        biquadCoefficients(this.type, this.frequency.value, this.Q.value, this.gain.value, this.detune.value,
-            sampleRate, out, offset);
+        const f = this.frequency.value, q = this.Q.value, g = this.gain.value, d = this.detune.value;
+        if (this.cachedType != this.type || this.cachedFreq != f || this.cachedQ != q
+                || this.cachedGain != g || this.cachedDetune != d || this.cachedRate != sampleRate) {
+            biquadCoefficients(this.type, f, q, g, d, sampleRate, this.cached, 0);
+            this.cachedType = this.type;
+            this.cachedFreq = f;
+            this.cachedQ = q;
+            this.cachedGain = g;
+            this.cachedDetune = d;
+            this.cachedRate = sampleRate;
+        }
+        out[offset] = this.cached[0];
+        out[offset + 1] = this.cached[1];
+        out[offset + 2] = this.cached[2];
+        out[offset + 3] = this.cached[3];
+        out[offset + 4] = this.cached[4];
     }
 }
 
@@ -170,16 +192,19 @@ export class AnalyserNode extends AudioNode {
     private smoothed: Float64Array = new Float64Array(1024);
     private re: Float64Array = new Float64Array(2048);
     private im: Float64Array = new Float64Array(2048);
+    private window: Float64Array = makeBlackmanWindow(2048);
     private computedAt: f64 = -1;
 
     get fftSize(): i32 { return this._fftSize; }
     set fftSize(value: i32) {
         let n = 32;
         while (n < value && n < MIX_MAX_FFT) n <<= 1;
+        if (n == this._fftSize) return;
         this._fftSize = n;
         this.smoothed = new Float64Array(n / 2);
         this.re = new Float64Array(n);
         this.im = new Float64Array(n);
+        this.window = makeBlackmanWindow(n);
         this.computedAt = -1;
     }
 
@@ -202,9 +227,9 @@ export class AnalyserNode extends AudioNode {
         this.computedAt = this.frame.written;
         const n = this._fftSize;
         const samples = this.frame.samples;
-        const re = this.re, im = this.im;
+        const re = this.re, im = this.im, win = this.window;
         for (let i = 0; i < n; i++) {
-            re[i] = <f64>samples[MIX_MAX_FFT - n + i] * blackman(i, n);
+            re[i] = <f64>samples[MIX_MAX_FFT - n + i] * win[i];
             im[i] = 0;
         }
         fft(re, im);
@@ -364,7 +389,19 @@ export class AudioBuffer {
     copyToChannel(source: Float32Array, channelNumber: i32, bufferOffset: i32 = 0): void {
         if (this.channelData == null) {
             const channels = new Array<Float32Array>();
-            for (let c = 0; c < this.numberOfChannels; c++) channels.push(this.getChannelData(c));
+            const blob = this.blob;
+            const n = this.length, nc = this.numberOfChannels;
+            if (blob != null && n > 0 && nc > 0) {
+                const all = new Float32Array(n * nc);
+                blob.readInto(0, all);
+                for (let c = 0; c < nc; c++) {
+                    const ch = new Float32Array(n);
+                    for (let i = 0; i < n; i++) ch[i] = all[i * nc + c];
+                    channels.push(ch);
+                }
+            } else {
+                for (let c = 0; c < nc; c++) channels.push(new Float32Array(n));
+            }
             this.channelData = channels;
             this.blob = null;
         }
@@ -387,8 +424,15 @@ export class AudioBuffer {
         }
         const made = Blob.fromArray(all);
         this.blob = made;
+        this.channelData = null;
         this.numberOfChannels = channels;
         this.ready = true;
         return made;
     }
+}
+
+function makeBlackmanWindow(n: i32): Float64Array {
+    const out = new Float64Array(n);
+    for (let i = 0; i < n; i++) out[i] = blackman(i, n);
+    return out;
 }

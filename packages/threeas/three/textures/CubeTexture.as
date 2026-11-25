@@ -42,7 +42,7 @@ export class CubeTexture extends Texture {
         const face = this.faces[i];
         if (i < this.images.length) {
             const image = this.images[i];
-            if (image != null && face.image !== image) {
+            if (face.image !== image) {
                 face.image = image;
                 this.version++;
             }

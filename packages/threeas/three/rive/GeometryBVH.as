@@ -24,6 +24,7 @@
 
 import { Job, Jobs } from "rive/jobs";
 import { BufferGeometry } from "../core/BufferGeometry";
+import { RendererData } from "../core/RendererData";
 import { BufferAttribute, Uint32BufferAttribute } from "../core/BufferAttribute";
 import { Event, EventListener } from "../core/EventDispatcher";
 import { Ray } from "../math/Ray";
@@ -148,20 +149,19 @@ export class BVHData {
         stack.push(-1); stack.push(start); stack.push(mid);
     }
     const out = new BVHData();
-    const order = new Int32Array(n);
-    for (let i = 0; i < n; i++) order[i] = tris[i] * 3;
-    out.tris = order;
+    for (let i = 0; i < n; i++) tris[i] *= 3;
+    out.tris = tris;
     out.nodes = nodes.slice(0, count * 2);
     out.bounds = bounds.slice(0, count * 6);
     return out;
 }
 
-const _trees: Map<i32, GeometryBVH> = new Map<i32, GeometryBVH>();
-// The same trees, for eviction.
+// Active trees, for LRU eviction when geometries are dropped without dispose().
 const _treeList: Array<GeometryBVH> = [];
 // Bumped by every lookup: a tree's lastUsed orders evictions.
 let _clock: i32 = 0;
 let _stack: Int32Array = new Int32Array(128);
+let _found: Int32Array = new Int32Array(256);
 
 class Disposer extends EventListener {
     tree: GeometryBVH;
@@ -174,14 +174,22 @@ class Disposer extends EventListener {
     }
 }
 
-// Drops `tree` from the table, its dispose listener from its geometry, and
+// Drops `tree` from its geometry, the eviction list, its dispose listener, and
 // its data.
 function forget(tree: GeometryBVH): void {
-    const id = tree.geometryId;
-    if (_trees.has(id) && _trees.get(id) === tree) _trees.delete(id);
-    const i = _treeList.indexOf(tree);
-    if (i >= 0) _treeList.splice(i, 1);
     const geometry = tree.geometry;
+    if (geometry != null && geometry._bvh === tree) geometry._bvh = null;
+    const i = tree._listIndex;
+    if (i >= 0 && i < _treeList.length && _treeList[i] === tree) {
+        const last = _treeList.length - 1;
+        if (i != last) {
+            const moved = _treeList[last];
+            _treeList[i] = moved;
+            moved._listIndex = i;
+        }
+        _treeList.pop();
+    }
+    tree._listIndex = -1;
     const disposer = tree.disposer;
     if (geometry != null && disposer != null) geometry.removeEventListener("dispose", disposer);
     tree.geometry = null;
@@ -200,7 +208,7 @@ function evict(): void {
     }
 }
 
-export class GeometryBVH {
+export class GeometryBVH extends RendererData {
     /// Geometries with at least this many triangles get a tree on their
     /// first raycast.
     static readonly AUTO_TRIANGLES: i32 = 4096;
@@ -218,14 +226,11 @@ export class GeometryBVH {
     private positionVersion: i32 = -1;
     private index: Uint32BufferAttribute? = null;
     private indexVersion: i32 = -1;
-    // Candidates of the last query (triangle starts).
-    private found: Int32Array = new Int32Array(256);
-    // The geometry it was built for, while in the table, and its dispose
-    // listener.
-    geometryId: i32 = -1;
+    // The geometry it was built for, while tracked, and its dispose listener.
     geometry: BufferGeometry? = null;
     disposer: Disposer? = null;
     lastUsed: i32 = 0;
+    _listIndex: i32 = -1;
 
     /// Starts building `geometry`'s tree in a job, unless one is built or
     /// building for its current attributes.
@@ -246,22 +251,24 @@ export class GeometryBVH {
 
     /// Whether a job is building `geometry`'s tree.
     static pending(geometry: BufferGeometry): bool {
-        if (!_trees.has(geometry.id)) return false;
-        const tree = _trees.get(geometry.id);
+        const bvh = geometry._bvh;
+        if (bvh == null) return false;
+        const tree = bvh as GeometryBVH;
         return tree.job != null && tree.current(geometry) && !tree.poll();
     }
 
     /// Drops `geometry`'s tree (geometry.dispose() does too); the next
     /// raycast of a big geometry starts another.
     static dispose(geometry: BufferGeometry): void {
-        if (_trees.has(geometry.id)) forget(_trees.get(geometry.id));
+        const bvh = geometry._bvh;
+        if (bvh != null) forget(bvh as GeometryBVH);
     }
 
     /// For raycasts (`count`: the index or vertex count): the tree of a
     /// geometry big enough (or requested), its build started at the first
     /// call; null while it builds and for small geometries.
     static forRaycast(geometry: BufferGeometry, count: i32): GeometryBVH? {
-        if (count / 3 < GeometryBVH.AUTO_TRIANGLES && !_trees.has(geometry.id)) return null;
+        if (count / 3 < GeometryBVH.AUTO_TRIANGLES && geometry._bvh == null) return null;
         return GeometryBVH.of(geometry, true, false);
     }
 
@@ -269,17 +276,18 @@ export class GeometryBVH {
         const position = geometry.getAttribute("position");
         if (position == null || position.itemSize < 3) return null;
         let tree: GeometryBVH;
-        if (_trees.has(geometry.id)) {
-            tree = _trees.get(geometry.id);
+        const existing = geometry._bvh;
+        if (existing != null) {
+            tree = existing as GeometryBVH;
         } else {
             if (!start) return null;
             evict();
             tree = new GeometryBVH();
-            tree.geometryId = geometry.id;
             tree.geometry = geometry;
             const disposer = new Disposer(tree);
             tree.disposer = disposer;
-            _trees.set(geometry.id, tree);
+            geometry._bvh = tree;
+            tree._listIndex = _treeList.length;
             _treeList.push(tree);
             geometry.addEventListener("dispose", disposer);
         }
@@ -329,7 +337,7 @@ export class GeometryBVH {
         return this.data != null;
     }
 
-    release(): void {
+    override release(): void {
         const job = this.job;
         if (job != null) job.release();
         this.job = null;
@@ -340,42 +348,22 @@ export class GeometryBVH {
     }
 
     /// The starts of the triangles in leaves whose box `ray` (in the
-    /// geometry's space) crosses, into `candidates()`; returns how many.
-    query(ray: Ray): i32 {
+    /// geometry's space) crosses within `maxT`, into `candidates()`; returns
+    /// how many.
+    query(ray: Ray, maxT: f64 = Infinity): i32 {
         const data = this.data;
         if (data == null || data.tris.length == 0) return 0;
         const nodes = data.nodes, bounds = data.bounds, tris = data.tris;
         const ox = ray.origin.x, oy = ray.origin.y, oz = ray.origin.z;
         const dx = ray.direction.x, dy = ray.direction.y, dz = ray.direction.z;
         const ix = dx != 0 ? 1 / dx : 0, iy = dy != 0 ? 1 / dy : 0, iz = dz != 0 ? 1 / dz : 0;
-        let found = this.found;
+        if (isNaN(boxEnter(bounds, 0, ox, oy, oz, dx, dy, dz, ix, iy, iz, maxT))) return 0;
+        let found = _found;
         let n = 0;
         let top = 0;
         _stack[top++] = 0;
         while (top > 0) {
             const node = _stack[--top];
-            const b = node * 6;
-            // Slab test; an axis the ray is parallel to only bounds it.
-            let enter = -Infinity, exit = Infinity;
-            const x0: f64 = bounds[b], x1: f64 = bounds[b + 3];
-            if (dx != 0) {
-                const t0 = (x0 - ox) * ix, t1 = (x1 - ox) * ix;
-                enter = Math.max(enter, Math.min(t0, t1));
-                exit = Math.min(exit, Math.max(t0, t1));
-            } else if (ox < x0 || ox > x1) continue;
-            const y0: f64 = bounds[b + 1], y1: f64 = bounds[b + 4];
-            if (dy != 0) {
-                const t0 = (y0 - oy) * iy, t1 = (y1 - oy) * iy;
-                enter = Math.max(enter, Math.min(t0, t1));
-                exit = Math.min(exit, Math.max(t0, t1));
-            } else if (oy < y0 || oy > y1) continue;
-            const z0: f64 = bounds[b + 2], z1: f64 = bounds[b + 5];
-            if (dz != 0) {
-                const t0 = (z0 - oz) * iz, t1 = (z1 - oz) * iz;
-                enter = Math.max(enter, Math.min(t0, t1));
-                exit = Math.min(exit, Math.max(t0, t1));
-            } else if (oz < z0 || oz > z1) continue;
-            if (enter > exit || exit < 0) continue;
             const count = nodes[node * 2 + 1];
             if (count > 0) {
                 const first = nodes[node * 2];
@@ -383,22 +371,72 @@ export class GeometryBVH {
                     const grown = new Int32Array(found.length * 2 + count);
                     grown.set(found);
                     found = grown;
-                    this.found = found;
+                    _found = found;
                 }
                 for (let i = 0; i < count; i++) found[n++] = tris[first + i];
             } else {
-                if (top + 2 > _stack.length) {
-                    const grown = new Int32Array(_stack.length * 2);
-                    grown.set(_stack);
-                    _stack = grown;
+                const left = node + 1;
+                const right = nodes[node * 2];
+                const tl = boxEnter(bounds, left * 6, ox, oy, oz, dx, dy, dz, ix, iy, iz, maxT);
+                const tr = boxEnter(bounds, right * 6, ox, oy, oz, dx, dy, dz, ix, iy, iz, maxT);
+                const hitL = !isNaN(tl);
+                const hitR = !isNaN(tr);
+                if (hitL && hitR) {
+                    if (top + 2 > _stack.length) {
+                        const grown = new Int32Array(_stack.length * 2);
+                        grown.set(_stack);
+                        _stack = grown;
+                    }
+                    // Push farther child first so the nearer child is popped first.
+                    if (tl <= tr) { _stack[top++] = right; _stack[top++] = left; }
+                    else { _stack[top++] = left; _stack[top++] = right; }
+                } else if (hitL) {
+                    if (top + 1 > _stack.length) {
+                        const grown = new Int32Array(_stack.length * 2);
+                        grown.set(_stack);
+                        _stack = grown;
+                    }
+                    _stack[top++] = left;
+                } else if (hitR) {
+                    if (top + 1 > _stack.length) {
+                        const grown = new Int32Array(_stack.length * 2);
+                        grown.set(_stack);
+                        _stack = grown;
+                    }
+                    _stack[top++] = right;
                 }
-                _stack[top++] = nodes[node * 2];   // right
-                _stack[top++] = node + 1;          // left
             }
         }
         return n;
     }
 
     /// The triangle starts the last query found.
-    candidates(): Int32Array { return this.found; }
+    candidates(): Int32Array { return _found; }
+}
+
+// Slab test for node box at `bounds[b .. b + 6]`: returns enter t (<= maxT)
+// on a hit, or NaN on a miss.
+function boxEnter(bounds: Float32Array, b: i32, ox: f64, oy: f64, oz: f64,
+                  dx: f64, dy: f64, dz: f64, ix: f64, iy: f64, iz: f64, maxT: f64): f64 {
+    let enter: f64 = -Infinity, exit: f64 = maxT;
+    const x0: f64 = bounds[b], x1: f64 = bounds[b + 3];
+    if (dx != 0) {
+        const t0 = (x0 - ox) * ix, t1 = (x1 - ox) * ix;
+        enter = Math.max(enter, Math.min(t0, t1));
+        exit = Math.min(exit, Math.max(t0, t1));
+    } else if (ox < x0 || ox > x1) return NaN;
+    const y0: f64 = bounds[b + 1], y1: f64 = bounds[b + 4];
+    if (dy != 0) {
+        const t0 = (y0 - oy) * iy, t1 = (y1 - oy) * iy;
+        enter = Math.max(enter, Math.min(t0, t1));
+        exit = Math.min(exit, Math.max(t0, t1));
+    } else if (oy < y0 || oy > y1) return NaN;
+    const z0: f64 = bounds[b + 2], z1: f64 = bounds[b + 5];
+    if (dz != 0) {
+        const t0 = (z0 - oz) * iz, t1 = (z1 - oz) * iz;
+        enter = Math.max(enter, Math.min(t0, t1));
+        exit = Math.min(exit, Math.max(t0, t1));
+    } else if (oz < z0 || oz > z1) return NaN;
+    if (enter > exit || exit < 0) return NaN;
+    return enter;
 }

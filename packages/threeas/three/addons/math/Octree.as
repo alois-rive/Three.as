@@ -39,6 +39,10 @@ const _center = new Vector3();
 const _temp1 = new Vector3();
 const _temp2 = new Vector3();
 const _temp3 = new Vector3();
+const _triangles: Array<Triangle> = [];
+const _seen: Set<Triangle> = new Set<Triangle>();
+const _triNormal = new Vector3();
+const _bestPos = new Vector3();
 const EPS: f64 = 1e-10;
 
 /// The closest points of two segments, in `target1` (on `line1`) and
@@ -254,16 +258,29 @@ export class Octree {
 
     /// Adds to `triangles` those that may intersect `ray` (each once).
     getRayTriangles(ray: Ray, triangles: Array<Triangle>): void {
-        for (let i = 0; i < this.subTrees.length; i++) {
-            const subTree = this.subTrees[i];
+        _seen.clear();
+        for (let i = 0; i < triangles.length; i++) _seen.add(triangles[i]);
+        this.collectRayTriangles(ray, triangles, _seen);
+        _seen.clear();
+    }
+
+    private collectRayTriangles(ray: Ray, triangles: Array<Triangle>, seen: Set<Triangle>): void {
+        const subTrees = this.subTrees;
+        for (let i = 0; i < subTrees.length; i++) {
+            const subTree = unchecked(subTrees[i]);
             if (!ray.intersectsBox(subTree.box!)) continue;
 
-            if (subTree.triangles.length > 0) {
-                for (let j = 0; j < subTree.triangles.length; j++) {
-                    if (triangles.indexOf(subTree.triangles[j]) == -1) triangles.push(subTree.triangles[j]);
+            const tris = subTree.triangles;
+            if (tris.length > 0) {
+                for (let j = 0; j < tris.length; j++) {
+                    const t = unchecked(tris[j]);
+                    if (!seen.has(t)) {
+                        seen.add(t);
+                        triangles.push(t);
+                    }
                 }
             } else {
-                subTree.getRayTriangles(ray, triangles);
+                subTree.collectRayTriangles(ray, triangles, seen);
             }
         }
     }
@@ -382,53 +399,170 @@ export class Octree {
 
     /// Adds to `triangles` those that may intersect `sphere` (each once).
     getSphereTriangles(sphere: Sphere, triangles: Array<Triangle>): void {
-        for (let i = 0; i < this.subTrees.length; i++) {
-            const subTree = this.subTrees[i];
+        _seen.clear();
+        for (let i = 0; i < triangles.length; i++) _seen.add(triangles[i]);
+        this.collectSphereTriangles(sphere, triangles, _seen);
+        _seen.clear();
+    }
 
+    private collectSphereTriangles(sphere: Sphere, triangles: Array<Triangle>, seen: Set<Triangle>): void {
+        const subTrees = this.subTrees;
+        for (let i = 0; i < subTrees.length; i++) {
+            const subTree = unchecked(subTrees[i]);
             if (!sphere.intersectsBox(subTree.box!)) continue;
 
-            if (subTree.triangles.length > 0) {
-                for (let j = 0; j < subTree.triangles.length; j++) {
-                    if (triangles.indexOf(subTree.triangles[j]) == -1) triangles.push(subTree.triangles[j]);
+            const tris = subTree.triangles;
+            if (tris.length > 0) {
+                for (let j = 0; j < tris.length; j++) {
+                    const t = unchecked(tris[j]);
+                    if (!seen.has(t)) {
+                        seen.add(t);
+                        triangles.push(t);
+                    }
                 }
             } else {
-                subTree.getSphereTriangles(sphere, triangles);
+                subTree.collectSphereTriangles(sphere, triangles, seen);
             }
         }
     }
 
     /// Adds to `triangles` those that may intersect `box` (each once).
     getBoxTriangles(box: Box3, triangles: Array<Triangle>): void {
-        for (let i = 0; i < this.subTrees.length; i++) {
-            const subTree = this.subTrees[i];
+        _seen.clear();
+        for (let i = 0; i < triangles.length; i++) _seen.add(triangles[i]);
+        this.collectBoxTriangles(box, triangles, _seen);
+        _seen.clear();
+    }
 
+    private collectBoxTriangles(box: Box3, triangles: Array<Triangle>, seen: Set<Triangle>): void {
+        const subTrees = this.subTrees;
+        for (let i = 0; i < subTrees.length; i++) {
+            const subTree = unchecked(subTrees[i]);
             if (!box.intersectsBox(subTree.box!)) continue;
 
-            if (subTree.triangles.length > 0) {
-                for (let j = 0; j < subTree.triangles.length; j++) {
-                    if (triangles.indexOf(subTree.triangles[j]) == -1) triangles.push(subTree.triangles[j]);
+            const tris = subTree.triangles;
+            if (tris.length > 0) {
+                for (let j = 0; j < tris.length; j++) {
+                    const t = unchecked(tris[j]);
+                    if (!seen.has(t)) {
+                        seen.add(t);
+                        triangles.push(t);
+                    }
                 }
             } else {
-                subTree.getBoxTriangles(box, triangles);
+                subTree.collectBoxTriangles(box, triangles, seen);
             }
         }
     }
 
     /// Adds to `triangles` those that may intersect `capsule` (each once).
     getCapsuleTriangles(capsule: Capsule, triangles: Array<Triangle>): void {
-        for (let i = 0; i < this.subTrees.length; i++) {
-            const subTree = this.subTrees[i];
+        _seen.clear();
+        for (let i = 0; i < triangles.length; i++) _seen.add(triangles[i]);
+        this.collectCapsuleTriangles(capsule, triangles, _seen);
+        _seen.clear();
+    }
 
+    private collectCapsuleTriangles(capsule: Capsule, triangles: Array<Triangle>, seen: Set<Triangle>): void {
+        const subTrees = this.subTrees;
+        for (let i = 0; i < subTrees.length; i++) {
+            const subTree = unchecked(subTrees[i]);
             if (!capsule.intersectsBox(subTree.box!)) continue;
 
-            if (subTree.triangles.length > 0) {
-                for (let j = 0; j < subTree.triangles.length; j++) {
-                    if (triangles.indexOf(subTree.triangles[j]) == -1) triangles.push(subTree.triangles[j]);
+            const tris = subTree.triangles;
+            if (tris.length > 0) {
+                for (let j = 0; j < tris.length; j++) {
+                    const t = unchecked(tris[j]);
+                    if (!seen.has(t)) {
+                        seen.add(t);
+                        triangles.push(t);
+                    }
                 }
             } else {
-                subTree.getCapsuleTriangles(capsule, triangles);
+                subTree.collectCapsuleTriangles(capsule, triangles, seen);
             }
         }
+    }
+
+    // Allocation-free triangle resolution helpers for boxIntersect / sphereIntersect / capsuleIntersect.
+    private resolveTriangleBox(box: Box3, triangle: Triangle): bool {
+        if (max3(triangle.a.x, triangle.b.x, triangle.c.x) < box.min.x ||
+                min3(triangle.a.x, triangle.b.x, triangle.c.x) > box.max.x ||
+                max3(triangle.a.y, triangle.b.y, triangle.c.y) < box.min.y ||
+                min3(triangle.a.y, triangle.b.y, triangle.c.y) > box.max.y ||
+                max3(triangle.a.z, triangle.b.z, triangle.c.z) < box.min.z ||
+                min3(triangle.a.z, triangle.b.z, triangle.c.z) > box.max.z) {
+            return false;
+        }
+        if (!box.intersectsTriangle(triangle)) return false;
+        triangle.getPlane(_plane);
+        _v1.x = (_plane.normal.x > 0) ? box.min.x : box.max.x;
+        _v1.y = (_plane.normal.y > 0) ? box.min.y : box.max.y;
+        _v1.z = (_plane.normal.z > 0) ? box.min.z : box.max.z;
+        const depth = -_plane.distanceToPoint(_v1);
+        _triNormal.copy(_plane.normal).multiplyScalar(depth);
+        box.translate(_triNormal);
+        return true;
+    }
+
+    private resolveTriangleSphere(sphere: Sphere, triangle: Triangle): bool {
+        triangle.getPlane(_plane);
+        if (!sphere.intersectsPlane(_plane)) return false;
+        const r2 = sphere.radius * sphere.radius;
+        const plainPoint = _plane.projectPoint(sphere.center, _v1);
+        if (triangle.containsPoint(sphere.center)) {
+            const depth = Math.abs(_plane.distanceToSphere(sphere));
+            sphere.center.addScaledVector(_plane.normal, depth);
+            return true;
+        }
+        for (let i = 0; i < 3; i++) {
+            const a = i == 0 ? triangle.a : i == 1 ? triangle.b : triangle.c;
+            const b = i == 0 ? triangle.b : i == 1 ? triangle.c : triangle.a;
+            _line1.set(a, b);
+            _line1.closestPointToPoint(plainPoint, true, _v2);
+            const d = _v2.distanceToSquared(sphere.center);
+            if (d < r2) {
+                const depth = sphere.radius - Math.sqrt(d);
+                _triNormal.subVectors(sphere.center, _v2).normalize();
+                sphere.center.addScaledVector(_triNormal, depth);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private resolveTriangleCapsule(capsule: Capsule, triangle: Triangle): bool {
+        triangle.getPlane(_plane);
+        const d1 = _plane.distanceToPoint(capsule.start) - capsule.radius;
+        const d2 = _plane.distanceToPoint(capsule.end) - capsule.radius;
+        if ((d1 > 0 && d2 > 0) || (d1 < -capsule.radius && d2 < -capsule.radius)) {
+            return false;
+        }
+        const delta = Math.abs(d1 / (Math.abs(d1) + Math.abs(d2)));
+        const intersectPoint = _v1.copy(capsule.start).lerp(capsule.end, delta);
+        if (triangle.containsPoint(intersectPoint)) {
+            const depth = Math.abs(Math.min(d1, d2));
+            _triNormal.copy(_plane.normal).multiplyScalar(depth);
+            capsule.translate(_triNormal);
+            return true;
+        }
+        const r2 = capsule.radius * capsule.radius;
+        const line1 = _line1.set(capsule.start, capsule.end);
+        for (let i = 0; i < 3; i++) {
+            const a = i == 0 ? triangle.a : i == 1 ? triangle.b : triangle.c;
+            const b = i == 0 ? triangle.b : i == 1 ? triangle.c : triangle.a;
+            const line2 = _line2.set(a, b);
+            lineToLineClosestPoints(line1, line2, _point1, _point2);
+            const d2sq = _point1.distanceToSquared(_point2);
+            if (d2sq < r2) {
+                const dist = Math.sqrt(d2sq);
+                const depth = capsule.radius - dist;
+                _triNormal.subVectors(_point1, _point2).normalize().multiplyScalar(depth);
+                capsule.translate(_triNormal);
+                return true;
+            }
+        }
+        return false;
     }
 
     /// `box` against the world: how far, and which way, to move it out
@@ -436,19 +570,15 @@ export class Octree {
     boxIntersect(box: Box3): OctreeCollision? {
         _box.copy(box);
 
-        const triangles: Array<Triangle> = [];
+        _triangles.length = 0;
         let hit = false;
 
-        this.getBoxTriangles(box, triangles);
+        this.getBoxTriangles(box, _triangles);
 
-        for (let i = 0; i < triangles.length; i++) {
-            const result = this.triangleBoxIntersect(_box, triangles[i]);
-            if (result != null) {
-                hit = true;
-
-                _box.translate(result.normal.multiplyScalar(result.depth));
-            }
+        for (let i = 0; i < _triangles.length; i++) {
+            if (this.resolveTriangleBox(_box, unchecked(_triangles[i]))) hit = true;
         }
+        _triangles.length = 0;
 
         if (hit) {
             const collisionVector = _box.getCenter(_center).sub(box.getCenter(_v1));
@@ -465,19 +595,15 @@ export class Octree {
     sphereIntersect(sphere: Sphere): OctreeCollision? {
         _sphere.copy(sphere);
 
-        const triangles: Array<Triangle> = [];
+        _triangles.length = 0;
         let hit = false;
 
-        this.getSphereTriangles(sphere, triangles);
+        this.getSphereTriangles(sphere, _triangles);
 
-        for (let i = 0; i < triangles.length; i++) {
-            const result = this.triangleSphereIntersect(_sphere, triangles[i]);
-            if (result != null) {
-                hit = true;
-
-                _sphere.center.add(result.normal.multiplyScalar(result.depth));
-            }
+        for (let i = 0; i < _triangles.length; i++) {
+            if (this.resolveTriangleSphere(_sphere, unchecked(_triangles[i]))) hit = true;
         }
+        _triangles.length = 0;
 
         if (hit) {
             const collisionVector = _sphere.center.clone().sub(sphere.center);
@@ -494,19 +620,15 @@ export class Octree {
     capsuleIntersect(capsule: Capsule): OctreeCollision? {
         _capsule.copy(capsule);
 
-        const triangles: Array<Triangle> = [];
+        _triangles.length = 0;
         let hit = false;
 
-        this.getCapsuleTriangles(_capsule, triangles);
+        this.getCapsuleTriangles(_capsule, _triangles);
 
-        for (let i = 0; i < triangles.length; i++) {
-            const result = this.triangleCapsuleIntersect(_capsule, triangles[i]);
-            if (result != null) {
-                hit = true;
-
-                _capsule.translate(result.normal.multiplyScalar(result.depth));
-            }
+        for (let i = 0; i < _triangles.length; i++) {
+            if (this.resolveTriangleCapsule(_capsule, unchecked(_triangles[i]))) hit = true;
         }
+        _triangles.length = 0;
 
         if (hit) {
             const collisionVector = _capsule.getCenter(_center).sub(capsule.getCenter(_v1));
@@ -521,28 +643,29 @@ export class Octree {
     /// The nearest triangle `ray` hits (front faces only, as three.js), or
     /// null.
     rayIntersect(ray: Ray): OctreeRayHit? {
-        const triangles: Array<Triangle> = [];
+        _triangles.length = 0;
         let triangle: Triangle? = null;
-        let position: Vector3? = null;
-        let distance: f64 = 1e100;
+        let minDistSq: f64 = Infinity;
 
-        this.getRayTriangles(ray, triangles);
+        this.getRayTriangles(ray, _triangles);
 
-        for (let i = 0; i < triangles.length; i++) {
-            const result = ray.intersectTriangle(triangles[i].a, triangles[i].b, triangles[i].c, true, _v1);
+        for (let i = 0; i < _triangles.length; i++) {
+            const tri = unchecked(_triangles[i]);
+            const result = ray.intersectTriangle(tri.a, tri.b, tri.c, true, _v1);
 
             if (result != null) {
-                const newdistance = result.sub(ray.origin).length();
+                const distSq = result.distanceToSquared(ray.origin);
 
-                if (distance > newdistance) {
-                    position = result.clone().add(ray.origin);
-                    distance = newdistance;
-                    triangle = triangles[i];
+                if (distSq < minDistSq) {
+                    _bestPos.copy(result);
+                    minDistSq = distSq;
+                    triangle = tri;
                 }
             }
         }
+        _triangles.length = 0;
 
-        return distance < 1e100 ? new OctreeRayHit(distance, triangle!, position!) : null;
+        return triangle != null ? new OctreeRayHit(Math.sqrt(minDistSq), triangle!, _bestPos.clone()) : null;
     }
 
     /// Builds the Octree from the meshes under `group` (itself included)

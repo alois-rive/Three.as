@@ -31,8 +31,12 @@ export class PMREMResult {
     /// environment again, it is prefiltered again).
     dispose(): void {
         const t = this.cubeTarget;
-        if (t != null) t.dispose();
-        else if (this.texture.hasListeners(PMREM_DISPOSE_EVENT)) this.texture.dispatchEvent(new Event(PMREM_DISPOSE_EVENT));
+        if (t != null) {
+            t.dispose();
+            this.cubeTarget = null;
+        } else if (this.texture.hasListeners(PMREM_DISPOSE_EVENT)) {
+            this.texture.dispatchEvent(new Event(PMREM_DISPOSE_EVENT));
+        }
     }
 }
 

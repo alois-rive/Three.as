@@ -324,5 +324,6 @@ export function toDecibels(value: f64): f64 {
 /// A playback rate with `detune` cents applied, as AudioBufferSourceNode
 /// combines them.
 export function computedPlaybackRate(playbackRate: f64, detune: f64): f64 {
+    if (detune == 0) return playbackRate;
     return playbackRate * Math.pow(2, detune / 1200);
 }

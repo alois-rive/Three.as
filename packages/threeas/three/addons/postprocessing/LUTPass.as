@@ -65,6 +65,16 @@ export class LUTPass extends ShaderPass {
             const placeholder = this.placeholder;
             if (placeholder != null) placeholder.dispose();
             this.placeholder = null;
+        } else {
+            this.uniform<f64>("lutSize").value = 0;
+            let placeholder = this.placeholder;
+            if (placeholder == null) {
+                const white = new Uint8Array(4);
+                white.fill(255);
+                placeholder = new Data3DTexture(white, 1, 1, 1);
+                this.placeholder = placeholder;
+            }
+            this.uniform<Texture>("lut").value = placeholder!;
         }
     }
 

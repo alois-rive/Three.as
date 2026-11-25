@@ -18,7 +18,9 @@ import { RenderTarget } from "../../renderers/RenderTarget";
 import { Texture } from "../../textures/Texture";
 import { Object3D } from "../../core/Object3D";
 import { Camera } from "../../cameras/Camera";
-import { HalfFloatType } from "../../constants";
+import { HalfFloatType, AdditiveBlending } from "../../constants";
+import { ShaderMaterial } from "../../materials/ShaderMaterial";
+import { CopyShader } from "../shaders/PostShaders";
 import { SSAARenderPass, JitterVectors } from "./SSAARenderPass";
 
 export class TAARenderPass extends SSAARenderPass {
@@ -27,15 +29,20 @@ export class TAARenderPass extends SSAARenderPass {
     /// Samples accumulated so far (-1: none, restart).
     accumulateIndex: i32 = -1;
     holdRenderTarget: RenderTarget? = null;
+    private copySampleMaterial: ShaderMaterial;
+    private copyHoldMaterial: ShaderMaterial;
 
     constructor(scene: Object3D, camera: Camera, clearColor: u32 = 0x000000, clearAlpha: f64 = 0) {
         super(scene, camera, clearColor, clearAlpha);
         this.sampleLevel = 0;
+        this.copySampleMaterial = makeTaaCopyMaterial();
+        this.copyHoldMaterial = makeTaaCopyMaterial();
     }
 
     override render(renderer: GPURenderer, writeBuffer: RenderTarget, readBuffer: RenderTarget, deltaTime: f64,
             maskActive: bool): void {
         if (!this.accumulate) {
+            this.fsQuad.material = this.copyMaterial;
             super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
             this.accumulateIndex = -1;
             return;
@@ -58,6 +65,7 @@ export class TAARenderPass extends SSAARenderPass {
             // The first frame: an ordinary (SSAA) render, held.
             const toScreen = this.renderToScreen;
             this.renderToScreen = false;
+            this.fsQuad.material = this.copyMaterial;
             super.render(renderer, hold, readBuffer, deltaTime, maskActive);
             this.renderToScreen = toScreen;
             this.accumulateIndex = 0;
@@ -85,6 +93,7 @@ export class TAARenderPass extends SSAARenderPass {
                 viewOffset.copy(cv!);
             }
 
+            this.fsQuad.material = this.copyMaterial;
             this.copyMaterial.uniform<f64>("opacity").value = sampleWeight;
             this.copyMaterial.uniform<Texture>("tDiffuse").value = writeBuffer.texture;
             // Several jittered samples a frame, added into the sample target.
@@ -121,18 +130,21 @@ export class TAARenderPass extends SSAARenderPass {
         const accumulationWeight = <f64>this.accumulateIndex * sampleWeight;
         const out: RenderTarget? = this.renderToScreen ? null : writeBuffer;
         if (accumulationWeight > 0) {
-            this.copyMaterial.uniform<f64>("opacity").value = 1.0;
-            this.copyMaterial.uniform<Texture>("tDiffuse").value = sample.texture;
+            this.copySampleMaterial.uniform<f64>("opacity").value = 1.0;
+            this.copySampleMaterial.uniform<Texture>("tDiffuse").value = sample.texture;
+            this.fsQuad.material = this.copySampleMaterial;
             renderer.setRenderTarget(out);
             renderer.clear();
             this.fsQuad.render(renderer);
         }
         if (accumulationWeight < 1.0) {
-            this.copyMaterial.uniform<f64>("opacity").value = 1.0 - accumulationWeight;
-            this.copyMaterial.uniform<Texture>("tDiffuse").value = hold.texture;
+            this.copyHoldMaterial.uniform<f64>("opacity").value = 1.0 - accumulationWeight;
+            this.copyHoldMaterial.uniform<Texture>("tDiffuse").value = hold.texture;
+            this.fsQuad.material = this.copyHoldMaterial;
             renderer.setRenderTarget(out);
             this.fsQuad.render(renderer);
         }
+        this.fsQuad.material = this.copyMaterial;
         renderer.autoClear = autoClear;
         renderer.setClearColor(this._oldClearColor, oldClearAlpha);
     }
@@ -149,5 +161,16 @@ export class TAARenderPass extends SSAARenderPass {
         const h = this.holdRenderTarget;
         if (h != null) h.dispose();
         this.holdRenderTarget = null;
+        this.copySampleMaterial.dispose();
+        this.copyHoldMaterial.dispose();
     }
+}
+
+function makeTaaCopyMaterial(): ShaderMaterial {
+    const m = CopyShader.createMaterial();
+    m.transparent = true;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.blending = AdditiveBlending;
+    return m;
 }

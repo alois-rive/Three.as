@@ -116,6 +116,13 @@ export class GeometryGPU extends RendererData {
         releaseBuffer(this.color); this.color = null;
         releaseBuffer(this.skin); this.skin = null;
         releaseBuffer(this.index); this.index = null;
+        this.positionAttr = null;
+        this.normalAttr = null;
+        this.uvAttr = null;
+        this.uv1Attr = null;
+        this.colorAttr = null;
+        this.tangentAttr = null;
+        this.skinStaging = new Float32Array(0);
         this.mutableMask = 0;
     }
 }
@@ -174,6 +181,8 @@ export class GPUGeometries {
                 || g.tangentAttr !== (hasTangent ? tangent : null) || g.tangentVersion != tv) {
             g.normal = upload(g, MUT_NRM, g.normal, interleaveNormalTangent(hasNormal ? normal!.array : null,
                 hasTangent ? tangent!.array : null, vertexCount));
+            if (hasNormal) normal!._blob = null;
+            if (hasTangent) tangent!._blob = null;
             g.normalAttr = hasNormal ? normal : null;
             g.normalVersion = nv;
             g.tangentAttr = hasTangent ? tangent : null;
@@ -301,31 +310,74 @@ export class GPUGeometries {
         if (g.lineStamps[mode] == stamp) return g.lineCounts[mode] > 0;
         g.lineStamps[mode] = stamp;
         const n = index != null ? index.count : g.vertexCount;
-        const out: Array<u32> = [];
-        if (mode == LINE_WIREFRAME) {
-            for (let t = 0; t + 2 < n; t += 3) {
-                const a = seq(index, t), b = seq(index, t + 1), c = seq(index, t + 2);
-                out.push(a); out.push(b); out.push(b); out.push(c); out.push(c); out.push(a);
-            }
-        } else if (mode == LINE_SEGMENTS) {
-            for (let i = 0; i + 1 < n; i += 2) { out.push(seq(index, i)); out.push(seq(index, i + 1)); }
-        } else {
-            for (let i = 0; i + 1 < n; i++) { out.push(seq(index, i)); out.push(seq(index, i + 1)); }
-            if (mode == LINE_LOOP && n > 2) { out.push(seq(index, n - 1)); out.push(seq(index, 0)); }
-        }
-        g.lineCounts[mode] = out.length;
-        if (out.length == 0) return false;
+        let count = 0;
+        if (mode == LINE_WIREFRAME) count = (n / 3) * 6;
+        else if (mode == LINE_SEGMENTS) count = (n / 2) * 2;
+        else if (n > 1) count = (n - 1) * 2 + (mode == LINE_LOOP && n > 2 ? 2 : 0);
+        g.lineCounts[mode] = count;
+        if (count == 0) return false;
         let maxIndex: u32 = 0;
-        for (let i = 0; i < out.length; i++) if (out[i] > maxIndex) maxIndex = out[i];
+        if (index != null) {
+            const src = index.array;
+            const limit = mode == LINE_WIREFRAME ? (n / 3) * 3 : mode == LINE_SEGMENTS ? (n / 2) * 2 : n;
+            for (let i = 0; i < limit; i++) if (src[i] > maxIndex) maxIndex = src[i];
+        } else {
+            const limit = mode == LINE_WIREFRAME ? (n / 3) * 3 : mode == LINE_SEGMENTS ? (n / 2) * 2 : n;
+            maxIndex = limit > 0 ? <u32>(limit - 1) : 0;
+        }
         let bytes: ArrayBuffer;
         if (maxIndex < 65535) {
-            const a = new Uint16Array((out.length + 1) & ~1);
-            for (let i = 0; i < out.length; i++) a[i] = <u16>out[i];
+            const a = new Uint16Array((count + 1) & ~1);
+            let k = 0;
+            if (mode == LINE_WIREFRAME) {
+                for (let t = 0; t + 2 < n; t += 3) {
+                    const i0 = <u16>seq(index, t), i1 = <u16>seq(index, t + 1), i2 = <u16>seq(index, t + 2);
+                    unchecked(a[k++] = i0); unchecked(a[k++] = i1);
+                    unchecked(a[k++] = i1); unchecked(a[k++] = i2);
+                    unchecked(a[k++] = i2); unchecked(a[k++] = i0);
+                }
+            } else if (mode == LINE_SEGMENTS) {
+                for (let i = 0; i + 1 < n; i += 2) {
+                    unchecked(a[k++] = <u16>seq(index, i));
+                    unchecked(a[k++] = <u16>seq(index, i + 1));
+                }
+            } else {
+                for (let i = 0; i + 1 < n; i++) {
+                    unchecked(a[k++] = <u16>seq(index, i));
+                    unchecked(a[k++] = <u16>seq(index, i + 1));
+                }
+                if (mode == LINE_LOOP && n > 2) {
+                    unchecked(a[k++] = <u16>seq(index, n - 1));
+                    unchecked(a[k++] = <u16>seq(index, 0));
+                }
+            }
             bytes = a.buffer;
             g.lineFormats[mode] = IndexFormat.uint16;
         } else {
-            const a = new Uint32Array(out.length);
-            for (let i = 0; i < out.length; i++) a[i] = out[i];
+            const a = new Uint32Array(count);
+            let k = 0;
+            if (mode == LINE_WIREFRAME) {
+                for (let t = 0; t + 2 < n; t += 3) {
+                    const i0 = seq(index, t), i1 = seq(index, t + 1), i2 = seq(index, t + 2);
+                    unchecked(a[k++] = i0); unchecked(a[k++] = i1);
+                    unchecked(a[k++] = i1); unchecked(a[k++] = i2);
+                    unchecked(a[k++] = i2); unchecked(a[k++] = i0);
+                }
+            } else if (mode == LINE_SEGMENTS) {
+                for (let i = 0; i + 1 < n; i += 2) {
+                    unchecked(a[k++] = seq(index, i));
+                    unchecked(a[k++] = seq(index, i + 1));
+                }
+            } else {
+                for (let i = 0; i + 1 < n; i++) {
+                    unchecked(a[k++] = seq(index, i));
+                    unchecked(a[k++] = seq(index, i + 1));
+                }
+                if (mode == LINE_LOOP && n > 2) {
+                    unchecked(a[k++] = seq(index, n - 1));
+                    unchecked(a[k++] = seq(index, 0));
+                }
+            }
             bytes = a.buffer;
             g.lineFormats[mode] = IndexFormat.uint32;
         }
@@ -347,8 +399,9 @@ export class GPUGeometries {
 
     /// renderer.dispose(): what is on geometries is left to be collected
     /// (or released when replaced).
-    reset(): void {
+    reset(queue: DisposeQueue): void {
         this._count = 0;
+        this.queue = queue;
     }
 }
 

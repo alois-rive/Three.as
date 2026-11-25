@@ -34,6 +34,13 @@ import { GeometryBVH } from "../three/rive/GeometryBVH";
 import { SceneBindings, BindToScene } from "../three/rive/SceneBindings";
 import { LUTPass } from "../three/addons/postprocessing/LUTPass";
 import { Data3DTexture } from "../three/textures/DataArrayTexture";
+import { GPUComputationRenderer } from "../three/addons/misc/GPUComputationRenderer";
+import { Sky } from "../three/addons/objects/Sky";
+import { MarchingCubes } from "../three/addons/objects/MarchingCubes";
+import { MeshStandardMaterial } from "../three/materials/MeshStandardMaterial";
+import { InterleavedBuffer, InterleavedBufferAttribute } from "../three/core/InterleavedBuffer";
+import { DisposeQueue, DisposeListener, DISPOSED_GEOMETRY } from "../three/renderers/gpu/Disposal";
+import { RendererData } from "../three/core/RendererData";
 
 function clip(name: string, paths: Array<string>): AnimationClip {
     const tracks: Array<KeyframeTrack> = [];
@@ -351,9 +358,68 @@ export class LeakTests extends Tests {
                 lut.watch(texture);
                 pass.lut = texture;
                 expect.that(placeholder.events).is(1);
+                expect.that(pass.uniform<Texture>("lut").value === texture).is(true);
+                pass.lut = null;
+                expect.that(pass.uniform<Texture>("lut").value === texture).is(false);
                 pass.dispose();
                 expect.that(placeholder.events).is(1);
                 expect.that(lut.events).is(0);   // the LUT set is the caller's
+            });
+            test("GPUComputationRenderer, Sky and MarchingCubes dispose owned resources", (expect) => {
+                const gpuCompute = new GPUComputationRenderer(4, 4, null);
+                const t = gpuCompute.createTexture();
+                const v = gpuCompute.addVariable("v", "three/shaders/misc/gpu_computation", t);
+                gpuCompute.setVariableDependencies(v, [v]);
+                expect.that(gpuCompute.init() == null).is(true);
+                const materials = new DisposeRecorder(), textures = new DisposeRecorder();
+                materials.watch(v.material);
+                textures.watch(v.initialValueTexture);
+                textures.watch(v.renderTargets[0].texture);
+                textures.watch(v.renderTargets[1].texture);
+                gpuCompute.dispose();
+                expect.that(materials.disposed()).is(1);
+                expect.that(textures.disposed()).is(3);
+
+                const sky = new Sky();
+                const sm = new DisposeRecorder(), sg = new DisposeRecorder();
+                sm.watch(sky.material); sg.watch(sky.geometry);
+                sky.dispose();
+                expect.that(sm.disposed()).is(1);
+                expect.that(sg.disposed()).is(1);
+
+                const mcMat = new MeshStandardMaterial();
+                const mc = new MarchingCubes(8, mcMat);
+                const mcm = new DisposeRecorder(), mcg = new DisposeRecorder();
+                mcm.watch(mcMat); mcg.watch(mc.geometry);
+                mc.dispose();
+                expect.that(mcg.disposed()).is(1);
+                expect.that(mcm.disposed()).is(0);   // caller's material stays
+            });
+            test("InterleavedBufferAttribute.dispose detaches from its InterleavedBuffer", (expect) => {
+                const ib = new InterleavedBuffer(new Float32Array(12), 4);
+                const a = new InterleavedBufferAttribute(ib, 2, 0);
+                const b = new InterleavedBufferAttribute(ib, 2, 2);
+                expect.that(ib.attributes.length).is(2);
+                a.dispose();
+                expect.that(ib.attributes.length).is(1);
+                expect.that(ib.attributes[0] === b).is(true);
+            });
+            test("closed DisposeQueue ignores stale listeners and AudioContext.close clears buffers", (expect) => {
+                const q = new DisposeQueue();
+                const g = new BoxGeometry();
+                new DisposeListener(q, DISPOSED_GEOMETRY, new RendererData()).attach(g);
+                q.closed = true;
+                g.dispose();
+                expect.that(q.length).is(0);
+                expect.that(g.hasListeners("dispose")).is(false);
+
+                const listener = new AudioListener();
+                const buf = silentBuffer();
+                listener.context.bufferSlot(buf);
+                listener.context.close();
+                let left = 0;
+                for (let i = 0; i < listener.context.buffers.length; i++) if (listener.context.buffers[i] != null) left++;
+                expect.that(left).is(0);
             });
         });
 

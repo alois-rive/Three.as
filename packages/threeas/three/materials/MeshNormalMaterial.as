@@ -75,6 +75,8 @@ export class MeshNormalMaterial extends Material {
         u.normalMapType = this.normalMapType;
     }
 
+    override displacementMapOf(): Texture? { return this.displacementMap; }
+
     override copy(source: Material): Material {
         super.copy(source);
         if (source instanceof MeshNormalMaterial) {

@@ -93,6 +93,14 @@ export class InterleavedBufferAttribute extends BufferAttribute {
         return this;
     }
 
+    /// Detaches this attribute from its InterleavedBuffer so it can be
+    /// collected without retaining its dense copy.
+    dispose(): void {
+        const attrs = this.data.attributes;
+        const i = attrs.indexOf(this);
+        if (i >= 0) attrs.splice(i, 1);
+    }
+
     /// A plain BufferAttribute of the same data (three.js's clone without
     /// the interleaved buffer).
     override clone(): BufferAttribute {
