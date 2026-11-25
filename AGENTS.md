@@ -226,7 +226,7 @@ backends accept, e.g. a WGSL local named `gl` (escaped to the reserved
 `gl_1`), and it fails on GLSL shadow samplers (a WGSL `sampler_comparison`,
 see Rules), which compile but crash the web runtime, and on naga's
 emulation uniforms (`naga_vs_first_instance`, a precaution). The gallery's
-release has 124 GLSL shaders (the engine's 112 and the examples' 12).
+release has 131 GLSL shaders (the engine's 112 and the examples' 19).
 
 ## Publishing
 

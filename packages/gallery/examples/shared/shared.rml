@@ -63,4 +63,12 @@
     </Artboard>
 
     <BlobAsset file="examples/shared/studio_rgbe.hdr" name="studio_rgbe" id="0:1697"/>
+    <!-- three.js's water textures (examples/textures, MIT), used by Addons and
+         Water: waternormals.jpg, water/Water_1_M_Normal.jpg,
+         water/Water_2_M_Normal.jpg, water/Water_1_M_Flow.jpg and waterdudv.jpg. -->
+    <ImageAsset file="examples/shared/waternormals.jpg" name="waternormals" id="0:4191"/>
+    <ImageAsset file="examples/shared/Water_1_M_Normal.jpg" name="Water_1_M_Normal" id="0:4192"/>
+    <ImageAsset file="examples/shared/Water_2_M_Normal.jpg" name="Water_2_M_Normal" id="0:4193"/>
+    <ImageAsset file="examples/shared/Water_1_M_Flow.jpg" name="Water_1_M_Flow" id="0:4194"/>
+    <ImageAsset file="examples/shared/waterdudv.jpg" name="waterdudv" id="0:4197"/>
 </Rive>
