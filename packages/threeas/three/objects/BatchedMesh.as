@@ -12,7 +12,7 @@
 
 import { Mesh } from "./Mesh";
 import { BufferGeometry } from "../core/BufferGeometry";
-import { BufferAttribute } from "../core/BufferAttribute";
+import { BufferAttribute, Uint32BufferAttribute } from "../core/BufferAttribute";
 import { Material } from "../materials/Material";
 import { MeshBasicMaterial } from "../materials/MeshBasicMaterial";
 import { Matrix4 } from "../math/Matrix4";
@@ -82,6 +82,10 @@ export class BatchedMesh extends Mesh {
     private nextIndex: i32 = 0;
     private indexed: i32 = -1;   // -1 unknown, 0 no, 1 yes
     private attributeNames: Array<string> = [];
+    private availableInstanceIds: Array<i32> = [];
+    private _activeInstanceCount: i32 = 0;
+    private _boxCache: Box3 = new Box3();
+    private _sphereCache: Sphere = new Sphere();
 
     constructor(maxInstanceCount: i32, maxVertexCount: i32, maxIndexCount: i32 = -1,
                 material: Material = new MeshBasicMaterial()) {
@@ -103,9 +107,7 @@ export class BatchedMesh extends Mesh {
     }
 
     get instanceCount(): i32 {
-        let n = 0;
-        for (let i = 0; i < this.instanceInfo.length; i++) if (this.instanceInfo[i].active) n++;
-        return n;
+        return this._activeInstanceCount;
     }
 
     get unusedVertexCount(): i32 { return this.maxVertexCount - this.nextVertex; }
@@ -121,9 +123,9 @@ export class BatchedMesh extends Mesh {
         }
         this.indexed = reference.index != null ? 1 : 0;
         if (this.indexed == 1) {
-            const idx: Array<i32> = [];
-            for (let i = 0; i < this.maxIndexCount; i++) idx.push(0);
-            g.setIndex(idx);
+            const attr = new Uint32BufferAttribute([]);
+            attr.array = new Uint32Array(this.maxIndexCount);
+            g.setIndexAttribute(attr);
         }
     }
 
@@ -168,9 +170,18 @@ export class BatchedMesh extends Mesh {
             const dst = g.getAttribute(name)!;
             const src = geometry.getAttribute(name);
             const size = dst.itemSize;
-            for (let i = 0; i < position.count; i++) {
-                for (let k = 0; k < size; k++) {
-                    dst.array[(info.vertexStart + i) * size + k] = src != null && k < src.itemSize ? src.array[i * src.itemSize + k] : 0;
+            const dstOffset = info.vertexStart * size;
+            const totalFloats = position.count * size;
+            if (src != null && src.itemSize == size) {
+                dst.array.set(src.array.subarray(0, totalFloats), dstOffset);
+            } else if (src == null) {
+                dst.array.fill(0, dstOffset, dstOffset + totalFloats);
+            } else {
+                const srcSize = src.itemSize;
+                for (let i = 0; i < position.count; i++) {
+                    for (let k = 0; k < size; k++) {
+                        dst.array[dstOffset + i * size + k] = k < srcSize ? src.array[i * srcSize + k] : 0;
+                    }
                 }
             }
             dst.needsUpdate = true;
@@ -209,8 +220,9 @@ export class BatchedMesh extends Mesh {
     /// its id, or -1 when full.
     addInstance(geometryId: i32): i32 {
         let id = -1;
-        for (let i = 0; i < this.instanceInfo.length && id < 0; i++) if (!this.instanceInfo[i].active) id = i;
-        if (id < 0) {
+        if (this.availableInstanceIds.length > 0) {
+            id = this.availableInstanceIds.pop();
+        } else {
             if (this.instanceInfo.length >= this.maxInstanceCount) return -1;
             this.instanceInfo.push(new BatchedInstanceInfo());
             id = this.instanceInfo.length - 1;
@@ -219,15 +231,28 @@ export class BatchedMesh extends Mesh {
         info.geometryIndex = geometryId;
         info.visible = true;
         info.active = true;
-        this.setMatrixAt(id, _m.identity());
+        this._activeInstanceCount++;
+        const m = this.matricesArray;
+        const mo = id * 16;
+        m[mo] = 1; m[mo + 1] = 0; m[mo + 2] = 0; m[mo + 3] = 0;
+        m[mo + 4] = 0; m[mo + 5] = 1; m[mo + 6] = 0; m[mo + 7] = 0;
+        m[mo + 8] = 0; m[mo + 9] = 0; m[mo + 10] = 1; m[mo + 11] = 0;
+        m[mo + 12] = 0; m[mo + 13] = 0; m[mo + 14] = 0; m[mo + 15] = 1;
         this.colorsArray[id * 3] = 1; this.colorsArray[id * 3 + 1] = 1; this.colorsArray[id * 3 + 2] = 1;
         this.touch();
         return id;
     }
 
     deleteInstance(instanceId: i32): BatchedMesh {
-        if (instanceId >= 0 && instanceId < this.instanceInfo.length) this.instanceInfo[instanceId].active = false;
-        this.touch();
+        if (instanceId >= 0 && instanceId < this.instanceInfo.length) {
+            const info = this.instanceInfo[instanceId];
+            if (info.active) {
+                info.active = false;
+                this._activeInstanceCount--;
+                this.availableInstanceIds.push(instanceId);
+                this.touch();
+            }
+        }
         return this;
     }
 
@@ -248,7 +273,7 @@ export class BatchedMesh extends Mesh {
         this.colorsArray[instanceId * 3] = <f32>color.r;
         this.colorsArray[instanceId * 3 + 1] = <f32>color.g;
         this.colorsArray[instanceId * 3 + 2] = <f32>color.b;
-        this.touch();
+        this.instancesVersion++;
         return this;
     }
 
@@ -287,7 +312,7 @@ export class BatchedMesh extends Mesh {
 
     /// The union of every active instance's bounds (local space).
     computeBoundingBox(): void {
-        const box = this.boundingBox != null ? this.boundingBox! : new Box3();
+        const box = this.boundingBox != null ? this.boundingBox! : this._boxCache;
         box.makeEmpty();
         for (let i = 0; i < this.instanceInfo.length; i++) {
             const info = this.instanceInfo[i];
@@ -301,7 +326,7 @@ export class BatchedMesh extends Mesh {
 
     computeBoundingSphere(): void {
         this.computeBoundingBox();
-        const s = this.boundingSphere != null ? this.boundingSphere! : new Sphere();
+        const s = this.boundingSphere != null ? this.boundingSphere! : this._sphereCache;
         this.boundingBox!.getBoundingSphere(s);
         this.boundingSphere = s;
     }
@@ -420,6 +445,8 @@ export class BatchedMesh extends Mesh {
                 this.geometryInfo.push(dg);
             }
             this.instanceInfo = [];
+            this.availableInstanceIds.length = 0;
+            this._activeInstanceCount = 0;
             for (let i = 0; i < s.instanceInfo.length; i++) {
                 const si = s.instanceInfo[i];
                 const di = new BatchedInstanceInfo();
@@ -427,6 +454,8 @@ export class BatchedMesh extends Mesh {
                 di.visible = si.visible;
                 di.active = si.active;
                 this.instanceInfo.push(di);
+                if (si.active) this._activeInstanceCount++;
+                else this.availableInstanceIds.push(i);
             }
             if (this.matricesArray.length == s.matricesArray.length) this.matricesArray.set(s.matricesArray);
             else this.matricesArray = s.matricesArray.slice();

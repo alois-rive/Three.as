@@ -147,6 +147,30 @@ export class BatchedTests extends Tests {
                 const missRay = new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1));
                 expect.that(missRay.intersectObject(b, false).length).is(0);
             });
+
+            test("free-list reuses deleted instance ids and setColorAt preserves bounds", (expect) => {
+                const b = new THREE.BatchedMesh(8, 256, 512, new THREE.MeshBasicMaterial());
+                const g = b.addGeometry(new THREE.BoxGeometry(1, 1, 1));
+                const i0 = b.addInstance(g);
+                const i1 = b.addInstance(g);
+                const i2 = b.addInstance(g);
+                expect.that(b.instanceCount).is(3);
+                b.deleteInstance(i1);
+                b.deleteInstance(i1);   // double delete is a no-op
+                expect.that(b.instanceCount).is(2);
+                const reused = b.addInstance(g);
+                expect.that(reused).is(i1);
+                expect.that(b.instanceCount).is(3);
+                b.computeBoundingBox();
+                b.computeBoundingSphere();
+                const boxBefore = b.boundingBox;
+                const sphereBefore = b.boundingSphere;
+                const verBefore = b.instancesVersion;
+                b.setColorAt(i0, new THREE.Color(1, 0, 0));
+                expect.that(b.instancesVersion).is(verBefore + 1);
+                expect.that(b.boundingBox === boxBefore).is(true);
+                expect.that(b.boundingSphere === sphereBefore).is(true);
+            });
         });
     }
 }

@@ -25,7 +25,6 @@ import { Mesh } from "../objects/Mesh";
 import { Sprite } from "../objects/Sprite";
 import { setRaycastAnyHit } from "../objects/raycasting";
 import { Material } from "../materials/Material";
-import { MaterialUniforms, SLOT_MAP } from "../materials/MaterialUniforms";
 import { Texture } from "../textures/Texture";
 import { Vector2 } from "../math/Vector2";
 import { ArtboardTexture } from "./ArtboardTexture";
@@ -47,10 +46,10 @@ export class ArtboardPicker {
     rebuilds: i32 = 0;
 
     private candidates: Array<Object3D> = [];
+    private candidateIds: Set<i32> = new Set<i32>();
     private stale: bool = true;
     private root: Object3D? = null;
     private hits: Array<Intersection> = [];
-    private uniforms: MaterialUniforms = new MaterialUniforms();
     // Per rebuild: material id -> whether it maps a target.
     private targetMaterials: Map<i32, bool> = new Map<i32, bool>();
 
@@ -68,6 +67,19 @@ export class ArtboardPicker {
     /// outside ThreeLayout's frame (ThreeLayout calls it every advance).
     invalidate(): void { this.stale = true; }
 
+    /// Drops retained scene, candidate and last-hit references.
+    clear(): void {
+        this.candidates.length = 0;
+        this.candidateIds.clear();
+        this.targetMaterials.clear();
+        this.hits.length = 0;
+        this.root = null;
+        this.texture = null;
+        this.object = null;
+        this.distance = Infinity;
+        this.stale = true;
+    }
+
     /// The objects that can show a target, as of the last rebuild.
     get candidateCount(): i32 { return this.candidates.length; }
 
@@ -79,7 +91,10 @@ export class ArtboardPicker {
         this.object = null;
         this.distance = Infinity;
         this.raycasts = 0;
-        if (!this.mayHaveTargets()) return false;
+        if (!this.mayHaveTargets()) {
+            if (this.candidates.length > 0 || this.root != null) this.clear();
+            return false;
+        }
         if (this.stale || this.root !== scene) this.rebuild(scene);
         const candidates = this.candidates;
         if (candidates.length == 0) return false;
@@ -142,9 +157,7 @@ export class ArtboardPicker {
 
     /// Whether `o` is one of the candidates (as of the last rebuild).
     isCandidate(o: Object3D): bool {
-        const c = this.candidates;
-        for (let i = 0; i < c.length; i++) if (c[i] === o) return true;
-        return false;
+        return this.candidateIds.has(o.id);
     }
 
     private rebuild(scene: Object3D): void {
@@ -152,6 +165,7 @@ export class ArtboardPicker {
         this.root = scene;
         this.rebuilds++;
         this.candidates.length = 0;
+        this.candidateIds.clear();
         this.targetMaterials.clear();
         this.collect(scene);
     }
@@ -166,9 +180,15 @@ export class ArtboardPicker {
             } else {
                 found = this.mapsTarget(mesh.material);
             }
-            if (found) this.candidates.push(o);
+            if (found) {
+                this.candidates.push(o);
+                this.candidateIds.add(o.id);
+            }
         } else if (o instanceof Sprite) {
-            if (this.mapsTarget((o as Sprite).material)) this.candidates.push(o);
+            if (this.mapsTarget((o as Sprite).material)) {
+                this.candidates.push(o);
+                this.candidateIds.add(o.id);
+            }
         }
         const children = o.children;
         for (let i = 0; i < children.length; i++) this.collect(children[i]);
@@ -184,10 +204,7 @@ export class ArtboardPicker {
     }
 
     private mapOf(material: Material): Texture? {
-        material.fillUniforms(this.uniforms);
-        const map = this.uniforms.textures[SLOT_MAP];
-        this.uniforms.reset();   // drop the references
-        return map;
+        return material.mapOf();
     }
 }
 

@@ -439,7 +439,7 @@ export class OutlinePass extends Pass {
             u<Texture>(ov, "edgeTexture1").value = this.renderTargetEdgeBuffer1.texture;
             u<Texture>(ov, "edgeTexture2").value = this.renderTargetEdgeBuffer2.texture;
             const pattern = this.patternTexture;
-            if (pattern != null) u<Texture>(ov, "patternTexture").value = pattern;
+            u<Texture>(ov, "patternTexture").value = pattern != null ? pattern! : emptyTexture();
             u<f64>(ov, "edgeStrength").value = this.edgeStrength;
             u<f64>(ov, "edgeGlow").value = this.edgeGlow;
             u<f64>(ov, "usePatternTexture").value = this.usePatternTexture && pattern != null ? 1 : 0;

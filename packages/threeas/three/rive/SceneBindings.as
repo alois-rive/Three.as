@@ -61,6 +61,8 @@ export class SceneBindingTarget {
     setValue(v: Float64Array): void {}
     /// A view model trigger fired.
     fire(): void {}
+    /// Releases any underlying binding resources.
+    unbind(): void {}
 }
 
 /// A PropertyBinding path under a root.
@@ -77,6 +79,7 @@ export class PathTarget extends SceneBindingTarget {
     override get isBoolean(): bool { return this.binding.isBoolean; }
     override getValue(out: Float64Array): void { this.binding.getValue(out); }
     override setValue(v: Float64Array): void { this.binding.setValue(v); }
+    override unbind(): void { this.binding.unbind(); }
     /// A trigger toggles a boolean (visible) or does nothing.
     override fire(): void {
         if (!this.binding.isBoolean) return;
@@ -177,7 +180,6 @@ export class SceneBinding {
     private started: bool = false;
     private lastViewModel: f64 = NaN;
     private lastScene: f64 = NaN;
-    private value: Float64Array = new Float64Array(4);
 
     constructor(propertyName: string, target: SceneBindingTarget, direction: i32, scale: f64, offset: f64) {
         this.propertyName = propertyName;
@@ -242,27 +244,44 @@ export class SceneBinding {
         }
         const toScene = (this.direction & BindToScene) != 0;
         const toViewModel = (this.direction & BindToViewModel) != 0;
-        const vmValue = this.readViewModel();
-        t.getValue(this.value);
-        const sceneValue = this.sceneKey();
         if (!this.started) {
             this.started = true;
-            if (toScene) this.writeScene(vmValue);
-            else if (toViewModel) this.writeViewModel();
-            this.lastViewModel = this.readViewModel();
-            t.getValue(this.value);
-            this.lastScene = this.sceneKey();
+            if (toScene) {
+                const vmValue = this.readViewModel();
+                this.writeScene(vmValue);
+                this.lastViewModel = vmValue;
+                if (toViewModel) {
+                    t.getValue(_v);
+                    this.lastScene = this.sceneKey();
+                }
+            } else if (toViewModel) {
+                t.getValue(_v);
+                const sceneValue = this.sceneKey();
+                this.writeViewModel();
+                this.lastScene = sceneValue;
+            }
             return;
         }
-        if (toScene && vmValue != this.lastViewModel) {
-            this.writeScene(vmValue);
-            this.lastViewModel = vmValue;
-            t.getValue(this.value);
-            this.lastScene = this.sceneKey();
-        } else if (toViewModel && sceneValue != this.lastScene) {
-            this.writeViewModel();
-            this.lastScene = sceneValue;
-            this.lastViewModel = this.readViewModel();
+        if (toScene) {
+            const vmValue = this.readViewModel();
+            if (vmValue != this.lastViewModel) {
+                this.writeScene(vmValue);
+                this.lastViewModel = vmValue;
+                if (toViewModel) {
+                    t.getValue(_v);
+                    this.lastScene = this.sceneKey();
+                }
+                return;
+            }
+        }
+        if (toViewModel) {
+            t.getValue(_v);
+            const sceneValue = this.sceneKey();
+            if (sceneValue != this.lastScene) {
+                this.writeViewModel();
+                this.lastScene = sceneValue;
+                if (toScene) this.lastViewModel = this.readViewModel();
+            }
         }
     }
 
@@ -277,7 +296,7 @@ export class SceneBinding {
 
     // The scene value as one comparable number (a colour as sRGB hex).
     private sceneKey(): f64 {
-        const v = this.value;
+        const v = _v;
         if (this.kind == KIND_COLOR) {
             _color.setRGB(v[0], v[1], v[2]);
             return <f64>_color.getHex();
@@ -287,7 +306,7 @@ export class SceneBinding {
     }
 
     private writeScene(vmValue: f64): void {
-        const v = this.value;
+        const v = _v;
         const k = this.kind;
         if (k == KIND_NUMBER) v[0] = vmValue * this.scale + this.offset;
         else if (k == KIND_BOOLEAN) v[0] = vmValue;
@@ -299,7 +318,7 @@ export class SceneBinding {
     }
 
     private writeViewModel(): void {
-        const v = this.value;
+        const v = _v;
         const k = this.kind;
         if (k == KIND_NUMBER) this.number!.value = (v[0] - this.offset) / this.scale;
         else if (k == KIND_BOOLEAN) this.boolean!.value = v[0] >= 0.5;
@@ -322,6 +341,7 @@ export class SceneBindings {
     private actionNames: Array<string> = [];
     private actions: Array<AnimationAction> = [];
     private spec: string = "";
+    private specPropertyName: string = BINDINGS_PROPERTY;
     private specProperty: PropertyString? = null;
     private specRoot: bool = false;
     private stale: bool = false;
@@ -337,6 +357,7 @@ export class SceneBindings {
     /// `refresh()` is called.
     static fromViewModel(root: Object3D, vm: ViewModel, property: string = BINDINGS_PROPERTY): SceneBindings {
         const b = new SceneBindings(root, vm);
+        b.specPropertyName = property;
         const spec = vm.getString(property);
         if (spec != null) {
             b.specProperty = spec;
@@ -353,6 +374,13 @@ export class SceneBindings {
     /// Binds to `vm` instead (every binding looks its property up again).
     setViewModel(vm: ViewModel?): void {
         this.viewModel = vm;
+        if (this.specRoot) {
+            this.specProperty = vm != null ? vm.getString(this.specPropertyName) : null;
+            this.spec = "";
+            this.stale = this.specProperty != null;
+        } else {
+            this.specProperty = null;
+        }
         for (let i = 0; i < this.bindings.length; i++) this.bindings[i].attach(vm);
     }
 
@@ -423,6 +451,7 @@ export class SceneBindings {
         for (let i = this.bindings.length - 1; i >= 0; i--) {
             if (this.bindings[i].propertyName == property) {
                 this.bindings[i].attach(null);
+                this.bindings[i].target.unbind();
                 this.bindings.splice(i, 1);
             }
         }
@@ -475,7 +504,10 @@ export class SceneBindings {
     /// and forgets the bindings, named actions and spec. Call it before
     /// dropping bindings on a view model that outlives the scene.
     dispose(): void {
-        for (let i = 0; i < this.bindings.length; i++) this.bindings[i].attach(null);
+        for (let i = 0; i < this.bindings.length; i++) {
+            this.bindings[i].attach(null);
+            this.bindings[i].target.unbind();
+        }
         this.bindings.length = 0;
         this.errors.length = 0;
         this.actionNames.length = 0;
@@ -494,7 +526,10 @@ export class SceneBindings {
             const spec = sp.value;
             if (spec != this.spec || this.stale) {
                 this.stale = false;
-                for (let i = 0; i < this.bindings.length; i++) this.bindings[i].attach(null);
+                for (let i = 0; i < this.bindings.length; i++) {
+                    this.bindings[i].attach(null);
+                    this.bindings[i].target.unbind();
+                }
                 this.bindings.length = 0;
                 this.errors.length = 0;
                 this.spec = spec;

@@ -93,6 +93,8 @@ export class MeshBasicMaterial extends Material {
         u.refractionRatio = this.refractionRatio;
     }
 
+    override mapOf(): Texture? { return this.map; }
+
     override copy(source: Material): Material {
         super.copy(source);
         if (source instanceof MeshBasicMaterial) {

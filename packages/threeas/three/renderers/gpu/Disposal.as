@@ -103,10 +103,14 @@ export function clearDataOf(owner: EventDispatcher, slot: RendererSlot, data: Re
 export class DisposeQueue {
     kinds: Array<i32> = [];
     items: Array<RendererData> = [];
+    /// True once the owning renderer was disposed: stale listeners detach
+    /// without queuing into a dead queue.
+    closed: bool = false;
 
     get length(): i32 { return this.items.length; }
 
     push(kind: i32, data: RendererData): void {
+        if (this.closed) return;
         this.kinds.push(kind);
         this.items.push(data);
     }

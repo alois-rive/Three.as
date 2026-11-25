@@ -209,6 +209,17 @@ export class GeometryTests extends Tests {
                 expect.that(Math.abs(rel.boundingBox!.max.x - 5) < 1e-6).is(true);
                 expect.that(Math.abs(rel.boundingSphere!.center.x - 2.5) < 1e-6).is(true);
                 expect.that(Math.abs(rel.boundingSphere!.radius - 2.5) < 1e-6).is(true);
+
+                // Multiple relative morph targets expand from the base box, without compounding.
+                const multi = new BufferGeometry();
+                multi.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 2, 0, 0], 3));
+                multi.morphAttributes.set("position", [
+                    new Float32BufferAttribute([0, 0, 0, 3, 0, 0], 3),
+                    new Float32BufferAttribute([0, 0, 0, 4, 0, 0], 3),
+                ]);
+                multi.morphTargetsRelative = true;
+                multi.computeBoundingBox();
+                expect.that(Math.abs(multi.boundingBox!.max.x - 6) < 1e-6).is(true);
             });
         });
     }

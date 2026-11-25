@@ -72,6 +72,7 @@ export class MarchingCubes extends Mesh {
 
     init(resolution: i32): void {
         const geometry = this.geometry;
+        if (this.maxVertexCount > 0) geometry.dispose();
         this.resolution = resolution;
 
         // parameters
@@ -93,7 +94,7 @@ export class MarchingCubes extends Mesh {
 
         this.field = new Float32Array(this.size3);
         this.normal_cache = new Float32Array(this.size3 * 3);
-        this.palette = new Float32Array(this.size3 * 3);
+        this.palette = this.enableColors ? new Float32Array(this.size3 * 3) : new Float32Array(0);
 
         //
 
@@ -129,8 +130,7 @@ export class MarchingCubes extends Mesh {
         c_offset1: i32, c_offset2: i32): void {
         const mu = (isol - valp1) / (valp2 - valp1);
         const nc = this.normal_cache;
-        const palette = this.palette;
-        const vlist = this.vlist, nlist = this.nlist, clist = this.clist;
+        const vlist = this.vlist, nlist = this.nlist;
 
         vlist[offset + 0] = <f32>(x + mu * this.delta);
         vlist[offset + 1] = <f32>y;
@@ -140,17 +140,19 @@ export class MarchingCubes extends Mesh {
         nlist[offset + 1] = <f32>lerp(nc[q + 1], nc[q + 4], mu);
         nlist[offset + 2] = <f32>lerp(nc[q + 2], nc[q + 5], mu);
 
-        clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
-        clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
-        clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        if (this.enableColors) {
+            const palette = this.palette, clist = this.clist;
+            clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
+            clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
+            clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        }
     }
 
     private VIntY(q: i32, offset: i32, isol: f64, x: f64, y: f64, z: f64, valp1: f64, valp2: f64,
         c_offset1: i32, c_offset2: i32): void {
         const mu = (isol - valp1) / (valp2 - valp1);
         const nc = this.normal_cache;
-        const palette = this.palette;
-        const vlist = this.vlist, nlist = this.nlist, clist = this.clist;
+        const vlist = this.vlist, nlist = this.nlist;
 
         vlist[offset + 0] = <f32>x;
         vlist[offset + 1] = <f32>(y + mu * this.delta);
@@ -162,17 +164,19 @@ export class MarchingCubes extends Mesh {
         nlist[offset + 1] = <f32>lerp(nc[q + 1], nc[q2 + 1], mu);
         nlist[offset + 2] = <f32>lerp(nc[q + 2], nc[q2 + 2], mu);
 
-        clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
-        clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
-        clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        if (this.enableColors) {
+            const palette = this.palette, clist = this.clist;
+            clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
+            clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
+            clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        }
     }
 
     private VIntZ(q: i32, offset: i32, isol: f64, x: f64, y: f64, z: f64, valp1: f64, valp2: f64,
         c_offset1: i32, c_offset2: i32): void {
         const mu = (isol - valp1) / (valp2 - valp1);
         const nc = this.normal_cache;
-        const palette = this.palette;
-        const vlist = this.vlist, nlist = this.nlist, clist = this.clist;
+        const vlist = this.vlist, nlist = this.nlist;
 
         vlist[offset + 0] = <f32>x;
         vlist[offset + 1] = <f32>y;
@@ -184,9 +188,12 @@ export class MarchingCubes extends Mesh {
         nlist[offset + 1] = <f32>lerp(nc[q + 1], nc[q2 + 1], mu);
         nlist[offset + 2] = <f32>lerp(nc[q + 2], nc[q2 + 2], mu);
 
-        clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
-        clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
-        clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        if (this.enableColors) {
+            const palette = this.palette, clist = this.clist;
+            clist[offset + 0] = <f32>lerp(palette[c_offset1 * 3 + 0], palette[c_offset2 * 3 + 0], mu);
+            clist[offset + 1] = <f32>lerp(palette[c_offset1 * 3 + 1], palette[c_offset2 * 3 + 1], mu);
+            clist[offset + 2] = <f32>lerp(palette[c_offset1 * 3 + 2], palette[c_offset2 * 3 + 2], mu);
+        }
     }
 
     private compNorm(q: i32): void {
@@ -498,35 +505,43 @@ export class MarchingCubes extends Mesh {
         // well-defined there.
 
         const field = this.field;
+        const hasColors = this.enableColors;
         const palette = this.palette;
+        const invSize = 1.0 / fsize;
+        const invRadius = radius > 0 ? 1.0 / radius : 0;
 
         for (let z = min_z; z < max_z; z++) {
             const z_offset = this.size2 * z;
-            const fz = <f64>z / fsize - ballz;
+            const fz = <f64>z * invSize - ballz;
             const fz2 = fz * fz;
             const dz = <f64>z - zs;
+            const dz2 = dz * dz;
 
             for (let y = min_y; y < max_y; y++) {
                 const y_offset = z_offset + size * y;
-                const fy = <f64>y / fsize - bally;
-                const fy2 = fy * fy;
+                const fy = <f64>y * invSize - bally;
+                const fy2 = fy * fy + fz2;
                 const dy = <f64>y - ys;
+                const dy2 = dy * dy + dz2;
 
                 for (let x = min_x; x < max_x; x++) {
-                    const fx = <f64>x / fsize - ballx;
-                    const val = strength / (0.000001 + fx * fx + fy2 + fz2) - subtract;
+                    const fx = <f64>x * invSize - ballx;
+                    const val = strength / (0.000001 + fx * fx + fy2) - subtract;
                     if (val > 0.0) {
                         const index = y_offset + x;
                         field[index] = <f32>(<f64>field[index] + val * sign);
 
-                        // optimization
-                        // http://www.geisswerks.com/ryan/BLOBS/blobs.html
-                        const dx = <f64>x - xs;
-                        const ratio = Math.sqrt(dx * dx + dy * dy + dz * dz) / radius;
-                        const contrib = 1 - ratio * ratio * ratio * (ratio * (ratio * 6 - 15) + 10);
-                        palette[index * 3 + 0] = <f32>(<f64>palette[index * 3 + 0] + colorR * contrib);
-                        palette[index * 3 + 1] = <f32>(<f64>palette[index * 3 + 1] + colorG * contrib);
-                        palette[index * 3 + 2] = <f32>(<f64>palette[index * 3 + 2] + colorB * contrib);
+                        if (hasColors) {
+                            // optimization
+                            // http://www.geisswerks.com/ryan/BLOBS/blobs.html
+                            const dx = <f64>x - xs;
+                            const ratio = Math.sqrt(dx * dx + dy2) * invRadius;
+                            const contrib = 1 - ratio * ratio * ratio * (ratio * (ratio * 6 - 15) + 10);
+                            const p = index * 3;
+                            palette[p + 0] = <f32>(<f64>palette[p + 0] + colorR * contrib);
+                            palette[p + 1] = <f32>(<f64>palette[p + 1] + colorG * contrib);
+                            palette[p + 2] = <f32>(<f64>palette[p + 2] + colorB * contrib);
+                        }
                     }
                 }
             }
@@ -542,17 +557,18 @@ export class MarchingCubes extends Mesh {
 
         let dist = <f64>size * Math.sqrt(strength / subtract);
         if (dist > <f64>size) dist = <f64>size;
+        const invSize = 1.0 / <f64>size;
 
         for (let x = 0; <f64>x < dist; x++) {
-            const xdiv = <f64>x / <f64>size;
+            const xdiv = <f64>x * invSize;
             const xx = xdiv * xdiv;
             const val = strength / (0.0001 + xx) - subtract;
 
             if (val > 0.0) {
-                for (let y = 0; y < size; y++) {
-                    const cxy = x + y * yd;
-                    for (let z = 0; z < size; z++) {
-                        const i = zd * z + cxy;
+                for (let z = 0; z < size; z++) {
+                    const cxz = zd * z + x;
+                    for (let y = 0; y < size; y++) {
+                        const i = cxz + y * yd;
                         field[i] = <f32>(<f64>field[i] + val);
                     }
                 }
@@ -569,18 +585,19 @@ export class MarchingCubes extends Mesh {
 
         let dist = <f64>size * Math.sqrt(strength / subtract);
         if (dist > <f64>size) dist = <f64>size;
+        const invSize = 1.0 / <f64>size;
 
         for (let y = 0; <f64>y < dist; y++) {
-            const ydiv = <f64>y / <f64>size;
+            const ydiv = <f64>y * invSize;
             const yy = ydiv * ydiv;
             const val = strength / (0.0001 + yy) - subtract;
 
             if (val > 0.0) {
                 const cy = y * yd;
-                for (let x = 0; x < size; x++) {
-                    const cxy = cy + x;
-                    for (let z = 0; z < size; z++) {
-                        const i = zd * z + cxy;
+                for (let z = 0; z < size; z++) {
+                    const cyz = zd * z + cy;
+                    for (let x = 0; x < size; x++) {
+                        const i = cyz + x;
                         field[i] = <f32>(<f64>field[i] + val);
                     }
                 }
@@ -634,10 +651,12 @@ export class MarchingCubes extends Mesh {
         const fieldCopy = field.slice();
         const size = this.size;
         const size2 = this.size2;
-        for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
+            const zOff = size2 * z;
             for (let y = 0; y < size; y++) {
-                for (let z = 0; z < size; z++) {
-                    const index = size2 * z + size * y + x;
+                const yOff = zOff + size * y;
+                for (let x = 0; x < size; x++) {
+                    const index = yOff + x;
                     let val: f64 = fieldCopy[index];
                     let count: f64 = 1;
 
@@ -671,14 +690,11 @@ export class MarchingCubes extends Mesh {
     reset(): void {
         // wipe the normal cache
 
-        const normal_cache = this.normal_cache, field = this.field, palette = this.palette;
-        for (let i = 0; i < this.size3; i++) {
-            normal_cache[i * 3] = 0.0;
-            field[i] = 0.0;
-            palette[i * 3] = 0.0;
-            palette[i * 3 + 1] = 0.0;
-            palette[i * 3 + 2] = 0.0;
-        }
+        const normal_cache = this.normal_cache;
+        const size3 = this.size3;
+        this.field.fill(0);
+        for (let i = 0; i < size3; i++) normal_cache[i * 3] = 0.0;
+        if (this.enableColors) this.palette.fill(0);
     }
 
     update(): void {
@@ -688,18 +704,19 @@ export class MarchingCubes extends Mesh {
 
         const smin2 = this.size - 2;
         const halfsize = this.halfsize;
+        const invHalf = 1.0 / halfsize;
         const isolation = this.isolation;
 
         for (let z = 1; z < smin2; z++) {
             const z_offset = this.size2 * z;
-            const fz = (<f64>z - halfsize) / halfsize; //+ 1
+            const fz = (<f64>z - halfsize) * invHalf; //+ 1
 
             for (let y = 1; y < smin2; y++) {
                 const y_offset = z_offset + this.size * y;
-                const fy = (<f64>y - halfsize) / halfsize; //+ 1
+                const fy = (<f64>y - halfsize) * invHalf; //+ 1
 
                 for (let x = 1; x < smin2; x++) {
-                    const fx = (<f64>x - halfsize) / halfsize; //+ 1
+                    const fx = (<f64>x - halfsize) * invHalf; //+ 1
                     const q = y_offset + x;
 
                     this.polygonize(fx, fy, fz, q, isolation);
@@ -725,6 +742,12 @@ export class MarchingCubes extends Mesh {
         if (<f64>this.count / 3 > <f64>this.maxPolyCount) {
             console.warn("THREE.MarchingCubes: Geometry buffers too small for rendering. Please create an instance with a higher poly count.");
         }
+    }
+
+    /// Disposes the dynamic geometry buffers owned by this MarchingCubes
+    /// (the caller's material is left alone).
+    dispose(): void {
+        this.geometry.dispose();
     }
 }
 

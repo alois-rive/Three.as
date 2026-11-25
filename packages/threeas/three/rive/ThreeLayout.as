@@ -358,6 +358,9 @@ export abstract class ThreeLayout extends Layout {
     invalidatePointer(): void {
         this.matricesStale = true;
         this.pickFrame = -1;
+        this.pickTarget = null;
+        if (this.hovered != null && this.hovered!.disposed) this.hovered = null;
+        if (this.captured != null && this.captured!.disposed) this.captured = null;
         this.picker.invalidate();
     }
 

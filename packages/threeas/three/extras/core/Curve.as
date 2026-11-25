@@ -71,12 +71,15 @@ export class Curve<V> {
         this.needsUpdate = false;
         const cache: Array<f64> = [0];
         let last = this.getPoint(0, instantiate<V>());
+        let current = instantiate<V>();
         let sum: f64 = 0;
         for (let p = 1; p <= divisions; p++) {
-            const current = this.getPoint(<f64>p / <f64>divisions, instantiate<V>());
+            this.getPoint(<f64>p / <f64>divisions, current);
             sum += current.distanceTo(last);
             cache.push(sum);
+            const tmp = last;
             last = current;
+            current = tmp;
         }
         this.cacheArcLengths = cache;
         return cache;

@@ -154,7 +154,10 @@ export class Quaternion {
     }
 
     slerpQuaternions(qa: Quaternion, qb: Quaternion, t: f64): Quaternion {
-        return this.copy(qa).slerp(qb, t);
+        if (t <= 0) return this.copy(qa);
+        if (t >= 1) return this.copy(qb);
+        this._x = qa.x; this._y = qa.y; this._z = qa.z; this._w = qa.w;
+        return this.slerp(qb, t);
     }
 
     random(): Quaternion {
@@ -186,7 +189,10 @@ export class Quaternion {
         const c1 = Math.cos(e.x / 2), c2 = Math.cos(e.y / 2), c3 = Math.cos(e.z / 2);
         const s1 = Math.sin(e.x / 2), s2 = Math.sin(e.y / 2), s3 = Math.sin(e.z / 2);
         const o = e.order;
-        if (o == "YXZ") {
+        if (o == "XYZ") {
+            this._x = s1 * c2 * c3 + c1 * s2 * s3; this._y = c1 * s2 * c3 - s1 * c2 * s3;
+            this._z = c1 * c2 * s3 + s1 * s2 * c3; this._w = c1 * c2 * c3 - s1 * s2 * s3;
+        } else if (o == "YXZ") {
             this._x = s1 * c2 * c3 + c1 * s2 * s3; this._y = c1 * s2 * c3 - s1 * c2 * s3;
             this._z = c1 * c2 * s3 - s1 * s2 * c3; this._w = c1 * c2 * c3 + s1 * s2 * s3;
         } else if (o == "ZXY") {
@@ -201,7 +207,7 @@ export class Quaternion {
         } else if (o == "XZY") {
             this._x = s1 * c2 * c3 - c1 * s2 * s3; this._y = c1 * s2 * c3 - s1 * c2 * s3;
             this._z = c1 * c2 * s3 + s1 * s2 * c3; this._w = c1 * c2 * c3 + s1 * s2 * s3;
-        } else { // XYZ
+        } else {
             this._x = s1 * c2 * c3 + c1 * s2 * s3; this._y = c1 * s2 * c3 - s1 * c2 * s3;
             this._z = c1 * c2 * s3 + s1 * s2 * c3; this._w = c1 * c2 * c3 - s1 * s2 * s3;
         }

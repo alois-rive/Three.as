@@ -1082,9 +1082,9 @@ class GLTFParser {
         if (normals != null) g.setAttribute("normal", new BufferAttribute(normals, 3));
         const tangents = this.attributeFloats(attrs, "TANGENT", draco);
         if (tangents != null) {
-            const tanAttr = new BufferAttribute(tangents, 4);
-            if (draco == null) this.gd.attachBlob(tanAttr, <i32>num(attrs, "TANGENT", -1));
-            g.setAttribute("tangent", tanAttr);
+            // Normals and tangents are interleaved on the CPU (GPUGeometries),
+            // so never attach the model-wide GLTFDecoded blob here.
+            g.setAttribute("tangent", new BufferAttribute(tangents, 4));
         }
         const uvs = this.attributeFloats(attrs, "TEXCOORD_0", draco);
         if (uvs != null) {

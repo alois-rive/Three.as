@@ -80,6 +80,9 @@ export class MeshDistanceMaterial extends Material {
         u.farDistance = this.farDistance;
     }
 
+    override displacementMapOf(): Texture? { return this.displacementMap; }
+    override mapOf(): Texture? { return this.map; }
+
     override copy(source: Material): Material {
         super.copy(source);
         if (source instanceof MeshDistanceMaterial) {

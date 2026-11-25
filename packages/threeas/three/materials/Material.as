@@ -7,7 +7,7 @@ import {
     FrontSide, NormalBlending, LessEqualDepth, AlwaysStencilFunc, KeepStencilOp,
 } from "../constants";
 import { Plane } from "../math/Plane";
-import { MaterialUniforms, ROLE_DISPLACEMENT } from "./MaterialUniforms";
+import { MaterialUniforms } from "./MaterialUniforms";
 import { Texture } from "../textures/Texture";
 import { Color } from "../math/Color";
 import { Vector2 } from "../math/Vector2";
@@ -18,7 +18,6 @@ import {
 } from "../core/JSON";
 
 let _materialId: i32 = 0;
-const _scratch = new MaterialUniforms();
 
 export class MaterialParameters {
     name: string = "";
@@ -267,13 +266,8 @@ export class Material extends EventDispatcher {
     }
 
     /// The displacementMap, if the material has one (internal: shadow passes).
-    displacementMapOf(): Texture? {
-        const u = _scratch;
-        this.fillUniforms(u);
-        const map = u.roles[ROLE_DISPLACEMENT];
-        u.reset();
-        return map;
-    }
+    displacementMapOf(): Texture? { return null; }
+    mapOf(): Texture? { return null; }
 
     /// Fills what the renderer needs (internal). Subclasses call super first.
     fillUniforms(u: MaterialUniforms): void {

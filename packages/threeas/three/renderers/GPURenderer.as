@@ -69,7 +69,7 @@ import { Material } from "../materials/Material";
 import {
     MaterialUniforms, TEXTURE_SLOTS, SLOT_ENV, ROLE_COUNT, EXTRA_SLOTS, ROLE_DISPLACEMENT, KIND_PHYSICAL, KIND_WIDE_LINE,
 } from "../materials/MaterialUniforms";
-import { ShaderMaterial } from "../materials/ShaderMaterial";
+import { ShaderMaterial, UniformBase } from "../materials/ShaderMaterial";
 import { Texture } from "../textures/Texture";
 import { Color, LinearToSRGB } from "../math/Color";
 import { Euler } from "../math/Euler";
@@ -254,6 +254,8 @@ class CustomPipeline {
     release(): void {
         releaseGroup(this.objGroup); this.objGroup = null;
         releaseGroup(this.fullGroup); this.fullGroup = null;
+        this.fullViews[0] = null; this.fullViews[1] = null; this.fullViews[2] = null;
+        this.objArena = null;
         this.frameGroup.release();
         this.pipeline.release();
         this.layout0.release();
@@ -287,13 +289,33 @@ class CustomUniforms {
     buffer: GPUBuffer? = null;
     staging: ArrayBuffer = new ArrayBuffer(16);
     f32: Float32Array = Float32Array.wrap(this.staging);
+    u32: Uint32Array = Uint32Array.wrap(this.staging);
+    prevU32: Uint32Array = new Uint32Array(0);
+    uploaded: bool = false;
     group: GPUBindGroup? = null;
     views: Array<GPUTextureView> = [];
     frame: i32 = -1;
+    // Cached uniform layout (rebuilt only when the map, its size or material.version changes).
+    uniformsMap: Map<string, UniformBase>? = null;
+    uniformsSize: i32 = -1;
+    materialVersion: i32 = -1;
+    valueUniforms: Array<UniformBase> = [];
+    valueOffsets: Array<i32> = [];
+    textureUniforms: Array<UniformBase> = [];
+    layoutSize: i32 = 16;
+    hasValues: bool = false;
 
     release(): void {
         releaseGroup(this.group); this.group = null;
         releaseBuffer(this.buffer); this.buffer = null;
+        this.views.length = 0;
+        this.uniformsMap = null;
+        this.uniformsSize = -1;
+        this.materialVersion = -1;
+        this.valueUniforms.length = 0;
+        this.valueOffsets.length = 0;
+        this.textureUniforms.length = 0;
+        this.uploaded = false;
     }
 }
 
@@ -424,6 +446,7 @@ class BatchedGPU {
     colorData: Float32Array = new Float32Array(0);
     first: Array<i32> = [];
     count: Array<i32> = [];
+    cursor: Array<i32> = [];
     version: i32 = -1;
 
     release(): void {
@@ -605,6 +628,9 @@ class DrawState {
     patch: i32 = -1;
     spriteX: f64 = 0;
     spriteY: f64 = 0;
+    hasBindMatrix: bool = false;
+    bindMatrix: StaticArray<f32> = new StaticArray<f32>(16);
+    bindMatrixInverse: StaticArray<f32> = new StaticArray<f32>(16);
     /// The material entry it last drew with (skips a map lookup).
     entry: MaterialEntry? = null;
     /// Skinned (morphed, extra-mapped) draws: a group 1 of their own.
@@ -910,7 +936,8 @@ export class GPURenderer {
     private uploadAll: bool = false;
     private arenaGroup: GPUBindGroup? = null;
     private lightWords: StaticArray<u32> = new StaticArray<u32>(8);
-    private materialEntries: Map<i32, MaterialEntry> = new Map<i32, MaterialEntry>();
+    private allLightsEverywhere: bool = false;
+    private allLightWords: StaticArray<u32> = new StaticArray<u32>(8);
     private itemPool: Array<DrawItem> = [];
     private itemsUsed: i32 = 0;
     // Items used since clearUnusedItems last ran, and the state unused ones
@@ -1670,12 +1697,14 @@ export class GPURenderer {
         this.prepareEnvironment(scene, frame, canvas);
         this.writeFrame(scene, camera);
         if (this.sortObjects) {
-            this.opaque.sort(compareOpaque);
             this.transparent.sort(compareTransparent);
         }
         if (timed) { const t = clock(); timings.prepare += t - t0; t0 = t; }
         // Per-draw blocks; mip chains render here, before the main pass.
         this.writeDraws(this.opaque, frame, canvas);
+        if (this.sortObjects) {
+            this.opaque.sort(compareOpaque);
+        }
         this.writeDraws(this.transparent, frame, canvas);
         this.joinMorphJobs();
         if (timed) { const t = clock(); timings.write += t - t0; t0 = t; }
@@ -1845,6 +1874,13 @@ export class GPURenderer {
             for (let i = 0; i < casters.length; i++) this.shadowPipeline(casters[i].pipelineKey);
         }
         this.joinMorphJobs();
+        this.opaque.length = 0;
+        this.transparent.length = 0;
+        this.casterItems.length = 0;
+        this.casterMeshes.length = 0;
+        this.lights.length = 0;
+        this.itemsUsed = 0;
+        if (this.itemsPeak > 0) this.clearUnusedItems();
         return materials;
     }
 
@@ -2059,6 +2095,10 @@ export class GPURenderer {
         // Uniform arenas and their slots.
         releaseBuffer(this.arena); this.arena = null;
         releaseGroup(this.arenaGroup); this.arenaGroup = null;
+        this.arenaStaging = new ArrayBuffer(0);
+        this.arenaBytes = new Uint8Array(0);
+        this.arenaF32 = new Float32Array(0);
+        this.arenaU32 = new Uint32Array(0);
         this.arenaCapacity = 0;
         this.slotCount = 0;
         this.freeSlots = [];
@@ -2068,9 +2108,15 @@ export class GPURenderer {
         this.dirtyHi = -1;
         this.uploadAll = false;
         releaseBuffer(this.morphArena); this.morphArena = null;
+        this.morphStaging = new ArrayBuffer(0);
+        this.morphBytes = new Uint8Array(0);
+        this.morphF32 = new Float32Array(0);
+        this.morphU32 = new Uint32Array(0);
         this.morphCapacity = 0;
         this.morphUsed = 0;
         this.morphFlushed = 0;
+        this.cullTest = new Uint8Array(0);
+        this.cullOut = new SharedArray<u8>(0);
         // Shared buffers, textures and groups.
         releaseBuffer(this.dummyBones); this.dummyBones = null;
         releaseBuffer(this.dummyMorph); this.dummyMorph = null;
@@ -2152,11 +2198,39 @@ export class GPURenderer {
         this.bgModule = null;
         this.utilModule = null;
         this.renderPass = null;
-        this.textures.reset();
-        this.geometries.reset();
+        // Close the old dispose queue so listeners still attached to live
+        // objects detach without queuing into it; a fresh queue serves any
+        // renders after dispose().
+        this.disposeQueue.closed = true;
+        this.disposeQueue.clear();
+        const freshQueue = new DisposeQueue();
+        this.disposeQueue = freshQueue;
+        this.textures.reset(freshQueue);
+        this.geometries.reset(freshQueue);
+        // Pass descriptors and transient destination/scene references.
+        this.colorAttachment.view = null;
+        this.colorAttachment.resolveTarget = null;
+        this.passDesc.depthView = null;
+        this.shadowPassDesc.depthView = null;
+        this.transmissionColor.view = null;
+        this.transmissionDesc.depthView = null;
+        this.copyColor.view = null;
+        for (let i = 0; i < this.extraAttachments.length; i++) this.extraAttachments[i].view = null;
+        this.extraViews.length = 0;
+        this.attachmentList.length = 0;
+        this.transmissionAttachments.length = 0;
+        this.copyColors.length = 0;
+        this.destCanvas = null;
+        this.destView = null;
+        this.destTargets = null;
+        this.destDepth = null;
+        this.renderTarget = null;
+        this.overrideMaterial = null;
+        this.directScene = null;
+        this.hookTargets = null;
+        this.uniforms.reset();
         // What draws and views kept.
         this.pendingMorphs.length = 0;
-        this.disposeQueue.clear();
         this.hookedObjects.clear();
         this.itemPool = [];
         this.itemsUsed = 0;
@@ -2166,6 +2240,12 @@ export class GPURenderer {
         this.casterItems.length = 0;
         this.casterMeshes.length = 0;
         this.lights.length = 0;
+        this.drawnObjects.length = 0;
+        this.hookLists.length = 0;
+        this.renderables.length = 0;
+        this.stack.length = 0;
+        this.captures.length = 0;
+        this.customViews.length = 0;
         // State left on objects no longer matches (a new serial); the
         // index is free for another renderer.
         releaseSlot(this.rslot);
@@ -2607,43 +2687,65 @@ export class GPURenderer {
         }
         if (cu.frame == frame) return cu;
         cu.frame = frame;
-        const names = material.uniforms.keys();
-        let size = 0;
-        for (let i = 0; i < names.length; i++) {
-            const u = material.uniforms.get(names[i]);
-            const s = u.size();
-            if (s == 0) continue;
-            const a = u.align();
-            size = (size + a - 1) / a * a + s;
+        if (cu.uniformsMap !== material.uniforms || cu.uniformsSize != material.uniforms.size
+                || cu.materialVersion != material.version) {
+            cu.valueUniforms.length = 0;
+            cu.valueOffsets.length = 0;
+            cu.textureUniforms.length = 0;
+            const names = material.uniforms.keys();
+            let offset = 0;
+            for (let i = 0; i < names.length; i++) {
+                const u = material.uniforms.get(names[i]);
+                const t = u.texture();
+                if (t != null) {
+                    cu.textureUniforms.push(u);
+                    continue;
+                }
+                const s = u.size();
+                if (s == 0) continue;
+                const a = u.align();
+                offset = (offset + a - 1) / a * a;
+                cu.valueUniforms.push(u);
+                cu.valueOffsets.push(offset);
+                offset += s;
+            }
+            cu.hasValues = offset > 0;
+            cu.layoutSize = max<i32>(16, (offset + 15) & ~15);
+            cu.uniformsMap = material.uniforms;
+            cu.uniformsSize = material.uniforms.size;
+            cu.materialVersion = material.version;
+            cu.uploaded = false;
         }
-        size = max<i32>(16, (size + 15) & ~15);
+        const size = cu.layoutSize;
         if (cu.staging.byteLength != size) {
             cu.staging = new ArrayBuffer(size);
             cu.f32 = Float32Array.wrap(cu.staging);
+            cu.u32 = Uint32Array.wrap(cu.staging);
+            cu.prevU32 = new Uint32Array(size >> 2);
+            cu.uploaded = false;
+        } else if (cu.prevU32.length != (size >> 2)) {
+            cu.prevU32 = new Uint32Array(size >> 2);
+            cu.uploaded = false;
         }
         const f = cu.f32;
-        let offset = 0;
+        const valList = cu.valueUniforms;
+        const valOffs = cu.valueOffsets;
+        for (let i = 0; i < valList.length; i++) {
+            unchecked(valList[i]).write(f, unchecked(valOffs[i]));
+        }
         const views = this.customViews;
         views.length = 0;
         let firstTexture: Texture? = null;
-        for (let i = 0; i < names.length; i++) {
-            const u = material.uniforms.get(names[i]);
-            const t = u.texture();
-            if (t != null) {
-                this.textures.update(t, frame);
-                const v = this.textures.view(t, canvas);
-                views.push(v != null ? v! : t instanceof DepthTexture ? this.dummyDepth() : this.white!);
-                if (firstTexture == null) firstTexture = t;
-                continue;
-            }
-            const s = u.size();
-            if (s == 0) continue;
-            const a = u.align();
-            offset = (offset + a - 1) / a * a;
-            u.write(f, offset);
-            offset += s;
+        const texList = cu.textureUniforms;
+        for (let i = 0; i < texList.length; i++) {
+            const t = unchecked(texList[i]).texture();
+            if (t == null) continue;
+            this.textures.update(t, frame);
+            const v = this.textures.view(t, canvas);
+            views.push(v != null ? v! : t instanceof DepthTexture ? this.dummyDepth() : this.white!);
+            if (firstTexture == null) firstTexture = t;
         }
-        const hasValues = offset > 0;
+        const hasValues = cu.hasValues;
         if (hasValues) {
             let buffer = cu.buffer;
             if (buffer == null || buffer.size != <u32>size) {
@@ -2653,8 +2755,18 @@ export class GPURenderer {
                 buffer = new GPUBuffer(BufferUsage.uniform, <u32>size);
                 cu.buffer = buffer;
                 cu.group = null;
+                cu.uploaded = false;
             }
-            buffer.update(0, cu.staging);
+            const cur = cu.u32;
+            const prev = cu.prevU32;
+            let dirty = !cu.uploaded;
+            const words = cur.length;
+            for (let i = 0; i < words && !dirty; i++) dirty = unchecked(cur[i]) != unchecked(prev[i]);
+            if (dirty) {
+                buffer.update(0, cu.staging);
+                for (let i = 0; i < words; i++) unchecked(prev[i] = cur[i]);
+                cu.uploaded = true;
+            }
         }
         let changed = cu.group == null || cu.views.length != views.length;
         for (let i = 0; i < views.length && !changed; i++) changed = cu.views[i] !== views[i];
@@ -3679,8 +3791,12 @@ export class GPURenderer {
         item.transmissive = transmissive;
         if (transmissive) this.hasTransmission = true;
         const e = object.matrixWorld.elements;
-        _pos.set(e[12], e[13], e[14]).applyMatrix4(this.viewProj);
-        item.depth = _pos.z;
+        const vp = this.viewProj.elements;
+        const px = <f64>unchecked(e[12]), py = <f64>unchecked(e[13]), pz = <f64>unchecked(e[14]);
+        const w = <f64>unchecked(vp[3]) * px + <f64>unchecked(vp[7]) * py + <f64>unchecked(vp[11]) * pz
+            + <f64>unchecked(vp[15]);
+        item.depth = (<f64>unchecked(vp[2]) * px + <f64>unchecked(vp[6]) * py + <f64>unchecked(vp[10]) * pz
+            + <f64>unchecked(vp[14])) / w;
         if (material.transparent) this.transparent.push(item);
         else this.opaque.push(item);
         return item;
@@ -3738,21 +3854,50 @@ export class GPURenderer {
             bg.colorData = new Float32Array(n * 3);
         }
         const geometries = bm.geometryInfo.length;
-        bg.first.length = 0;
-        bg.count.length = 0;
+        const first = bg.first;
+        const count = bg.count;
+        const cursor = bg.cursor;
+        first.length = geometries;
+        count.length = geometries;
+        cursor.length = geometries;
+        for (let k = 0; k < geometries; k++) unchecked(count[k] = 0);
+        // Pass 1: count visible active instances per active geometry.
+        const geoInfo = bm.geometryInfo;
+        const instInfo = bm.instanceInfo;
+        const instCount = instInfo.length;
+        for (let i = 0; i < instCount; i++) {
+            const info = unchecked(instInfo[i]);
+            if (!info.active || !info.visible) continue;
+            const k = info.geometryIndex;
+            if (k >= 0 && k < geometries && unchecked(geoInfo[k]).active) {
+                unchecked(count[k] = unchecked(count[k]) + 1);
+            }
+        }
+        // Prefix sums give each geometry's slice [first[k], first[k] + count[k]).
         let next = 0;
         for (let k = 0; k < geometries; k++) {
-            bg.first.push(next);
-            if (bm.geometryInfo[k].active) {
-                for (let i = 0; i < bm.instanceInfo.length; i++) {
-                    const info = bm.instanceInfo[i];
-                    if (!info.active || !info.visible || info.geometryIndex != k) continue;
-                    for (let e = 0; e < 16; e++) bg.matrixData[next * 16 + e] = bm.matricesArray[i * 16 + e];
-                    for (let e = 0; e < 3; e++) bg.colorData[next * 3 + e] = bm.colorsArray[i * 3 + e];
-                    next++;
-                }
-            }
-            bg.count.push(next - bg.first[k]);
+            unchecked(first[k] = next);
+            unchecked(cursor[k] = next);
+            next += unchecked(count[k]);
+        }
+        // Pass 2: scatter instance matrices and colours directly into their slices.
+        const dstM = bg.matrixData;
+        const dstC = bg.colorData;
+        const srcM = bm.matricesArray;
+        const srcC = bm.colorsArray;
+        for (let i = 0; i < instCount; i++) {
+            const info = unchecked(instInfo[i]);
+            if (!info.active || !info.visible) continue;
+            const k = info.geometryIndex;
+            if (k < 0 || k >= geometries || !unchecked(geoInfo[k]).active) continue;
+            const slot = unchecked(cursor[k]);
+            unchecked(cursor[k] = slot + 1);
+            const dm = slot * 16, sm = i * 16;
+            for (let e = 0; e < 16; e++) unchecked(dstM[dm + e] = unchecked(srcM[sm + e]));
+            const dc = slot * 3, sc = i * 3;
+            unchecked(dstC[dc] = unchecked(srcC[sc]));
+            unchecked(dstC[dc + 1] = unchecked(srcC[sc + 1]));
+            unchecked(dstC[dc + 2] = unchecked(srcC[sc + 2]));
         }
         bg.matrices = uploadVertices(bg.matrices, bg.matrixData);
         bg.colors = uploadVertices(bg.colors, bg.colorData);
@@ -4072,7 +4217,10 @@ export class GPURenderer {
             this.tileCount = 0;
             return;
         }
-        releaseTex(this.shadowTex);
+        for (let i = 0; i < this.shadowLayerViews.length; i++) this.shadowLayerViews[i].release();
+        this.shadowLayerViews = [];
+        releaseView(this.shadowView); this.shadowView = null;
+        releaseTex(this.shadowTex); this.shadowTex = null;
         const d = new GPUTextureDesc();
         d.width = size;
         d.height = size;
@@ -4408,6 +4556,19 @@ export class GPURenderer {
         o = FRAME_AMBIENT >> 2;
         f[o] = <f32>ar; f[o + 1] = <f32>ag; f[o + 2] = <f32>ab; f[o + 3] = <f32>count;
         this.frameLightCount = count;
+        let everywhere = count <= MAX_OBJECT_LIGHTS;
+        const flCheck = this.frameLights;
+        for (let i = 0; i < count && everywhere; i++) everywhere = flCheck[i * 5 + 3] <= 0;
+        this.allLightsEverywhere = everywhere;
+        if (everywhere) {
+            const aw = this.allLightWords;
+            for (let w = 0; w < 8; w++) unchecked(aw[w] = 0);
+            unchecked(aw[0] = <u32>count);
+            for (let k = 0; k < count; k++) {
+                const b = k + 1;
+                unchecked(aw[b >> 2] |= <u32>k << <u32>((b & 3) * 8));
+            }
+        }
         for (let j = 0; j < 9; j++) {
             const pb = (FRAME_PROBE >> 2) + j * 4;
             f[pb] = <f32>probe[j * 3]; f[pb + 1] = <f32>probe[j * 3 + 1]; f[pb + 2] = <f32>probe[j * 3 + 2]; f[pb + 3] = 0;
@@ -4762,23 +4923,11 @@ export class GPURenderer {
     /// bounding sphere (all when unknown), the strongest first, at most
     /// MAX_OBJECT_LIGHTS.
     /// Into `lightWords`: OBJ_LIGHTS's two vec4 of u8s.
-    private writeLightList(object: Object3D): void {
+    private writeLightList(object: Object3D): StaticArray<u32> {
+        if (this.allLightsEverywhere) return this.allLightWords;
         const u = this.lightWords;
         const n = this.frameLightCount;
         const fl = this.frameLights;
-        let everywhere = n <= MAX_OBJECT_LIGHTS;
-        for (let i = 0; i < n && everywhere; i++) everywhere = fl[i * 5 + 3] <= 0;
-        if (everywhere) {
-            // Every light reaches every object, in frame order (the loop
-            // below gives the same without a bounding sphere).
-            for (let w = 0; w < 8; w++) unchecked(u[w] = 0);
-            u[0] = <u32>n;
-            for (let k = 0; k < n; k++) {
-                const b = k + 1;
-                u[b / 4] |= <u32>k << <u32>((b % 4) * 8);
-            }
-            return;
-        }
         const known = worldSphere(object, _lightSphere);
         const c = _lightSphere.center;
         const r = _lightSphere.radius;
@@ -4819,16 +4968,16 @@ export class GPURenderer {
         u[0] = <u32>found;
         for (let k = 0; k < found; k++) {
             const b = k + 1;
-            u[b / 4] |= <u32>this.lightOrder[k] << <u32>((b % 4) * 8);
+            u[b >> 2] |= <u32>this.lightOrder[k] << <u32>((b & 3) * 8);
         }
+        return u;
     }
 
     // ------------------------------------------------------- baked variants
 
     /// A draw's baked variant (-1: the uber-shader), chosen again only when
     /// its material block, shadow flag, lights or the frame's share changed.
-    private variantOf(state: DrawState, b: MaterialBlock, patch: i32, entry: i32): i32 {
-        const words = this.lightWords;
+    private variantOf(state: DrawState, b: MaterialBlock, patch: i32, entry: i32, words: StaticArray<u32>): i32 {
         const frameBits = this.frameVariantBits;
         let same = state.vblock === b && state.vversion == b.version && state.vpatch == patch && state.vframe == frameBits
             && state.ventry == entry;
@@ -4840,7 +4989,7 @@ export class GPURenderer {
         state.vframe = frameBits;
         state.ventry = entry;
         for (let k = 0; k < 8; k++) unchecked(state.vlights[k] = words[k]);
-        const key = this.programKey(b, patch, entry);
+        const key = this.programKey(b, patch, entry, words);
         const known = this.variantByKey;
         state.variant = known.has(key) ? known.get(key) : this.findVariant(key);
         return this.useBakedShaders ? state.variant : -1;
@@ -4879,8 +5028,7 @@ export class GPURenderer {
     /// three.js's getProgramCacheKey for the fragment stage: what the
     /// shader's v_* functions answer (three.wgsl's variant block), as
     /// tools/threeas_bake.sh reads it back.
-    programKey(b: MaterialBlock, patch: i32, entry: i32): string {
-        const words = this.lightWords;
+    programKey(b: MaterialBlock, patch: i32, entry: i32, words: StaticArray<u32> = this.lightWords): string {
         const count = <i32>(words[0] & 0xff);
         let lights = "";
         for (let k = 0; k < count; k++) {
@@ -5044,31 +5192,34 @@ export class GPURenderer {
             b.views[s] = views[s];
             b.samplers[s] = samplers[s];
         }
-        if (item.custom != null) return b;
-        let changed = b.matGroup == null;
-        for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupViews[s] !== views[s];
-        if (changed) {
-            const entries: Array<GPUBindGroupTexture> = [];
-            for (let s = 0; s < TEXTURE_SLOTS; s++) {
-                entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
-                b.groupViews[s] = views[s];
+        if (item.custom == null) {
+            let changed = b.matGroup == null;
+            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupViews[s] !== views[s];
+            if (changed) {
+                const entries: Array<GPUBindGroupTexture> = [];
+                for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                    entries.push(new GPUBindGroupTexture(<u32>s, views[s]!));
+                    b.groupViews[s] = views[s];
+                }
+                const oldMat = b.matGroup;
+                if (oldMat != null) oldMat.release();
+                b.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
             }
-            const oldMat = b.matGroup;
-            if (oldMat != null) oldMat.release();
-            b.matGroup = new GPUBindGroup(this.matLayout!, [], entries);
-        }
-        changed = b.samplerGroup == null;
-        for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupSamplers[s] !== samplers[s];
-        if (changed) {
-            const entries: Array<GPUBindGroupSampler> = [];
-            for (let s = 0; s < TEXTURE_SLOTS; s++) {
-                entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
-                b.groupSamplers[s] = samplers[s];
+            changed = b.samplerGroup == null;
+            for (let s = 0; s < TEXTURE_SLOTS && !changed; s++) changed = b.groupSamplers[s] !== samplers[s];
+            if (changed) {
+                const entries: Array<GPUBindGroupSampler> = [];
+                for (let s = 0; s < TEXTURE_SLOTS; s++) {
+                    entries.push(new GPUBindGroupSampler(<u32>s, samplers[s]!));
+                    b.groupSamplers[s] = samplers[s];
+                }
+                const oldSampler = b.samplerGroup;
+                if (oldSampler != null) oldSampler.release();
+                b.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
             }
-            const oldSampler = b.samplerGroup;
-            if (oldSampler != null) oldSampler.release();
-            b.samplerGroup = new GPUBindGroup(this.samplerLayout!, [], [], entries);
         }
+        for (let s = 0; s < TEXTURE_SLOTS; s++) { views[s] = null; samplers[s] = null; }
+        for (let i = 0; i < EXTRA_SLOTS; i++) _xtex[i] = null;
         return b;
     }
 
@@ -5080,7 +5231,6 @@ export class GPURenderer {
         const af = this.arenaF32;
         const au = this.arenaU32;
         const receives = this.tileCount > 0;
-        const words = this.lightWords;
         // Program keys are looked up (and logged) unless baked variants are
         // off and not recording.
         const variants = this.recordKeys || this.useBakedShaders;
@@ -5114,19 +5264,34 @@ export class GPURenderer {
             // What only this draw has.
             const g = item.geometry;
             const patch = (object.receiveShadow && receives ? 1 : 0) | (g != null && g.hasTangents ? 2 : 0);
-            this.writeLightList(object);
-            if (variants) item.variant = item.custom != null ? -1 : this.variantOf(state, b, patch, item.pipelineKey & KEY_ENTRY_MASK);
+            const words = this.allLightsEverywhere ? this.allLightWords : this.writeLightList(object);
+            if (variants) item.variant = item.custom != null ? -1 : this.variantOf(state, b, patch, item.pipelineKey & KEY_ENTRY_MASK, words);
             const me = object.matrixWorld.elements;
-            let dirty = state.slot < 0 || state.block !== b || state.blockVersion != b.version || state.patch != patch
-                || item.skinned;
-            for (let k = 0; k < 16 && !dirty; k++) dirty = unchecked(state.model[k]) != unchecked(me[k]);
-            for (let k = 0; k < 8 && !dirty; k++) dirty = unchecked(state.lights[k]) != unchecked(words[k]);
+            const blockDirty = state.slot < 0 || state.block !== b || state.blockVersion != b.version || state.patch != patch;
+            let modelDirty = blockDirty;
+            for (let k = 0; k < 16 && !modelDirty; k++) modelDirty = unchecked(state.model[k]) != unchecked(me[k]);
+            let lightsDirty = blockDirty;
+            for (let k = 0; k < 8 && !lightsDirty; k++) lightsDirty = unchecked(state.lights[k]) != unchecked(words[k]);
             const sprite = object instanceof Sprite;
-            if (sprite && !dirty) {
+            let spriteDirty = sprite && blockDirty;
+            if (sprite && !spriteDirty) {
                 const c = (object as Sprite).center;
-                dirty = c.x != state.spriteX || c.y != state.spriteY;
+                spriteDirty = c.x != state.spriteX || c.y != state.spriteY;
             }
-            if (!dirty) continue;
+            let bindDirty = false;
+            if (item.skinned) {
+                const sm = object as SkinnedMesh;
+                bindDirty = blockDirty || !state.hasBindMatrix;
+                if (!bindDirty) {
+                    const bm = sm.bindMatrix.elements;
+                    const bmi = sm.bindMatrixInverse.elements;
+                    for (let k = 0; k < 16 && !bindDirty; k++) {
+                        bindDirty = unchecked(state.bindMatrix[k]) != unchecked(bm[k])
+                            || unchecked(state.bindMatrixInverse[k]) != unchecked(bmi[k]);
+                    }
+                }
+            }
+            if (!blockDirty && !modelDirty && !lightsDirty && !spriteDirty && !bindDirty) continue;
 
             if (state.slot < 0) {
                 const s = this.freeSlots.length > 0 ? this.freeSlots.pop() : this.slotCount++;
@@ -5137,36 +5302,49 @@ export class GPURenderer {
             }
             const base = <i32>state.objOffset;
             const staging = this.arenaStaging;
-            this.arenaBytes.set(b.u8, base);
-            state.block = b;
-            state.blockVersion = b.version;
-            state.patch = patch;
-            for (let k = 0; k < 16; k++) unchecked(state.model[k] = me[k]);
-            for (let k = 0; k < 8; k++) unchecked(state.lights[k] = words[k]);
-            object.matrixWorld.mat4.writeToBuffer(staging, <u32>(base + OBJ_MODEL));
-            _normal.getNormalMatrix(object.matrixWorld);
-            const ne = _normal.elements;
-            let o = (base + OBJ_NORMAL) >> 2;
-            for (let c = 0; c < 3; c++) {
-                af[o + c * 4] = <f32>ne[c * 3];
-                af[o + c * 4 + 1] = <f32>ne[c * 3 + 1];
-                af[o + c * 4 + 2] = <f32>ne[c * 3 + 2];
-                af[o + c * 4 + 3] = 0;
+            if (blockDirty) {
+                this.arenaBytes.set(b.u8, base);
+                state.block = b;
+                state.blockVersion = b.version;
+                state.patch = patch;
+                if ((patch & 1) != 0) au[((base + OBJ_FLAGS) >> 2) + 1] |= FLAG_RECEIVE_SHADOW;
+                if ((patch & 2) != 0) au[((base + OBJ_X_ROLES) >> 2) + 2] = 1;
             }
-            af[o + 12] = 0; af[o + 13] = 0; af[o + 14] = 0; af[o + 15] = 1;
-            o = (base + OBJ_LIGHTS) >> 2;
-            for (let k = 0; k < 8; k++) au[o + k] = unchecked(words[k]);
-            if ((patch & 1) != 0) au[((base + OBJ_FLAGS) >> 2) + 1] |= FLAG_RECEIVE_SHADOW;
-            if ((patch & 2) != 0) au[((base + OBJ_X_ROLES) >> 2) + 2] = 1;
-            if (sprite) {
+            if (modelDirty) {
+                for (let k = 0; k < 16; k++) unchecked(state.model[k] = me[k]);
+                object.matrixWorld.mat4.writeToBuffer(staging, <u32>(base + OBJ_MODEL));
+                _normal.getNormalMatrix(object.matrixWorld);
+                const ne = _normal.elements;
+                const o = (base + OBJ_NORMAL) >> 2;
+                for (let c = 0; c < 3; c++) {
+                    af[o + c * 4] = <f32>ne[c * 3];
+                    af[o + c * 4 + 1] = <f32>ne[c * 3 + 1];
+                    af[o + c * 4 + 2] = <f32>ne[c * 3 + 2];
+                    af[o + c * 4 + 3] = 0;
+                }
+                af[o + 12] = 0; af[o + 13] = 0; af[o + 14] = 0; af[o + 15] = 1;
+            }
+            if (lightsDirty) {
+                for (let k = 0; k < 8; k++) unchecked(state.lights[k] = words[k]);
+                const o = (base + OBJ_LIGHTS) >> 2;
+                for (let k = 0; k < 8; k++) au[o + k] = unchecked(words[k]);
+            }
+            if (spriteDirty) {
                 const c = (object as Sprite).center;
                 state.spriteX = c.x;
                 state.spriteY = c.y;
-                o = (base + OBJ_SPRITE) >> 2;
+                const o = (base + OBJ_SPRITE) >> 2;
                 af[o] = <f32>c.x; af[o + 1] = <f32>c.y; af[o + 2] = 0; af[o + 3] = 0;
             }
-            if (item.skinned) {
+            if (bindDirty) {
                 const sm = object as SkinnedMesh;
+                const bm = sm.bindMatrix.elements;
+                const bmi = sm.bindMatrixInverse.elements;
+                for (let k = 0; k < 16; k++) {
+                    unchecked(state.bindMatrix[k] = bm[k]);
+                    unchecked(state.bindMatrixInverse[k] = bmi[k]);
+                }
+                state.hasBindMatrix = true;
                 sm.bindMatrix.mat4.writeToBuffer(staging, <u32>(base + OBJ_BIND_MATRIX));
                 sm.bindMatrixInverse.mat4.writeToBuffer(staging, <u32>(base + OBJ_BIND_MATRIX_INVERSE));
             }
@@ -5383,6 +5561,7 @@ function compareOpaque(a: DrawItem, b: DrawItem): i32 {
     const ro = a.object.renderOrder - b.object.renderOrder;
     if (ro != 0) return ro;
     if (a.pipelineKey != b.pipelineKey) return a.pipelineKey - b.pipelineKey;
+    if (a.variant != b.variant) return a.variant - b.variant;
     return a.depth < b.depth ? -1 : a.depth > b.depth ? 1 : a.object.id - b.object.id;
 }
 
@@ -5467,6 +5646,17 @@ function releaseState(st: DrawState?): void {
     releaseGroup(st.objGroup);
     st.objGroup = null;
     st.entry = null;
+    st.block = null;
+    st.vblock = null;
+    st.matGroup = null;
+    st.samplerGroup = null;
+    st.arena = null;
+    st.bones = null;
+    st.morph = null;
+    for (let i = 0; i < EXTRA_SLOTS; i++) {
+        st.xviews[i] = null;
+        st.xgroupViews[i] = null;
+    }
 }
 
 const _pos: Vector3 = new Vector3();

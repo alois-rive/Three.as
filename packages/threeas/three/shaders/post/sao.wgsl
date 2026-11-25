@@ -91,13 +91,13 @@ fn get_occlusion(center: vec3<f32>, normal: vec3<f32>, sample_position: vec3<f32
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let center_depth = get_depth(in.uv);
+    if (center_depth >= 1.0 - EPSILON) {
+        discard;
+    }
     let normal = textureSampleLevel(tNormal, s_tex, in.uv, 0.0).xyz * 2.0 - 1.0;
     var color = vec4<f32>(1.0);
     if (u.diffuseTexture > 0.5) {
         color = textureSampleLevel(tDiffuse, s_tex, in.uv, 0.0);
-    }
-    if (center_depth >= 1.0 - EPSILON) {
-        discard;
     }
     let center_view_z = get_view_z(center_depth);
     let center = get_view_position(in.uv, center_depth, center_view_z);

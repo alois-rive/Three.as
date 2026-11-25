@@ -98,7 +98,7 @@ export class Lensflare extends Mesh {
     // materials
     private material1a: RawShaderMaterial;
     private material1b: RawShaderMaterial;
-    private material2: RawShaderMaterial;
+    private elementMaterials: Array<RawShaderMaterial> = [];
     // the following object is used for occlusionMap generation
     private mesh1: Mesh;
     private mesh2: Mesh;
@@ -139,23 +139,27 @@ export class Lensflare extends Mesh {
         this.mesh1 = new Mesh(geometry, material1a);
         this.mesh1.frustumCulled = false;
 
+        this.mesh2 = new Mesh(geometry, material1a);
+        this.mesh2.frustumCulled = false;
+    }
+
+    private makeElementMaterial(element: LensflareElement): RawShaderMaterial {
         const shader = LensflareElement.Shader;
-        const material2 = new RawShaderMaterial({
+        const m = new RawShaderMaterial({
             shader: shader.shader, vertexEntryPoint: shader.vertexEntryPoint,
             fragmentEntryPoint: shader.fragmentEntryPoint,
             blending: AdditiveBlending, transparent: true, depthWrite: false,
         });
-        material2.name = shader.name;
-        material2.uniforms = shader.uniforms();
-        material2.uniform<Texture>("occlusionMap").value = this.occlusionMap;
-        this.material2 = material2;
-
-        this.mesh2 = new Mesh(geometry, material2);
-        this.mesh2.frustumCulled = false;
+        m.name = shader.name;
+        m.uniforms = shader.uniforms();
+        m.uniform<Texture>("occlusionMap").value = this.occlusionMap;
+        m.uniform<Texture>("map").value = element.texture;
+        return m;
     }
 
     addElement(element: LensflareElement): void {
         this.elements.push(element);
+        this.elementMaterials.push(this.makeElementMaterial(element));
     }
 
     /// The flare's occlusion test and elements, over what the render drew
@@ -175,7 +179,9 @@ export class Lensflare extends Mesh {
             this.tempMap = new FramebufferTexture(16, 16);
             this.occlusionMap = new FramebufferTexture(16, 16);
             this.material1b.uniform<Texture>("map").value = this.tempMap;
-            this.material2.uniform<Texture>("occlusionMap").value = this.occlusionMap;
+            for (let i = 0; i < this.elementMaterials.length; i++) {
+                this.elementMaterials[i].uniform<Texture>("occlusionMap").value = this.occlusionMap;
+            }
             this.currentType = type;
         }
 
@@ -229,20 +235,20 @@ export class Lensflare extends Mesh {
         this.material1b.uniform<Vector3>("screenPosition").value.copy(positionScreen);
         renderer.renderBufferDirect(camera, null, Lensflare.Geometry, this.material1b, this.mesh1, null);
 
-        // render elements
+        // render elements (each element owns its material so group 2 stays cached)
         const vecX = -positionScreen.x * 2;
         const vecY = -positionScreen.y * 2;
-        const material2 = this.material2;
         for (let i = 0, l = this.elements.length; i < l; i++) {
             const element = this.elements[i];
-            material2.uniform<Color>("color").value.copy(element.color);
-            material2.uniform<Texture>("map").value = element.texture;
-            const sp = material2.uniform<Vector3>("screenPosition").value;
+            const m = this.elementMaterials[i];
+            m.uniform<Color>("color").value.copy(element.color);
+            m.uniform<Texture>("map").value = element.texture;
+            const sp = m.uniform<Vector3>("screenPosition").value;
             sp.x = positionScreen.x + vecX * element.distance;
             sp.y = positionScreen.y + vecY * element.distance;
             size = element.size / viewport.w;
-            material2.uniform<Vector2>("scale").value.set(size * invAspect, size);
-            renderer.renderBufferDirect(camera, null, Lensflare.Geometry, material2, this.mesh2, null);
+            m.uniform<Vector2>("scale").value.set(size * invAspect, size);
+            renderer.renderBufferDirect(camera, null, Lensflare.Geometry, m, this.mesh2, null);
         }
     }
 
@@ -250,9 +256,11 @@ export class Lensflare extends Mesh {
         this.material.dispose();
         this.material1a.dispose();
         this.material1b.dispose();
-        this.material2.dispose();
+        for (let i = 0; i < this.elementMaterials.length; i++) this.elementMaterials[i].dispose();
+        this.elementMaterials.length = 0;
         this.tempMap.dispose();
         this.occlusionMap.dispose();
         for (let i = 0, l = this.elements.length; i < l; i++) this.elements[i].texture.dispose();
+        this.elements.length = 0;
     }
 }

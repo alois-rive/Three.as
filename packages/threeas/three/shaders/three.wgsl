@@ -780,16 +780,17 @@ fn shadow_mask(world: vec3<f32>, normal: vec3<f32>) -> f32 {
 /// Shadow passes of cut-out casters (alphaTest, alphaHash), clipped too.
 @fragment
 fn fs_shadow_cutout(in: VsOut) {
-    let threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
+    var threshold = 0.0;
+    if (O.misc1.y > 0.5) {
+        threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
+    }
     let present = O.tex_flags.y;
     var a = O.color.a;
-    let c_map = sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP);
-    let c_alpha = sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA);
     if (has_flag(present, SLOT_MAP)) {
-        a *= c_map.a;
+        a *= sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP).a;
     }
     if (has_flag(present, SLOT_ALPHA)) {
-        a *= c_alpha.g;
+        a *= sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA).g;
     }
     if (a < O.emissive.w || (O.misc1.y > 0.5 && a < threshold) || clipped(in.world)) {
         discard;
@@ -1341,31 +1342,65 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
     let kind = v_kind();
     let present = v_present();
     let flags = v_flags();
+    let physical_kind = kind == KIND_PHYSICAL;
+    let pbr_kind = kind == KIND_STANDARD || physical_kind;
+    let has_normal_map = has_flag(present, SLOT_NORMAL) && kind != KIND_DEPTH;
+    let needs_world_deriv = v_flat() || (has_normal_map && O.x_params2.x <= 0.5)
+        || (has_role(ROLE_BUMP) && kind != KIND_DEPTH)
+        || (physical_kind && (has_role(ROLE_CLEARCOAT_NORMAL) || O.physical5.w != 0.0));
 
-    // Derivatives and the view, in uniform control flow.
-    let dpx = dpdx(in.world);
-    let dpy = dpdy(in.world);
-    let uv_normal = slot_uv(in.uv, in.uv1, SLOT_NORMAL);
-    let duvx = dpdx(uv_normal);
-    let duvy = dpdy(uv_normal);
-    let dnx = dpdx(in.normal);
-    let dny = dpdy(in.normal);
-    let duv0x = dpdx(in.uv);
-    let duv0y = dpdy(in.uv);
-    let hash_threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
+    // Derivatives and samples, each guarded by uniform flags before any discard.
+    var dpx = vec3<f32>(0.0);
+    var dpy = vec3<f32>(0.0);
+    if (needs_world_deriv) {
+        dpx = dpdx(in.world);
+        dpy = dpdy(in.world);
+    }
+    var duvx = vec2<f32>(0.0);
+    var duvy = vec2<f32>(0.0);
+    var c_normal = vec4<f32>(0.5, 0.5, 1.0, 1.0);
+    if (has_normal_map) {
+        let uv_normal = slot_uv(in.uv, in.uv1, SLOT_NORMAL);
+        if (O.x_params2.x <= 0.5) {
+            duvx = dpdx(uv_normal);
+            duvy = dpdy(uv_normal);
+        }
+        c_normal = textureSample(t_normal, s_normal, flip_uv(uv_normal, SLOT_NORMAL));
+    }
+    var dnx = vec3<f32>(0.0);
+    var dny = vec3<f32>(0.0);
+    if (pbr_kind) {
+        dnx = dpdx(in.normal);
+        dny = dpdy(in.normal);
+    }
+    var duv0x = vec2<f32>(0.0);
+    var duv0y = vec2<f32>(0.0);
+    if (physical_kind && O.physical5.w != 0.0) {
+        duv0x = dpdx(in.uv);
+        duv0y = dpdy(in.uv);
+    }
+    var hash_threshold = 0.0;
+    if (v_cutout() && O.misc1.y > 0.5) {
+        hash_threshold = alpha_hash_threshold(in.local, dpdx(in.local), dpdy(in.local));
+    }
     var x: ExtraUVs;
-    for (var s = 0u; s < 5u; s++) {
-        let xuv = x_slot_uv(s, in.uv, in.uv1);
-        x.uv[s] = xuv;
-        x.dx[s] = dpdx(xuv);
-        x.dy[s] = dpdy(xuv);
+    if (O.x_flags.x != 0u) {
+        for (var s = 0u; s < 5u; s++) {
+            if (has_flag(O.x_flags.x, s)) {
+                let xuv = x_slot_uv(s, in.uv, in.uv1);
+                x.uv[s] = xuv;
+                x.dx[s] = dpdx(xuv);
+                x.dy[s] = dpdy(xuv);
+            }
+        }
     }
     let orthographic = F.camera_pos.w > 0.5;
     let V = select(normalize(F.camera_pos.xyz - in.world), -F.camera_dir.xyz, orthographic);
     let face = select(-1.0, 1.0, front);
 
     // The geometric normal: interpolated or flat, flipped on back faces.
-    var N = normalize(in.normal) * face;
+    let interp_n = normalize(in.normal) * face;
+    var N = interp_n;
     if (v_flat()) {
         N = normalize(cross(dpx, dpy));
         if (dot(N, V) < 0.0) {
@@ -1374,22 +1409,42 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
     }
     let geometry_normal = N;
 
-    // Matcap looks its texture up by the view-space normal.
-    let view_n = normalize((F.view * vec4<f32>(N, 0.0)).xyz);
-    let view_pos = (F.view * vec4<f32>(in.world, 1.0)).xyz;
-    let view_dir = normalize(-view_pos);
-    let mx = normalize(vec3<f32>(view_dir.z, 0.0, -view_dir.x));
-    let my = cross(view_dir, mx);
-    let matcap_uv = vec2<f32>(dot(mx, view_n), dot(my, view_n)) * 0.495 + 0.5;
-    let aux_uv = select(slot_uv(in.uv, in.uv1, SLOT_AUX), matcap_uv, kind == KIND_MATCAP);
-
-    let c_map = sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP);
-    let c_normal = textureSample(t_normal, s_normal, flip_uv(uv_normal, SLOT_NORMAL));
-    let c_aux = sample_slot(t_aux, s_aux, aux_uv, SLOT_AUX);
-    let c_metal = sample_slot(t_metalness, s_metalness, slot_uv(in.uv, in.uv1, SLOT_METALNESS), SLOT_METALNESS);
-    let c_ao = sample_slot(t_ao, s_ao, slot_uv(in.uv, in.uv1, SLOT_AO), SLOT_AO);
-    let c_emissive = sample_slot(t_emissive, s_emissive, slot_uv(in.uv, in.uv1, SLOT_EMISSIVE), SLOT_EMISSIVE);
-    let c_alpha = sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA);
+    var c_map = vec4<f32>(1.0);
+    if (has_flag(present, SLOT_MAP)) {
+        c_map = sample_slot(t_map, s_map, slot_uv(in.uv, in.uv1, SLOT_MAP), SLOT_MAP);
+    }
+    var c_aux = vec4<f32>(1.0);
+    if (has_flag(present, SLOT_AUX) && kind != KIND_TOON) {
+        var aux_uv: vec2<f32>;
+        if (kind == KIND_MATCAP) {
+            // Matcap looks its texture up by the view-space normal.
+            let view_n = normalize((F.view * vec4<f32>(N, 0.0)).xyz);
+            let view_pos = (F.view * vec4<f32>(in.world, 1.0)).xyz;
+            let view_dir = normalize(-view_pos);
+            let mx = normalize(vec3<f32>(view_dir.z, 0.0, -view_dir.x));
+            let my = cross(view_dir, mx);
+            aux_uv = vec2<f32>(dot(mx, view_n), dot(my, view_n)) * 0.495 + 0.5;
+        } else {
+            aux_uv = slot_uv(in.uv, in.uv1, SLOT_AUX);
+        }
+        c_aux = sample_slot(t_aux, s_aux, aux_uv, SLOT_AUX);
+    }
+    var c_metal = vec4<f32>(1.0);
+    if (pbr_kind && has_flag(present, SLOT_METALNESS)) {
+        c_metal = sample_slot(t_metalness, s_metalness, slot_uv(in.uv, in.uv1, SLOT_METALNESS), SLOT_METALNESS);
+    }
+    var c_ao = vec4<f32>(1.0);
+    if (has_flag(present, SLOT_AO)) {
+        c_ao = sample_slot(t_ao, s_ao, slot_uv(in.uv, in.uv1, SLOT_AO), SLOT_AO);
+    }
+    var c_emissive = vec4<f32>(1.0);
+    if (has_flag(present, SLOT_EMISSIVE)) {
+        c_emissive = sample_slot(t_emissive, s_emissive, slot_uv(in.uv, in.uv1, SLOT_EMISSIVE), SLOT_EMISSIVE);
+    }
+    var c_alpha = vec4<f32>(1.0);
+    if (has_flag(present, SLOT_ALPHA)) {
+        c_alpha = sample_slot(t_alpha, s_alpha, slot_uv(in.uv, in.uv1, SLOT_ALPHA), SLOT_ALPHA);
+    }
 
     // Diffuse colour and alpha.
     var diffuse = O.color * in.color;
@@ -1406,7 +1461,7 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
         // ShadowMaterial: colour where the shadows are.
         var mask = 1.0;
         if ((flags & FLAG_RECEIVE_SHADOW) != 0u) {
-            mask = shadow_mask(in.world, normalize(in.normal) * face);
+            mask = shadow_mask(in.world, interp_n);
         }
         let sa = O.color.a * (1.0 - mask);
         let sc = select(linear_to_srgb(O.color.rgb), O.color.rgb, v_linear());
@@ -1611,26 +1666,34 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
         var specular = vec3<f32>(0.0);
         var sheen = vec3<f32>(0.0);
         var clearcoat_spec = vec3<f32>(0.0);
-        let sheen_color = O.physical1.rgb * role_texel(ROLE_SHEEN_COLOR, x, vec4<f32>(1.0)).rgb;
-        let sheen_roughness = clamp(O.physical0.z * role_texel(ROLE_SHEEN_ROUGHNESS, x, vec4<f32>(1.0)).a, 0.07, 1.0);
-        let clearcoat = O.physical0.x * role_texel(ROLE_CLEARCOAT, x, vec4<f32>(1.0)).r;
-        let clearcoat_roughness = clamp(O.physical0.y * role_texel(ROLE_CLEARCOAT_ROUGHNESS, x, vec4<f32>(1.0)).g,
-            0.0525, 1.0);
-        // The clearcoat's own normal: the geometry normal, or its normal map
-        // (tangent space, from derivatives).
+        var sheen_color = vec3<f32>(0.0);
+        var sheen_roughness = 1.0;
+        var clearcoat = 0.0;
+        var clearcoat_roughness = 0.0525;
         var cc_n = geometry_normal;
-        if (physical && has_role(ROLE_CLEARCOAT_NORMAL)) {
-            var m = role_texel(ROLE_CLEARCOAT_NORMAL, x, vec4<f32>(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-            m = vec3<f32>(m.xy * O.x_params3.xy, m.z);
-            let slot = role_slot(ROLE_CLEARCOAT_NORMAL);
-            let q1perp = cross(dpy, cc_n);
-            let q0perp = cross(cc_n, dpx);
-            let T = q1perp * x.dx[slot].x + q0perp * x.dy[slot].x;
-            let B = q1perp * x.dx[slot].y + q0perp * x.dy[slot].y;
-            let det = max(dot(T, T), dot(B, B));
-            let sc = select(inverseSqrt(det), 0.0, det == 0.0);
-            cc_n = normalize(T * (m.x * sc) + B * (m.y * sc) + cc_n * m.z);
+        if (physical) {
+            sheen_color = O.physical1.rgb * role_texel(ROLE_SHEEN_COLOR, x, vec4<f32>(1.0)).rgb;
+            sheen_roughness = clamp(O.physical0.z * role_texel(ROLE_SHEEN_ROUGHNESS, x, vec4<f32>(1.0)).a, 0.07, 1.0);
+            clearcoat = O.physical0.x * role_texel(ROLE_CLEARCOAT, x, vec4<f32>(1.0)).r;
+            clearcoat_roughness = clamp(O.physical0.y * role_texel(ROLE_CLEARCOAT_ROUGHNESS, x, vec4<f32>(1.0)).g,
+                0.0525, 1.0);
+            // The clearcoat's own normal: the geometry normal, or its normal map
+            // (tangent space, from derivatives).
+            if (has_role(ROLE_CLEARCOAT_NORMAL)) {
+                var m = role_texel(ROLE_CLEARCOAT_NORMAL, x, vec4<f32>(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+                m = vec3<f32>(m.xy * O.x_params3.xy, m.z);
+                let slot = role_slot(ROLE_CLEARCOAT_NORMAL);
+                let q1perp = cross(dpy, cc_n);
+                let q0perp = cross(cc_n, dpx);
+                let T = q1perp * x.dx[slot].x + q0perp * x.dy[slot].x;
+                let B = q1perp * x.dx[slot].y + q0perp * x.dy[slot].y;
+                let det = max(dot(T, T), dot(B, B));
+                let sc = select(inverseSqrt(det), 0.0, det == 0.0);
+                cc_n = normalize(T * (m.x * sc) + B * (m.y * sc) + cc_n * m.z);
+            }
         }
+        let has_sheen = physical && (sheen_color.r + sheen_color.g + sheen_color.b) > 0.0;
+        let has_cc = physical && clearcoat > 0.0;
 
         // The lights reaching this draw (culled per object by the renderer).
         let count = v_light_count();
@@ -1677,10 +1740,11 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
                     radiance *= smoothstep(light.direction.w, light.params.y, angle_cos);
                 }
             }
-            if ((flags & FLAG_RECEIVE_SHADOW) != 0u) {
-                radiance *= shadow_factor(light, in.world, normalize(in.normal) * face);
-            }
             let dotNL = saturate(dot(N, L));
+            let dot_cc = select(0.0, saturate(dot(cc_n, L)), has_cc);
+            if ((flags & FLAG_RECEIVE_SHADOW) != 0u && (dotNL > 0.0 || kind == KIND_TOON || dot_cc > 0.0)) {
+                radiance *= shadow_factor(light, in.world, interp_n);
+            }
             var irradiance = dotNL * radiance;
             if (kind == KIND_TOON) {
                 // The gradient map, or a two-tone step at 0.7.
@@ -1697,16 +1761,22 @@ fn surface(in: VsOut, front: bool) -> vec4<f32> {
                 irradiance = tone * radiance;
             }
             diffuse_light += irradiance;
-            if (kind == KIND_PHONG) {
-                specular += irradiance * BRDF_BlinnPhong(L, V, N, O.specular.rgb, O.specular.w) * specular_strength;
-            } else if (physical) {
-                specular += irradiance * BRDF_GGX_physical(L, V, N, f0, f90, roughness, iridescence, irid_fresnel,
-                    anisotropy, alpha_t, aniso_t, aniso_b);
-                sheen += irradiance * BRDF_Sheen(L, V, N, sheen_color, sheen_roughness);
-                let cc_irradiance = saturate(dot(cc_n, L)) * radiance;
+            if (dotNL > 0.0) {
+                if (kind == KIND_PHONG) {
+                    specular += irradiance * BRDF_BlinnPhong(L, V, N, O.specular.rgb, O.specular.w) * specular_strength;
+                } else if (physical) {
+                    specular += irradiance * BRDF_GGX_physical(L, V, N, f0, f90, roughness, iridescence, irid_fresnel,
+                        anisotropy, alpha_t, aniso_t, aniso_b);
+                    if (has_sheen) {
+                        sheen += irradiance * BRDF_Sheen(L, V, N, sheen_color, sheen_roughness);
+                    }
+                } else if (pbr) {
+                    specular += irradiance * BRDF_GGX(L, V, N, f0, f90, roughness);
+                }
+            }
+            if (has_cc && dot_cc > 0.0) {
+                let cc_irradiance = dot_cc * radiance;
                 clearcoat_spec += cc_irradiance * BRDF_GGX(L, V, cc_n, vec3<f32>(0.04), 1.0, clearcoat_roughness);
-            } else if (pbr) {
-                specular += irradiance * BRDF_GGX(L, V, N, f0, f90, roughness);
             }
         }
         var total_diffuse = diffuse_light * (diffuse_color * RECIPROCAL_PI);

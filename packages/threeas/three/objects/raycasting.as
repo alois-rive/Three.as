@@ -93,8 +93,14 @@ export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<
     let treeCount = 0;
     if (useBVH && !deforming && rangeStart % 3 == 0 && (mesh.materials.length == 0 || groupsAligned(groups))) {
         tree = GeometryBVH.forRaycast(geometry, count);
-        if (tree != null) treeCount = tree.query(_ray);
-        else if (_anyHit && GeometryBVH.pending(geometry)) {
+        if (tree != null) {
+            let maxT: f64 = Infinity;
+            if (isFinite(raycaster.far)) {
+                _hitAt.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, raycaster.far).applyMatrix4(_inverse);
+                maxT = _ray.origin.distanceTo(_hitAt) * (1 + 1e-6);
+            }
+            treeCount = tree.query(_ray, maxT);
+        } else if (_anyHit && GeometryBVH.pending(geometry)) {
             // Being built: an occlusion test takes its bounds as a hit.
             pendingHit(mesh, raycaster, intersects, instanceId);
             return;
@@ -102,6 +108,8 @@ export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<
     }
     _posedFor = null;
     if (deforming && rangeEnd - rangeStart > position.count) pose(mesh, position.count);
+    const fastPos: Float32Array? = _posedFor === mesh ? _posed : (!deforming && position.itemSize >= 3 ? position.array : null);
+    const fastStride: i32 = _posedFor === mesh ? 3 : position.itemSize;
     if (mesh.materials.length > 0 && groups.length > 0) {
         for (let g = 0; g < groups.length; g++) {
             const group = groups[g];
@@ -111,14 +119,17 @@ export function raycastMesh(mesh: Mesh, raycaster: Raycaster, intersects: Array<
             const end = min<i32>(rangeEnd, group.start + group.count);
             const before = intersects.length;
             meshTriangles(mesh, material, geometry, raycaster, intersects, matrixWorld, start, end, group.materialIndex,
-                instanceId, tree, treeCount);
+                instanceId, tree, treeCount, fastPos, fastStride);
             if (_anyHit && intersects.length > before) break;
         }
     } else {
         meshTriangles(mesh, mesh.material, geometry, raycaster, intersects, matrixWorld, rangeStart, rangeEnd, 0,
-            instanceId, tree, treeCount);
+            instanceId, tree, treeCount, fastPos, fastStride);
     }
     _posedFor = null;
+    // Cap reusable scratch buffer so a temporary huge deformed mesh does not
+    // pin megabytes permanently.
+    if (_posed.length > 16384 * 3) _posed = new Float32Array(0);
 }
 
 // Whether every group starts on a triangle (the tree lists triangle starts).
@@ -134,11 +145,39 @@ let _posedFor: Mesh? = null;
 function pose(mesh: Mesh, count: i32): void {
     if (_posed.length < count * 3) _posed = new Float32Array(count * 3);
     const p = _posed;
-    for (let i = 0; i < count; i++) {
-        mesh.getVertexPosition(i, _vA);
-        p[i * 3] = <f32>_vA.x;
-        p[i * 3 + 1] = <f32>_vA.y;
-        p[i * 3 + 2] = <f32>_vA.z;
+    if (mesh instanceof SkinnedMesh) {
+        (mesh as SkinnedMesh).poseVertices(p);
+    } else {
+        const geometry = mesh.geometry;
+        const position = geometry.getAttribute("position");
+        if (position != null) {
+            const pArr = position.array;
+            const pStride = position.itemSize;
+            const influences = mesh.morphTargetInfluences;
+            const hasMorph = influences.length > 0 && geometry.morphAttributes.has("position");
+            const morph = hasMorph ? geometry.morphAttributes.get("position") : null;
+            const rel = geometry.morphTargetsRelative;
+            for (let i = 0; i < count; i++) {
+                const po = i * pStride;
+                let x = <f64>pArr[po], y = <f64>pArr[po + 1], z = <f64>pArr[po + 2];
+                if (hasMorph) {
+                    const mList = morph!;
+                    let mx: f64 = 0, my: f64 = 0, mz: f64 = 0;
+                    for (let m = 0; m < influences.length && m < mList.length; m++) {
+                        const w = influences[m];
+                        if (w == 0) continue;
+                        const attr = mList[m];
+                        let dx = attr.getX(i), dy = attr.getY(i), dz = attr.getZ(i);
+                        if (!rel) { dx -= x; dy -= y; dz -= z; }
+                        mx += dx * w; my += dy * w; mz += dz * w;
+                    }
+                    x += mx; y += my; z += mz;
+                }
+                p[i * 3] = <f32>x;
+                p[i * 3 + 1] = <f32>y;
+                p[i * 3 + 2] = <f32>z;
+            }
+        }
     }
     _posedFor = mesh;
 }
@@ -158,7 +197,8 @@ function pendingHit(mesh: Mesh, raycaster: Raycaster, intersects: Array<Intersec
 
 function meshTriangles(mesh: Mesh, material: Material, geometry: BufferGeometry, raycaster: Raycaster,
                        intersects: Array<Intersection>, matrixWorld: Matrix4, start: i32, end: i32,
-                       materialIndex: i32, instanceId: i32, tree: GeometryBVH?, treeCount: i32): void {
+                       materialIndex: i32, instanceId: i32, tree: GeometryBVH?, treeCount: i32,
+                       fastPos: Float32Array?, fastStride: i32): void {
     const index = geometry.index;
     const uv = geometry.getAttribute("uv");
     const normal = geometry.getAttribute("normal");
@@ -169,28 +209,30 @@ function meshTriangles(mesh: Mesh, material: Material, geometry: BufferGeometry,
             const j = found[k];
             if (j < start || j + 2 >= end) continue;
             if (meshTriangle(mesh, material, index, uv, normal, raycaster, intersects, matrixWorld, j, materialIndex,
-                    instanceId) && _anyHit) return;
+                    instanceId, fastPos, fastStride) && _anyHit) return;
         }
         return;
     }
     for (let j = start; j + 2 < end; j += 3) {
         if (meshTriangle(mesh, material, index, uv, normal, raycaster, intersects, matrixWorld, j, materialIndex,
-                instanceId) && _anyHit) return;
+                instanceId, fastPos, fastStride) && _anyHit) return;
     }
 }
 
 // The triangle starting at index position j: true when hit (and listed).
 function meshTriangle(mesh: Mesh, material: Material, index: Uint32BufferAttribute?, uv: BufferAttribute?,
                       normal: BufferAttribute?, raycaster: Raycaster, intersects: Array<Intersection>,
-                      matrixWorld: Matrix4, j: i32, materialIndex: i32, instanceId: i32): bool {
+                      matrixWorld: Matrix4, j: i32, materialIndex: i32, instanceId: i32,
+                      fastPos: Float32Array?, fastStride: i32): bool {
     const a = index != null ? index.getX(j) : j;
     const b = index != null ? index.getX(j + 1) : j + 1;
     const c = index != null ? index.getX(j + 2) : j + 2;
-    if (_posedFor === mesh) {
-        const p = _posed;
-        _vA.set(p[a * 3], p[a * 3 + 1], p[a * 3 + 2]);
-        _vB.set(p[b * 3], p[b * 3 + 1], p[b * 3 + 2]);
-        _vC.set(p[c * 3], p[c * 3 + 1], p[c * 3 + 2]);
+    if (fastPos != null) {
+        const p = fastPos!;
+        const oa = a * fastStride, ob = b * fastStride, oc = c * fastStride;
+        _vA.set(<f64>p[oa], <f64>p[oa + 1], <f64>p[oa + 2]);
+        _vB.set(<f64>p[ob], <f64>p[ob + 1], <f64>p[ob + 2]);
+        _vC.set(<f64>p[oc], <f64>p[oc + 1], <f64>p[oc + 2]);
     } else {
         mesh.getVertexPosition(a, _vA);
         mesh.getVertexPosition(b, _vB);

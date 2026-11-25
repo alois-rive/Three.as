@@ -38,6 +38,8 @@ export class PropertyMixer {
     /// The mixer's key for it and the root it was bound under.
     _cacheKey: string = "";
     _root: Object3D? = null;
+    _listIndex: i32 = -1;
+    _activeIndex: i32 = -1;
 
     constructor(binding: PropertyBinding) {
         this.binding = binding;
@@ -172,7 +174,10 @@ export class AnimationAction {
     blendMode: i32 = NormalAnimationBlendMode;
 
     private mixers: Array<PropertyMixer?> = [];
-    private buffers: Array<Float64Array> = [];
+    private buffer: Float64Array;
+    private keyHints: Int32Array;
+    _listIndex: i32 = -1;
+    _activeIndex: i32 = -1;
     private loopCount: f64 = -1;
     private startTime: f64 = -1;
     private effectiveWeight: f64 = 1;
@@ -189,11 +194,15 @@ export class AnimationAction {
         this.localRoot = localRoot;
         this.blendMode = blendMode >= 0 ? blendMode : clip.blendMode;
         const tracks = clip.tracks;
+        let maxSize: i32 = 4;
         for (let i = 0; i < tracks.length; i++) {
             const pm = mixer.bindingFor(localRoot, tracks[i].name);
             this.mixers.push(pm);
-            this.buffers.push(new Float64Array(max<i32>(4, tracks[i].getValueSize())));
+            const sz = tracks[i].getValueSize();
+            if (sz > maxSize) maxSize = sz;
         }
+        this.buffer = new Float64Array(maxSize);
+        this.keyHints = new Int32Array(tracks.length);
     }
 
     play(): AnimationAction {
@@ -317,12 +326,14 @@ export class AnimationAction {
         if (weight > 0) {
             const additive = this.blendMode == AdditiveAnimationBlendMode;
             const tracks = this.clip.tracks;
+            const buf = this.buffer;
+            const hints = this.keyHints;
             for (let i = 0; i < tracks.length; i++) {
                 const pm = this.mixers[i];
                 if (pm == null) continue;
-                tracks[i].evaluate(clipTime, this.buffers[i]);
-                if (additive) pm.accumulateAdditive(this.buffers[i], weight);
-                else pm.accumulate(this.buffers[i], weight);
+                hints[i] = tracks[i].evaluateCached(clipTime, buf, hints[i]);
+                if (additive) pm.accumulateAdditive(buf, weight);
+                else pm.accumulate(buf, weight);
             }
         }
     }
@@ -431,6 +442,7 @@ export class AnimationMixer {
             if (a.clip === clip && a.localRoot === root && a.blendMode == resolvedBlendMode) return a;
         }
         const action = new AnimationAction(this, clip, root, resolvedBlendMode);
+        action._listIndex = this.actions.length;
         this.actions.push(action);
         return action;
     }
@@ -544,12 +556,14 @@ export class AnimationMixer {
         pm._root = root;
         pm.referenceCount = 1;
         this.bindings.set(key, pm);
+        pm._listIndex = this.bindingList.length;
         this.bindingList.push(pm);
         return pm;
     }
 
     activate(action: AnimationAction): void {
-        if (this.active.indexOf(action) >= 0) return;
+        if (action._activeIndex >= 0) return;
+        action._activeIndex = this.active.length;
         this.active.push(action);
         // three.js's _lendBinding (the original value stays the one read
         // when the binding was made: see docs/DEVIATIONS.md, Animation).
@@ -557,14 +571,24 @@ export class AnimationMixer {
         for (let i = 0; i < mixers.length; i++) {
             const pm = mixers[i];
             if (pm == null) continue;
-            if (pm.useCount++ == 0) this.activeBindings.push(pm!);
+            if (pm.useCount++ == 0) {
+                pm._activeIndex = this.activeBindings.length;
+                this.activeBindings.push(pm!);
+            }
         }
     }
 
     deactivate(action: AnimationAction): void {
-        const i = this.active.indexOf(action);
+        const i = action._activeIndex;
         if (i < 0) return;
-        this.active.splice(i, 1);
+        const last = this.active.length - 1;
+        if (i != last) {
+            const moved = this.active[last];
+            this.active[i] = moved;
+            moved._activeIndex = i;
+        }
+        this.active.pop();
+        action._activeIndex = -1;
         // three.js's _takeBackBinding (without writing the original value
         // back).
         const mixers = action.getPropertyMixers();
@@ -572,8 +596,17 @@ export class AnimationMixer {
             const pm = mixers[m];
             if (pm == null) continue;
             if (--pm.useCount == 0) {
-                const j = this.activeBindings.indexOf(pm!);
-                if (j >= 0) this.activeBindings.splice(j, 1);
+                const j = pm._activeIndex;
+                if (j >= 0) {
+                    const lastB = this.activeBindings.length - 1;
+                    if (j != lastB) {
+                        const movedB = this.activeBindings[lastB];
+                        this.activeBindings[j] = movedB;
+                        movedB._activeIndex = j;
+                    }
+                    this.activeBindings.pop();
+                    pm._activeIndex = -1;
+                }
             }
         }
     }
@@ -591,9 +624,16 @@ export class AnimationMixer {
 
     // three.js's _removeInactiveAction and _removeInactiveBindingsForAction.
     private removeInactiveAction(action: AnimationAction): void {
-        const i = this.actions.indexOf(action);
+        const i = action._listIndex;
         if (i < 0) return;
-        this.actions.splice(i, 1);
+        const last = this.actions.length - 1;
+        if (i != last) {
+            const moved = this.actions[last];
+            this.actions[i] = moved;
+            moved._listIndex = i;
+        }
+        this.actions.pop();
+        action._listIndex = -1;
         const mixers = action.getPropertyMixers();
         for (let m = 0; m < mixers.length; m++) {
             const pm = mixers[m];
@@ -606,14 +646,32 @@ export class AnimationMixer {
         if (this.bindings.has(binding._cacheKey) && this.bindings.get(binding._cacheKey) === binding) {
             this.bindings.delete(binding._cacheKey);
         }
-        const i = this.bindingList.indexOf(binding);
-        if (i >= 0) this.bindingList.splice(i, 1);
-        const j = this.activeBindings.indexOf(binding);
-        if (j >= 0) this.activeBindings.splice(j, 1);
+        const i = binding._listIndex;
+        if (i >= 0) {
+            const last = this.bindingList.length - 1;
+            if (i != last) {
+                const moved = this.bindingList[last];
+                this.bindingList[i] = moved;
+                moved._listIndex = i;
+            }
+            this.bindingList.pop();
+            binding._listIndex = -1;
+        }
+        const j = binding._activeIndex;
+        if (j >= 0) {
+            const lastB = this.activeBindings.length - 1;
+            if (j != lastB) {
+                const movedB = this.activeBindings[lastB];
+                this.activeBindings[j] = movedB;
+                movedB._activeIndex = j;
+            }
+            this.activeBindings.pop();
+            binding._activeIndex = -1;
+        }
         binding.binding.unbind();
         binding.referenceCount = 0;
         binding.useCount = 0;
     }
 
-    isActive(action: AnimationAction): bool { return this.active.indexOf(action) >= 0; }
+    isActive(action: AnimationAction): bool { return action._activeIndex >= 0; }
 }

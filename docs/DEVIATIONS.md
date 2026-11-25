@@ -1468,8 +1468,8 @@ through `material as ShaderMaterial` or a typed `shaderMaterial` getter
   `addBall`'s `colors` is a `Color?` (`new Color(0xff0000)` for a hex,
   `new Color(r, g, b)` for an array; components are not clamped as
   three.js clamps arrays; the default is the ball's position as linear
-  rgb, as three.js); `maxPolyCount` is a field; `uvArray` / `colorArray`
-  are empty, not undefined, when disabled; there is no
+  rgb, as three.js); `maxPolyCount` is a field; `uvArray` / `colorArray` /
+  `palette` are empty, not undefined, when disabled; there is no
   `setUsage(DynamicDrawUsage)`; triangles past `maxPolyCount` are counted
   (and warned about) but not written, where JavaScript drops the
   out-of-range writes. About 2.5 ms an update at resolution 28 with ten

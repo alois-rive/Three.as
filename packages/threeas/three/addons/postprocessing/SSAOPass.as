@@ -66,6 +66,7 @@ export class SSAOPass extends Pass {
     blurMaterial: ShaderMaterial;
     depthRenderMaterial: ShaderMaterial;
     copyMaterial: ShaderMaterial;
+    private screenCopyMaterial: ShaderMaterial;
     fsQuad: FullScreenQuad;
 
     private _visibilityCache: Array<Object3D> = [];
@@ -128,6 +129,9 @@ export class SSAOPass extends Pass {
         // three.js blends the copy with DstColor x source: MultiplyBlending.
         this.copyMaterial = CopyShader.createMaterial();
         this.copyMaterial.transparent = true;
+        this.screenCopyMaterial = CopyShader.createMaterial();
+        this.screenCopyMaterial.transparent = true;
+        this.screenCopyMaterial.blending = NoBlending;
         this.fsQuad = new FullScreenQuad();
     }
 
@@ -138,6 +142,7 @@ export class SSAOPass extends Pass {
         this.normalMaterial.dispose();
         this.blurMaterial.dispose();
         this.copyMaterial.dispose();
+        this.screenCopyMaterial.dispose();
         this.depthRenderMaterial.dispose();
         this.ssaoMaterial.dispose();
         this.noiseTexture.dispose();
@@ -191,9 +196,8 @@ export class SSAOPass extends Pass {
             aoRenderPass(renderer, this.fsQuad, copy, target);
         } else if (out == SSAOPass.OUTPUT.Default) {
             if (this.renderToScreen) {
-                copy.uniform<Texture>("tDiffuse").value = readBuffer.texture;
-                copy.blending = NoBlending;
-                aoRenderPass(renderer, this.fsQuad, copy, null);
+                this.screenCopyMaterial.uniform<Texture>("tDiffuse").value = readBuffer.texture;
+                aoRenderPass(renderer, this.fsQuad, this.screenCopyMaterial, null);
             }
             copy.uniform<Texture>("tDiffuse").value = this.blurRenderTarget.texture;
             copy.blending = MultiplyBlending;

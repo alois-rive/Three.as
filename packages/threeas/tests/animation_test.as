@@ -101,6 +101,25 @@ export class AnimationTests extends Tests {
                 expect.that(cubic.times.length).is(3);
                 near(expect, at(cubic, 0.5)[0], before);
             });
+            test("evaluateCached matches evaluate across forward, reverse and jumps", (expect) => {
+                const times: Array<f64> = [];
+                const values: Array<f64> = [];
+                for (let i = 0; i <= 20; i++) {
+                    times.push(<f64>i * 0.5);
+                    values.push(<f64>(i * i));
+                }
+                const track = new NumberKeyframeTrack(".x", times, values);
+                const outA = new Float64Array(1);
+                const outB = new Float64Array(1);
+                const samples: Array<f64> = [-1, 0, 0.1, 0.6, 1.1, 1.4, 2.7, 9.8, 12, 9.2, 8.6, 8.1, 3.3, 0.25];
+                let hint = 0;
+                for (let i = 0; i < samples.length; i++) {
+                    const t = samples[i];
+                    hint = track.evaluateCached(t, outA, hint);
+                    track.evaluate(t, outB);
+                    near(expect, outA[0], outB[0]);
+                }
+            });
         });
 
         group("PropertyBinding", () => {

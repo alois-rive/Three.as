@@ -58,4 +58,10 @@ export class Sky extends Mesh {
 
     /// The material, typed (three.js's `sky.material`).
     get shaderMaterial(): ShaderMaterial { return this.material as ShaderMaterial; }
+
+    /// Disposes the box geometry and sky shader material.
+    dispose(): void {
+        this.geometry.dispose();
+        this.material.dispose();
+    }
 }

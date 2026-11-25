@@ -104,20 +104,27 @@ export class ArtboardObject extends Object3D {
     /// The artboard point under layout point (x, y), or null when the
     /// transform cannot be inverted.
     artboardPoint(x: f64, y: f64): Vector2? {
+        const out = new Vector2();
+        return this.artboardPointInto(x, y, out) ? out : null;
+    }
+
+    /// Writes the artboard point under layout point (x, y) into `target`;
+    /// false when the transform cannot be inverted.
+    artboardPointInto(x: f64, y: f64, target: Vector2): bool {
         const m = this.transform2D;
         const det = <f64>m.xx * <f64>m.yy - <f64>m.xy * <f64>m.yx;
-        if (Math.abs(det) < 1e-12) return null;
+        if (Math.abs(det) < 1e-12) return false;
         const dx = x - <f64>m.tx, dy = y - <f64>m.ty;
-        return new Vector2((<f64>m.yy * dx - <f64>m.yx * dy) / det, (-<f64>m.xy * dx + <f64>m.xx * dy) / det);
+        target.set((<f64>m.yy * dx - <f64>m.yx * dy) / det, (-<f64>m.xy * dx + <f64>m.xx * dy) / det);
+        return true;
     }
 
     /// Whether layout point (x, y) falls inside the artboard's bounds.
     contains(x: f64, y: f64): bool {
         if (this.disposed) return false;
-        const p = this.artboardPoint(x, y);
-        if (p == null) return false;
+        if (!this.artboardPointInto(x, y, _pt)) return false;
         const b = this.artboard.bounds();
-        return p.x >= <f64>b.v0.x && p.x <= <f64>b.v1.x && p.y >= <f64>b.v0.y && p.y <= <f64>b.v1.y;
+        return _pt.x >= <f64>b.v0.x && _pt.x <= <f64>b.v1.x && _pt.y >= <f64>b.v0.y && _pt.y <= <f64>b.v1.y;
     }
 }
 
@@ -193,6 +200,8 @@ export class ArtboardOverlayRenderer {
     /// matrices must be current: call it after the GPU render, or after
     /// `scene.updateMatrixWorld()`).
     render(scene: Object3D, camera: Camera): void {
+        if (this.captured != null && this.captured!.disposed) this.captured = null;
+        if (this.hovered != null && this.hovered!.disposed) this.hovered = null;
         const list = this.objects;
         list.length = 0;
         if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
@@ -267,6 +276,8 @@ export class ArtboardOverlayRenderer {
     }
 
     pointerMove(event: PointerEvent): bool {
+        if (this.captured != null && this.captured!.disposed) this.captured = null;
+        if (this.hovered != null && this.hovered!.disposed) this.hovered = null;
         const captured = this.captured;
         const o = captured != null ? captured : this.objectAt(<f64>event.position.x, <f64>event.position.y);
         const hovered = this.hovered;
@@ -277,6 +288,7 @@ export class ArtboardOverlayRenderer {
     }
 
     pointerUp(event: PointerEvent): bool {
+        if (this.captured != null && this.captured!.disposed) this.captured = null;
         const captured = this.captured;
         this.captured = null;
         const o = captured != null ? captured : this.objectAt(<f64>event.position.x, <f64>event.position.y);
@@ -286,9 +298,17 @@ export class ArtboardOverlayRenderer {
 
     pointerExit(event: PointerEvent): void {
         const hovered = this.hovered;
-        if (hovered != null) forward(hovered, event, 3);
+        if (hovered != null && !hovered.disposed) forward(hovered, event, 3);
         this.hovered = null;
         this.captured = null;
+    }
+
+    /// Drops placed objects, hover/capture and occluder references.
+    dispose(): void {
+        this.objects.length = 0;
+        this.hovered = null;
+        this.captured = null;
+        this.occluders = null;
     }
 
     // ---------------------------------------------------------- placement
@@ -381,11 +401,9 @@ export class ArtboardOverlayRenderer {
 
 function forward(o: ArtboardObject, event: PointerEvent, kind: i32): f64 {
     if (o.disposed) return 0;
-    const p = o.artboardPoint(<f64>event.position.x, <f64>event.position.y);
-    if (p == null) return 0;
-    const v = Vector.xy(<f32>p.x, <f32>p.y);
-    const types: StaticArray<string> = ["down", "move", "up", "exit"];
-    const e = new PointerEvent(event.id, v, v, types[kind]);
+    if (!o.artboardPointInto(<f64>event.position.x, <f64>event.position.y, _pt)) return 0;
+    const v = Vector.xy(<f32>_pt.x, <f32>_pt.y);
+    const e = new PointerEvent(event.id, v, v, _pointerTypes[kind]);
     if (kind == 0) return o.artboard.pointerDown(e);
     if (kind == 1) return o.artboard.pointerMove(e);
     if (kind == 2) return o.artboard.pointerUp(e);
@@ -417,3 +435,5 @@ const _scale = new Vector3();
 const _s0 = new Vector3();
 const _s1 = new Vector3();
 const _s2 = new Vector3();
+const _pt = new Vector2();
+const _pointerTypes: StaticArray<string> = ["down", "move", "up", "exit"];
