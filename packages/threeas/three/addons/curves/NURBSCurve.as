@@ -1,6 +1,8 @@
 // three.js's NURBSCurve addon: a NURBS curve through Vector4 control points
 // (x, y, z, w = weight), a Curve<Vector3>. `startKnot` / `endKnot` (knot
-// indices) trim the hidden spans of periodic curves.
+// indices) trim the hidden spans of periodic curves. getTangent maps t into
+// that trimmed interval, as getPoint does (three.js maps it into the whole
+// knot vector: a tangent of another point when the curve is trimmed).
 
 import { Curve } from "../../extras/core/Curve";
 import { Vector3 } from "../../math/Vector3";
@@ -40,7 +42,7 @@ export class NURBSCurve extends Curve<Vector3> {
 
     override getTangent(t: f64, target: Vector3 = new Vector3()): Vector3 {
         const knots = this.knots;
-        const u = knots[0] + t * (knots[knots.length - 1] - knots[0]);
+        const u = knots[this.startKnot] + t * (knots[this.endKnot] - knots[this.startKnot]);   // as getPoint
         const ders = calcNURBSDerivatives(this.degree, knots, this.controlPoints, u, 1);
         target.copy(ders[1]).normalize();
         return target;

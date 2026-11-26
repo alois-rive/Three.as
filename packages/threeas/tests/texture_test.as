@@ -108,6 +108,14 @@ export class TextureTests extends Tests {
                         + Math.abs(d.z - want[i * 3 + 2]) < 1e-9).is(true);
                 }
             });
+            test("CubeCamera faces share its layers", (expect) => {
+                const cc = new CubeCamera(0.1, 10, new WebGLCubeRenderTarget(8));
+                cc.layers.set(1);
+                for (let i = 0; i < 6; i++) {
+                    expect.that(cc.cameras[i].layers.mask).is(2);
+                    expect.that(cc.cameras[i].layers === cc.layers).is(true);
+                }
+            });
         });
         group("KTX2Loader", () => {
             test("BC1 with its mip chain", (expect) => {
