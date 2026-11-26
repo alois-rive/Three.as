@@ -24,6 +24,27 @@ export class LinesTests extends Tests {
                 expect.that(u.size).is(4);
                 expect.that(u.dashed).is(true);
             });
+            test("clone keeps the class and the line fields", (expect) => {
+                const m = new LineMaterial({ color: 0xff0000, linewidth: 5, dashed: true, dashScale: 2,
+                    dashSize: 3, gapSize: 0.5, dashOffset: 0.25 });
+                m.transparent = true;
+                const c = m.clone();
+                expect.that(c instanceof LineMaterial).is(true);
+                const l = c as LineMaterial;
+                expect.that(l.color.getHex()).is(0xff0000);
+                expect.that(l.linewidth).is(5);
+                expect.that(l.dashed).is(true);
+                expect.that(l.dashScale).is(2);
+                expect.that(l.dashSize).is(3);
+                expect.that(l.gapSize).is(0.5);
+                expect.that(l.dashOffset).is(0.25);
+                expect.that(l.transparent).is(true);
+                expect.that(l.color === m.color).is(false);
+                const u = new MaterialUniforms();
+                c.fillUniforms(u);
+                expect.that(u.kind).is(KIND_WIDE_LINE);
+                expect.that(u.size).is(5);
+            });
         });
     }
 }

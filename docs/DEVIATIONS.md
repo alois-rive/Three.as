@@ -386,6 +386,10 @@ repository commits the gallery unbaked.
   (`NURBSSurface`, `NURBSVolume` and `toJSON` / `fromJSON` are not ported).
   `NURBSCurve(degree, knots, controlPoints, startKnot = 0, endKnot = -1)`:
   -1 (or 0) for `endKnot` is three.js's undefined, the last knot.
+  `getTangent(t)` maps `t` into the `startKnot`..`endKnot` interval, as
+  `getPoint` does; three.js maps it into the whole knot vector, so on a
+  trimmed curve its tangent belongs to another point (wrong TubeGeometry
+  and extrusion frames).
 
 ## Lines, points and sprites
 

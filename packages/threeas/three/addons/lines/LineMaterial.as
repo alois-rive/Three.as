@@ -59,4 +59,25 @@ export class LineMaterial extends Material {
         u.gapSize = this.gapSize;
         u.dashOffset = this.dashOffset;
     }
+
+    override copy(source: Material): Material {
+        super.copy(source);
+        if (source instanceof LineMaterial) {
+            const s = source as LineMaterial;
+            this.color.copy(s.color);
+            this.linewidth = s.linewidth;
+            this.dashed = s.dashed;
+            this.dashScale = s.dashScale;
+            this.dashSize = s.dashSize;
+            this.gapSize = s.gapSize;
+            this.dashOffset = s.dashOffset;
+            this.worldUnits = s.worldUnits;
+            this.resolution.copy(s.resolution);
+        }
+        return this;
+    }
+
+    override clone(): Material {
+        return new LineMaterial().copy(this);
+    }
 }

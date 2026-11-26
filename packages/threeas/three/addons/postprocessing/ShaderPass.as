@@ -44,11 +44,15 @@ export class ShaderPass extends Pass {
             (this.uniforms.get(this.textureID) as Uniform<Texture>).value = readBuffer.texture;
         }
         this.fsQuad.material = this.material;
-        const oldAutoClear = renderer.autoClear;
-        renderer.autoClear = true;
-        renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+        // As three.js: the renderer's autoClear decides, and `clear` adds a
+        // clear of the write buffer (not of the screen).
+        if (this.renderToScreen) {
+            renderer.setRenderTarget(null);
+        } else {
+            renderer.setRenderTarget(writeBuffer);
+            if (this.clear) renderer.clear(renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil);
+        }
         this.fsQuad.render(renderer);
-        renderer.autoClear = oldAutoClear;
     }
 
     override dispose(): void {

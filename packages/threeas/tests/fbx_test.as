@@ -488,6 +488,21 @@ export class FBXTests extends Tests {
                 const tangent = curve.getTangent(0.5);
                 expect.that(near(tangent.x, 1) && near(tangent.y, 0)).is(true);
             });
+            test("NURBSCurve trimmed: getTangent at getPoint's knot", (expect) => {
+                // two quadratic spans over [0, 2], trimmed to the second (knots 3..6, u 1..2)
+                const curve = new NURBSCurve(2, [0, 0, 0, 1, 2, 2, 2], [
+                    new THREE.Vector4(0, 0, 0, 1), new THREE.Vector4(1, 2, 0, 1),
+                    new THREE.Vector4(3, 2, 0, 1), new THREE.Vector4(4, 0, 0, 1),
+                ], 3, 6);
+                const ts: StaticArray<f64> = [0.1, 0.5, 0.9];
+                for (let i = 0; i < ts.length; i++) {
+                    const t = ts[i];
+                    const a = curve.getPoint(t - 1e-5), b = curve.getPoint(t + 1e-5);
+                    const want = b.sub(a).normalize();
+                    const got = curve.getTangent(t);
+                    expect.that(Math.abs(got.x - want.x) + Math.abs(got.y - want.y) + Math.abs(got.z - want.z) < 1e-4).is(true);
+                }
+            });
         });
     }
 }

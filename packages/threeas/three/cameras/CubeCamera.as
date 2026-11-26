@@ -24,7 +24,7 @@ export class CubeCamera extends Object3D {
         const ups: StaticArray<f64> = [0, -1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, -1, 0, 0, -1, 0];
         for (let i = 0; i < 6; i++) {
             const cam = new PerspectiveCamera(90, 1, near, far);
-            cam.layers.mask = this.layers.mask;
+            cam.layers = this.layers;   // shared, as three.js: later layer changes reach every face
             cam.up.set(ups[i * 3], ups[i * 3 + 1], ups[i * 3 + 2]);
             cam.lookAt<f64>(dirs[i * 3], dirs[i * 3 + 1], dirs[i * 3 + 2]);
             this.add(cam);
