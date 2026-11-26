@@ -24,7 +24,7 @@ mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 ls -d packages/gallery/.libraries/threeas@* >/dev/null 2>&1 || {
     echo "packages/gallery/.libraries/ has no threeas snapshot (git-ignored):" >&2
-    echo "run \`rive library update packages/gallery --uat\` first" >&2
+    echo "run \`rive library update packages/gallery\` first" >&2
     exit 1
 }
 src=build/release-src

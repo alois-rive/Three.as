@@ -20,10 +20,12 @@ logs:
   file: build/rive.log
   problems: build/problems.log
 
-# The library file this project publishes to: UAT's "threeas" (library 761),
-# as bindings/uat.yaml has it. Keep the UAT binding here: the gallery's
-# library override needs it. tools/publish.sh --env=prod swaps in
-# bindings/prod.yaml for a production publish and puts this back.
+# The library file this project publishes to: production's "threeas"
+# (library 5221, file 2738936 in project 2062040 "Rive Public Libraries"),
+# as bindings/prod.yaml has it. Keep the production binding here: the
+# gallery imports that library, and its library override needs this
+# project to push to the same file. tools/publish.sh --env=uat swaps in
+# bindings/uat.yaml for a UAT publish and puts this back.
 push:
-  projectId: 44599
-  fileId: 38630
+  projectId: 2062040
+  fileId: 2738936

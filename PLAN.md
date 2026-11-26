@@ -409,8 +409,8 @@ Numbers, method and the three.js comparison recipe: [docs/PERFORMANCE.md](docs/P
 - Not done: `--publish=web` and publishing the library (left to the main
   session), three.js measurements, baked-mode timing on WebGL2 and mobile.
 - **Packaging (done).** The repository is two Rive projects:
-  packages/threeas (the engine, published as the library `threeas`, on UAT
-  for now) and packages/gallery (the page and the examples, one folder
+  packages/threeas (the engine, published as the library `threeas`, on
+  production; UAT optional) and packages/gallery (the page and the examples, one folder
   each), which imports the engine with `lib:threeas/...` and builds it from
   the sources next door through a library override. `tools/publish.sh`
   publishes the library (UAT or production) and the gallery.

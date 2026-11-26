@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Publishes the engine library (packages/threeas) to UAT or production, then
-# republishes the gallery (packages/gallery) on UAT against it.
+# Publishes the engine library (packages/threeas) to production (or UAT),
+# then republishes the gallery (packages/gallery) on production against it.
 #
-#   tools/publish.sh                          engine to UAT, then the gallery
-#   tools/publish.sh --env=prod               engine to production, then the gallery
-#   tools/publish.sh --env=both               engine to UAT and production, then the gallery
+#   tools/publish.sh                          engine to production, then the gallery
+#   tools/publish.sh --env=uat                engine to UAT only (the gallery
+#                                             imports the production library)
+#   tools/publish.sh --env=both               engine to production and UAT, then the gallery
 #   tools/publish.sh --no-gallery             the engine only
 #   tools/publish.sh --description="..."      the library version's note
 #   tools/publish.sh --dry-run                print the steps, run nothing
@@ -21,32 +22,34 @@
 #     (packages/threeas/bindings/<env>.yaml) into packages/threeas/rive.yaml;
 #     on a first production publish (no fileId yet), `rive push
 #     --project=<id>` creates the library file and the fileId is saved to
-#     bindings/prod.yaml; then `rive library publish`. Its first run often
+#     bindings/<env>.yaml; then `rive library publish`. Its first run often
 #     only pushes and asks for a rerun, so it runs a second time when the
-#     first did not print "Published v<N>". The UAT binding is put back
-#     afterwards, even on failure: the gallery's `override: ../threeas` only
-#     works while the engine pushes to the UAT library file.
-#  3. Gallery (UAT): `rive library update --uat` (newest engine version into
-#     threeas.rml, rive.yaml and .libraries/), verify, a release build and
-#     check_glsl.py of the gallery as it ships, `rive push --uat` to
-#     its file (38626), then `--publish=web --uat` to the threeas page of the
-#     UAT Rive workspace (41013), from a copy
-#     without the library override, so the page runs the published engine.
+#     first did not print "Published v<N>". The production binding is put
+#     back afterwards, even on failure: the gallery's `override: ../threeas`
+#     only works while the engine pushes to the library file it imports.
+#  3. Gallery (production; skipped when --env=uat): `rive library update`
+#     (newest engine version into threeas.rml, rive.yaml and .libraries/),
+#     verify, a release build and check_glsl.py of the gallery as it ships,
+#     `rive push` to its file (in project 2062040, next to the library: the
+#     only project that may import it; a first push creates the file and
+#     writes its fileId into rive.yaml), then `--publish=web` to the threeas
+#     page of the production Rive workspace (40887), from a copy without the
+#     library override, so the page runs the published engine.
 #
 # Afterwards commit what changed: packages/gallery/{threeas.rml,rive.yaml}
-# (.libraries/ is git-ignored) and, after a first production publish,
-# packages/threeas/bindings/prod.yaml. Needs `rive login` on each
-# environment used (`rive login --uat` for UAT).
+# (.libraries/ is git-ignored), the .rml ids a push writes and, after a
+# first publish to an environment, packages/threeas/bindings/<env>.yaml.
+# Needs `rive login` on each environment used (`rive login --uat` for UAT).
 set -euo pipefail
 
-UAT_PAGES_WORKSPACE=41013   # UAT "Rive" workspace: https://threeas-inksqd.uat.rive.to
+PAGES_WORKSPACE=40887   # production "Rive" workspace: https://threeas-7ak11s.rive.to
 PAGES_NAME=threeas
 cd "$(dirname "$0")/.."
 
 ENGINE=packages/threeas
 GALLERY=packages/gallery
 WORK=build/publish
-env=uat
+env=prod
 gallery=1
 dry=0
 yes=0
@@ -58,15 +61,15 @@ for arg in "$@"; do
         --description=*) description="${arg#--description=}" ;;
         --dry-run) dry=1 ;;
         --yes|-y) yes=1 ;;
-        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR > 1 && /^set -e/ { exit } NR > 1' "$0"; exit 0 ;;
         *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
 done
 case "$env" in
-    uat) envs=(uat) ;;
+    uat) envs=(uat); gallery=0 ;;   # the gallery imports the production library
     prod) envs=(prod) ;;
-    both) envs=(uat prod) ;;
-    *) echo "--env is uat, prod or both" >&2; exit 2 ;;
+    both) envs=(prod uat) ;;
+    *) echo "--env is prod, uat or both" >&2; exit 2 ;;
 esac
 for e in "${envs[@]}"; do
     if grep -q PRODUCTION_PROJECT_ID "$ENGINE/bindings/$e.yaml"; then
@@ -93,13 +96,13 @@ set_binding() {   # env: packages/threeas/rive.yaml with that environment's push
     binding_block "$ENGINE/bindings/$1.yaml" >> "$tmp"
     cp "$tmp" "$ENGINE/rive.yaml"
 }
-restore_uat() {
+restore_prod() {
     [ "$dry" = 1 ] && return
-    set_binding uat
-    echo "packages/threeas/rive.yaml: UAT binding restored"
+    set_binding prod
+    echo "packages/threeas/rive.yaml: production binding restored"
 }
 
-echo "publish: engine to ${envs[*]}$([ "$gallery" = 1 ] && echo ", then the gallery on UAT")"
+echo "publish: engine to ${envs[*]}$([ "$gallery" = 1 ] && echo ", then the gallery on production")"
 if [ "$dry" = 0 ] && [ "$yes" = 0 ]; then
     read -r -p "continue? [y/N] " answer
     [ "$answer" = y ] || [ "$answer" = Y ] || exit 1
@@ -123,7 +126,7 @@ run python3 tools/check_glsl.py "$WORK/release/threeas/threeas.riv"
 # `rive library update`, before pushing and publishing it.
 
 # ------------------------------------------------------------------ 2. engine
-trap restore_uat EXIT
+trap restore_prod EXIT
 for e in "${envs[@]}"; do
     flag=$(env_flag "$e")
     echo "== engine: $e"
@@ -153,13 +156,13 @@ for e in "${envs[@]}"; do
         done
     fi
 done
-restore_uat
+restore_prod
 trap - EXIT
 
 # ----------------------------------------------------------------- 3. gallery
 if [ "$gallery" = 1 ]; then
-    echo "== gallery (UAT)"
-    run env RIVE_NO_TUI=1 rive library update "$GALLERY" --uat --yes
+    echo "== gallery (production)"
+    run env RIVE_NO_TUI=1 rive library update "$GALLERY" --yes
     # An update keeps the previous version's LibraryAsset when the new one
     # dropped a script: the page would ship the engine twice. Remove it by hand.
     if [ "$dry" = 0 ] && [ "$(grep -c '<LibraryAsset ' "$GALLERY/threeas.rml")" -gt 1 ]; then
@@ -171,7 +174,12 @@ if [ "$gallery" = 1 ]; then
     # The gallery as it ships (on the engine just published), before it goes out.
     run tools/release_build.sh "$WORK/release-page"
     run python3 tools/check_glsl.py "$WORK/release-page/gallery/three_as.riv"
-    run env RIVE_NO_TUI=1 rive push "$GALLERY" --uat --yes --name="tools/publish.sh"
+    push=(env RIVE_NO_TUI=1 rive push "$GALLERY" --yes --name="tools/publish.sh")
+    if [ -z "$(yaml_value "$GALLERY/rive.yaml" fileId)" ]; then
+        # A first push creates the file in rive.yaml's project and links it.
+        push+=(--project="$(yaml_value "$GALLERY/rive.yaml" projectId)")
+    fi
+    run "${push[@]}"
     # The page from a copy without the override: it runs the published engine.
     run rm -rf "$WORK/gallery"
     run rsync -a --exclude build "$GALLERY/" "$WORK/gallery/"
@@ -180,12 +188,9 @@ if [ "$gallery" = 1 ]; then
     else
         grep -v '^ *override:' "$GALLERY/rive.yaml" > "$WORK/gallery/rive.yaml"
     fi
-    # The gallery is a UAT file: its page goes to the UAT workspace. (The
-    # pages: binding in its rive.yaml is the older production page, which is
-    # only republished by hand.)
-    run rive "$WORK/gallery" --publish=web --uat --workspace="$UAT_PAGES_WORKSPACE" --name="$PAGES_NAME"
+    run rive "$WORK/gallery" --publish=web --workspace="$PAGES_WORKSPACE" --name="$PAGES_NAME"
     # The page's own build (on the published engine): WebGL2 check.
     run python3 tools/check_glsl.py "$WORK/gallery/build/three_as.riv"
 fi
 
-echo "done. Commit packages/gallery/{threeas.rml,rive.yaml} (and packages/threeas/bindings/ after a first production publish)."
+echo "done. Commit packages/gallery/{threeas.rml,rive.yaml}, the .rml ids the push wrote (and packages/threeas/bindings/ after a first publish to an environment)."
