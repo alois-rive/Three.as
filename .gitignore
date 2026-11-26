@@ -2,5 +2,5 @@ build/
 .DS_Store
 .claude/worktrees/
 __pycache__/
-# Downloaded library snapshots: `rive library update <project> --uat` restores them.
+# Downloaded library snapshots: `rive library update <project>` restores them.
 .libraries/

@@ -20,20 +20,21 @@ pages:
   workspaceId: 40887
   name: "threeas"
 push:
-  projectId: 44599
-  fileId: 38626
+  fileId: 2754626
+  projectId: 2062040
 
-# The engine, as the UAT library "threeas" (file 38630, library 761). The
-# examples import it as "lib:threeas/three/...". fileId, libraryId and
-# version are the tool's (rive library add/update/pull write them).
+# The engine, as the production library "threeas" (file 2738936, library
+# 5221, project 2062040). The examples import it as "lib:threeas/three/...".
+# fileId, libraryId and version are the tool's (rive library add/update/pull
+# write them).
 libraries:
   "threeas":
-    fileId: 38630
-    libraryId: 761
-    version: 15
+    fileId: 2738936
+    libraryId: 5221
+    version: 10
     # Build against the engine sources next door instead of the published
     # snapshot in .libraries/, so engine edits show without republishing.
     # Only honoured while ../threeas/rive.yaml pushes to this fileId (its
-    # UAT binding, see tools/publish.sh); otherwise the build warns and
-    # uses .libraries/.
+    # production binding, see tools/publish.sh); otherwise the build warns
+    # and uses .libraries/.
     override: ../threeas

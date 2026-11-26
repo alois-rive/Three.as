@@ -2,572 +2,684 @@
     <!-- The engine, imported as a Rive library (rive library add/update
          write this block; see rive.yaml's libraries: and AGENTS.md). The
          examples import its modules as "lib:threeas/three/...". -->
-    <LibraryAsset libraryId="761" libraryVersionId="1980" assetId="123267" name="threeas" id="1:301817">
-        <LibraryCodeFile componentId="0:348872" codeFileTypeValue="3" id="1:301249"/>
-        <ScriptAsset name="Three" folderPath="three" codeFileId="1:301249" groupId="1:301817" id="1:301250"/>
-        <LibraryCodeFile componentId="0:355300" codeFileTypeValue="3" id="1:301251"/>
-        <ScriptAsset name="Addons" folderPath="three/addons" codeFileId="1:301251" groupId="1:301817" id="1:301252"/>
-        <LibraryCodeFile componentId="0:357366" codeFileTypeValue="3" id="1:301253"/>
-        <ScriptAsset name="DragControls" folderPath="three/addons/controls" codeFileId="1:301253" groupId="1:301817" id="1:301254"/>
-        <LibraryCodeFile componentId="0:361870" codeFileTypeValue="3" id="1:301255"/>
-        <ScriptAsset name="FirstPersonControls" folderPath="three/addons/controls" codeFileId="1:301255" groupId="1:301817" id="1:301256"/>
-        <LibraryCodeFile componentId="0:366898" codeFileTypeValue="3" id="1:301257"/>
-        <ScriptAsset name="FlyControls" folderPath="three/addons/controls" codeFileId="1:301257" groupId="1:301817" id="1:301258"/>
-        <LibraryCodeFile componentId="0:372275" codeFileTypeValue="3" id="1:301259"/>
-        <ScriptAsset name="OrbitControls" folderPath="three/addons/controls" codeFileId="1:301259" groupId="1:301817" id="1:301260"/>
-        <LibraryCodeFile componentId="0:387765" codeFileTypeValue="3" id="1:301261"/>
-        <ScriptAsset name="TrackballControls" folderPath="three/addons/controls" codeFileId="1:301261" groupId="1:301817" id="1:301262"/>
-        <LibraryCodeFile componentId="0:398155" codeFileTypeValue="3" id="1:301263"/>
-        <ScriptAsset name="TransformControls" folderPath="three/addons/controls" codeFileId="1:301263" groupId="1:301817" id="1:301264"/>
-        <LibraryCodeFile componentId="0:416152" codeFileTypeValue="3" id="1:301265"/>
-        <ScriptAsset name="CSM" folderPath="three/addons/csm" codeFileId="1:301265" groupId="1:301817" id="1:301266"/>
-        <LibraryCodeFile componentId="0:424947" codeFileTypeValue="3" id="1:301267"/>
-        <ScriptAsset name="CSMFrustum" folderPath="three/addons/csm" codeFileId="1:301267" groupId="1:301817" id="1:301268"/>
-        <LibraryCodeFile componentId="0:427211" codeFileTypeValue="3" id="1:301269"/>
-        <ScriptAsset name="NURBSCurve" folderPath="three/addons/curves" codeFileId="1:301269" groupId="1:301817" id="1:301270"/>
-        <LibraryCodeFile componentId="0:429326" codeFileTypeValue="3" id="1:301271"/>
-        <ScriptAsset name="NURBSUtils" folderPath="three/addons/curves" codeFileId="1:301271" groupId="1:301817" id="1:301272"/>
-        <LibraryCodeFile componentId="0:438312" codeFileTypeValue="3" id="1:301273"/>
-        <ScriptAsset name="RoomEnvironment" folderPath="three/addons/environments" codeFileId="1:301273" groupId="1:301817" id="1:301274"/>
-        <LibraryCodeFile componentId="0:441331" codeFileTypeValue="3" id="1:301275"/>
-        <ScriptAsset name="GLTFExporter" folderPath="three/addons/exporters" codeFileId="1:301275" groupId="1:301817" id="1:301276"/>
-        <LibraryCodeFile componentId="0:545054" codeFileTypeValue="3" id="1:301277"/>
-        <ScriptAsset name="ConvexGeometry" folderPath="three/addons/geometries" codeFileId="1:301277" groupId="1:301817" id="1:301278"/>
-        <LibraryCodeFile componentId="0:546308" codeFileTypeValue="3" id="1:301279"/>
-        <ScriptAsset name="DecalGeometry" folderPath="three/addons/geometries" codeFileId="1:301279" groupId="1:301817" id="1:301280"/>
-        <LibraryCodeFile componentId="0:552259" codeFileTypeValue="3" id="1:301281"/>
-        <ScriptAsset name="ParametricFunctions" folderPath="three/addons/geometries" codeFileId="1:301281" groupId="1:301817" id="1:301282"/>
-        <LibraryCodeFile componentId="0:553797" codeFileTypeValue="3" id="1:301283"/>
-        <ScriptAsset name="ParametricGeometry" folderPath="three/addons/geometries" codeFileId="1:301283" groupId="1:301817" id="1:301284"/>
-        <LibraryCodeFile componentId="0:556656" codeFileTypeValue="3" id="1:301285"/>
-        <ScriptAsset name="RoundedBoxGeometry" folderPath="three/addons/geometries" codeFileId="1:301285" groupId="1:301817" id="1:301286"/>
-        <LibraryCodeFile componentId="0:561267" codeFileTypeValue="3" id="1:301287"/>
-        <ScriptAsset name="TextGeometry" folderPath="three/addons/geometries" codeFileId="1:301287" groupId="1:301817" id="1:301288"/>
-        <LibraryCodeFile componentId="0:562301" codeFileTypeValue="3" id="1:301289"/>
-        <ScriptAsset name="VertexNormalsHelper" folderPath="three/addons/helpers" codeFileId="1:301289" groupId="1:301817" id="1:301290"/>
-        <LibraryCodeFile componentId="0:564704" codeFileTypeValue="3" id="1:301291"/>
-        <ScriptAsset name="dom_parser" folderPath="three/addons/libs" codeFileId="1:301291" groupId="1:301817" id="1:301292"/>
-        <LibraryCodeFile componentId="0:605406" codeFileTypeValue="3" id="1:301293"/>
-        <ScriptAsset name="fflate" folderPath="three/addons/libs" codeFileId="1:301293" groupId="1:301817" id="1:301294"/>
-        <LibraryCodeFile componentId="0:612294" codeFileTypeValue="3" id="1:301295"/>
-        <ScriptAsset name="meshopt_decoder" folderPath="three/addons/libs" codeFileId="1:301295" groupId="1:301817" id="1:301296"/>
-        <LibraryCodeFile componentId="0:626804" codeFileTypeValue="3" id="1:301297"/>
-        <ScriptAsset name="LightProbeGenerator" folderPath="three/addons/lights" codeFileId="1:301297" groupId="1:301817" id="1:301298"/>
-        <LibraryCodeFile componentId="0:629943" codeFileTypeValue="3" id="1:301299"/>
-        <ScriptAsset name="RectAreaLightUniformsLib" folderPath="three/addons/lights" codeFileId="1:301299" groupId="1:301817" id="1:301300"/>
-        <LibraryCodeFile componentId="0:630241" codeFileTypeValue="3" id="1:301301"/>
-        <ScriptAsset name="LineGeometry" folderPath="three/addons/lines" codeFileId="1:301301" groupId="1:301817" id="1:301302"/>
-        <LibraryCodeFile componentId="0:631913" codeFileTypeValue="3" id="1:301303"/>
-        <ScriptAsset name="LineMaterial" folderPath="three/addons/lines" codeFileId="1:301303" groupId="1:301817" id="1:301304"/>
-        <LibraryCodeFile componentId="0:634104" codeFileTypeValue="3" id="1:301305"/>
-        <ScriptAsset name="LineSegments2" folderPath="three/addons/lines" codeFileId="1:301305" groupId="1:301817" id="1:301306"/>
-        <LibraryCodeFile componentId="0:635998" codeFileTypeValue="3" id="1:301307"/>
-        <ScriptAsset name="LineSegmentsGeometry" folderPath="three/addons/lines" codeFileId="1:301307" groupId="1:301817" id="1:301308"/>
-        <LibraryCodeFile componentId="0:641073" codeFileTypeValue="3" id="1:301309"/>
-        <ScriptAsset name="EXRLoader" folderPath="three/addons/loaders" codeFileId="1:301309" groupId="1:301817" id="1:301310"/>
-        <LibraryCodeFile componentId="0:651873" codeFileTypeValue="3" id="1:301311"/>
-        <ScriptAsset name="FBXLoader" folderPath="three/addons/loaders" codeFileId="1:301311" groupId="1:301817" id="1:301312"/>
-        <LibraryCodeFile componentId="0:811213" codeFileTypeValue="3" id="1:301313"/>
-        <ScriptAsset name="FontLoader" folderPath="three/addons/loaders" codeFileId="1:301313" groupId="1:301817" id="1:301314"/>
-        <LibraryCodeFile componentId="0:819796" codeFileTypeValue="3" id="1:301315"/>
-        <ScriptAsset name="GLTFLoader" folderPath="three/addons/loaders" codeFileId="1:301315" groupId="1:301817" id="1:301316"/>
-        <LibraryCodeFile componentId="0:887054" codeFileTypeValue="3" id="1:301317"/>
-        <ScriptAsset name="KTX2Loader" folderPath="three/addons/loaders" codeFileId="1:301317" groupId="1:301817" id="1:301318"/>
-        <LibraryCodeFile componentId="0:894994" codeFileTypeValue="3" id="1:301319"/>
-        <ScriptAsset name="LUT3dlLoader" folderPath="three/addons/loaders" codeFileId="1:301319" groupId="1:301817" id="1:301320"/>
-        <LibraryCodeFile componentId="0:900414" codeFileTypeValue="3" id="1:301321"/>
-        <ScriptAsset name="LUTCubeLoader" folderPath="three/addons/loaders" codeFileId="1:301321" groupId="1:301817" id="1:301322"/>
-        <LibraryCodeFile componentId="0:908076" codeFileTypeValue="3" id="1:301323"/>
-        <ScriptAsset name="OBJLoader" folderPath="three/addons/loaders" codeFileId="1:301323" groupId="1:301817" id="1:301324"/>
-        <LibraryCodeFile componentId="0:917617" codeFileTypeValue="3" id="1:301325"/>
-        <ScriptAsset name="PLYLoader" folderPath="three/addons/loaders" codeFileId="1:301325" groupId="1:301817" id="1:301326"/>
-        <LibraryCodeFile componentId="0:934174" codeFileTypeValue="3" id="1:301327"/>
-        <ScriptAsset name="RGBELoader" folderPath="three/addons/loaders" codeFileId="1:301327" groupId="1:301817" id="1:301328"/>
-        <LibraryCodeFile componentId="0:941967" codeFileTypeValue="3" id="1:301329"/>
-        <ScriptAsset name="STLLoader" folderPath="three/addons/loaders" codeFileId="1:301329" groupId="1:301817" id="1:301330"/>
-        <LibraryCodeFile componentId="0:950475" codeFileTypeValue="3" id="1:301331"/>
-        <ScriptAsset name="SVGLoader" folderPath="three/addons/loaders" codeFileId="1:301331" groupId="1:301817" id="1:301332"/>
-        <LibraryCodeFile componentId="0:1048492" codeFileTypeValue="3" id="1:301333"/>
-        <ScriptAsset name="ConvexHull" folderPath="three/addons/math" codeFileId="1:301333" groupId="1:301817" id="1:301334"/>
-        <LibraryCodeFile componentId="0:1054787" codeFileTypeValue="3" id="1:301335"/>
-        <ScriptAsset name="AOPassUtils" folderPath="three/addons/postprocessing" codeFileId="1:301335" groupId="1:301817" id="1:301336"/>
-        <LibraryCodeFile componentId="0:1059456" codeFileTypeValue="3" id="1:301337"/>
-        <ScriptAsset name="AfterimagePass" folderPath="three/addons/postprocessing" codeFileId="1:301337" groupId="1:301817" id="1:301338"/>
-        <LibraryCodeFile componentId="0:1063596" codeFileTypeValue="3" id="1:301339"/>
-        <ScriptAsset name="BokehPass" folderPath="three/addons/postprocessing" codeFileId="1:301339" groupId="1:301817" id="1:301340"/>
-        <LibraryCodeFile componentId="0:1069435" codeFileTypeValue="3" id="1:301341"/>
-        <ScriptAsset name="ClearPass" folderPath="three/addons/postprocessing" codeFileId="1:301341" groupId="1:301817" id="1:301342"/>
-        <LibraryCodeFile componentId="0:1070869" codeFileTypeValue="3" id="1:301343"/>
-        <ScriptAsset name="DotScreenPass" folderPath="three/addons/postprocessing" codeFileId="1:301343" groupId="1:301817" id="1:301344"/>
-        <LibraryCodeFile componentId="0:1073123" codeFileTypeValue="3" id="1:301345"/>
-        <ScriptAsset name="EffectComposer" folderPath="three/addons/postprocessing" codeFileId="1:301345" groupId="1:301817" id="1:301346"/>
-        <LibraryCodeFile componentId="0:1082411" codeFileTypeValue="3" id="1:301347"/>
-        <ScriptAsset name="FXAAPass" folderPath="three/addons/postprocessing" codeFileId="1:301347" groupId="1:301817" id="1:301348"/>
-        <LibraryCodeFile componentId="0:1083036" codeFileTypeValue="3" id="1:301349"/>
-        <ScriptAsset name="FilmPass" folderPath="three/addons/postprocessing" codeFileId="1:301349" groupId="1:301817" id="1:301350"/>
-        <LibraryCodeFile componentId="0:1084998" codeFileTypeValue="3" id="1:301351"/>
-        <ScriptAsset name="GTAOPass" folderPath="three/addons/postprocessing" codeFileId="1:301351" groupId="1:301817" id="1:301352"/>
-        <LibraryCodeFile componentId="0:1102113" codeFileTypeValue="3" id="1:301353"/>
-        <ScriptAsset name="GlitchPass" folderPath="three/addons/postprocessing" codeFileId="1:301353" groupId="1:301817" id="1:301354"/>
-        <LibraryCodeFile componentId="0:1106277" codeFileTypeValue="3" id="1:301355"/>
-        <ScriptAsset name="HalftonePass" folderPath="three/addons/postprocessing" codeFileId="1:301355" groupId="1:301817" id="1:301356"/>
-        <LibraryCodeFile componentId="0:1109510" codeFileTypeValue="3" id="1:301357"/>
-        <ScriptAsset name="LUTPass" folderPath="three/addons/postprocessing" codeFileId="1:301357" groupId="1:301817" id="1:301358"/>
-        <LibraryCodeFile componentId="0:1113199" codeFileTypeValue="3" id="1:301359"/>
-        <ScriptAsset name="MaskPass" folderPath="three/addons/postprocessing" codeFileId="1:301359" groupId="1:301817" id="1:301360"/>
-        <LibraryCodeFile componentId="0:1117974" codeFileTypeValue="3" id="1:301361"/>
-        <ScriptAsset name="OutlinePass" folderPath="three/addons/postprocessing" codeFileId="1:301361" groupId="1:301817" id="1:301362"/>
-        <LibraryCodeFile componentId="0:1140641" codeFileTypeValue="3" id="1:301363"/>
-        <ScriptAsset name="OutputPass" folderPath="three/addons/postprocessing" codeFileId="1:301363" groupId="1:301817" id="1:301364"/>
-        <LibraryCodeFile componentId="0:1142304" codeFileTypeValue="3" id="1:301365"/>
-        <ScriptAsset name="Pass" folderPath="three/addons/postprocessing" codeFileId="1:301365" groupId="1:301817" id="1:301366"/>
-        <LibraryCodeFile componentId="0:1144487" codeFileTypeValue="3" id="1:301367"/>
-        <ScriptAsset name="RenderPass" folderPath="three/addons/postprocessing" codeFileId="1:301367" groupId="1:301817" id="1:301368"/>
-        <LibraryCodeFile componentId="0:1146854" codeFileTypeValue="3" id="1:301369"/>
-        <ScriptAsset name="RenderPixelatedPass" folderPath="three/addons/postprocessing" codeFileId="1:301369" groupId="1:301817" id="1:301370"/>
-        <LibraryCodeFile componentId="0:1152949" codeFileTypeValue="3" id="1:301371"/>
-        <ScriptAsset name="SAOPass" folderPath="three/addons/postprocessing" codeFileId="1:301371" groupId="1:301817" id="1:301372"/>
-        <LibraryCodeFile componentId="0:1163350" codeFileTypeValue="3" id="1:301373"/>
-        <ScriptAsset name="SMAAPass" folderPath="three/addons/postprocessing" codeFileId="1:301373" groupId="1:301817" id="1:301374"/>
-        <LibraryCodeFile componentId="0:1168446" codeFileTypeValue="3" id="1:301375"/>
-        <ScriptAsset name="SMAATextures" folderPath="three/addons/postprocessing" codeFileId="1:301375" groupId="1:301817" id="1:301376"/>
-        <LibraryCodeFile componentId="0:1223718" codeFileTypeValue="3" id="1:301377"/>
-        <ScriptAsset name="SSAARenderPass" folderPath="three/addons/postprocessing" codeFileId="1:301377" groupId="1:301817" id="1:301378"/>
-        <LibraryCodeFile componentId="0:1230604" codeFileTypeValue="3" id="1:301379"/>
-        <ScriptAsset name="SSAOPass" folderPath="three/addons/postprocessing" codeFileId="1:301379" groupId="1:301817" id="1:301380"/>
-        <LibraryCodeFile componentId="0:1242260" codeFileTypeValue="3" id="1:301381"/>
-        <ScriptAsset name="ShaderPass" folderPath="three/addons/postprocessing" codeFileId="1:301381" groupId="1:301817" id="1:301382"/>
-        <LibraryCodeFile componentId="0:1244655" codeFileTypeValue="3" id="1:301383"/>
-        <ScriptAsset name="TAARenderPass" folderPath="three/addons/postprocessing" codeFileId="1:301383" groupId="1:301817" id="1:301384"/>
-        <LibraryCodeFile componentId="0:1250697" codeFileTypeValue="3" id="1:301385"/>
-        <ScriptAsset name="TexturePass" folderPath="three/addons/postprocessing" codeFileId="1:301385" groupId="1:301817" id="1:301386"/>
-        <LibraryCodeFile componentId="0:1253738" codeFileTypeValue="3" id="1:301387"/>
-        <ScriptAsset name="UnrealBloomPass" folderPath="three/addons/postprocessing" codeFileId="1:301387" groupId="1:301817" id="1:301388"/>
-        <LibraryCodeFile componentId="0:1260984" codeFileTypeValue="3" id="1:301389"/>
-        <ScriptAsset name="AfterimageShader" folderPath="three/addons/shaders" codeFileId="1:301389" groupId="1:301817" id="1:301390"/>
-        <LibraryCodeFile componentId="0:1261795" codeFileTypeValue="3" id="1:301391"/>
-        <ScriptAsset name="BokehShader" folderPath="three/addons/shaders" codeFileId="1:301391" groupId="1:301817" id="1:301392"/>
-        <LibraryCodeFile componentId="0:1263017" codeFileTypeValue="3" id="1:301393"/>
-        <ScriptAsset name="DepthLimitedBlurShader" folderPath="three/addons/shaders" codeFileId="1:301393" groupId="1:301817" id="1:301394"/>
-        <LibraryCodeFile componentId="0:1266543" codeFileTypeValue="3" id="1:301395"/>
-        <ScriptAsset name="DigitalGlitch" folderPath="three/addons/shaders" codeFileId="1:301395" groupId="1:301817" id="1:301396"/>
-        <LibraryCodeFile componentId="0:1267768" codeFileTypeValue="3" id="1:301397"/>
-        <ScriptAsset name="DotScreenShader" folderPath="three/addons/shaders" codeFileId="1:301397" groupId="1:301817" id="1:301398"/>
-        <LibraryCodeFile componentId="0:1268766" codeFileTypeValue="3" id="1:301399"/>
-        <ScriptAsset name="FilmShader" folderPath="three/addons/shaders" codeFileId="1:301399" groupId="1:301817" id="1:301400"/>
-        <LibraryCodeFile componentId="0:1269683" codeFileTypeValue="3" id="1:301401"/>
-        <ScriptAsset name="GTAOShader" folderPath="three/addons/shaders" codeFileId="1:301401" groupId="1:301817" id="1:301402"/>
-        <LibraryCodeFile componentId="0:1275361" codeFileTypeValue="3" id="1:301403"/>
-        <ScriptAsset name="HalftoneShader" folderPath="three/addons/shaders" codeFileId="1:301403" groupId="1:301817" id="1:301404"/>
-        <LibraryCodeFile componentId="0:1276861" codeFileTypeValue="3" id="1:301405"/>
-        <ScriptAsset name="PoissonDenoiseShader" folderPath="three/addons/shaders" codeFileId="1:301405" groupId="1:301817" id="1:301406"/>
-        <LibraryCodeFile componentId="0:1280194" codeFileTypeValue="3" id="1:301407"/>
-        <ScriptAsset name="PostShaders" folderPath="three/addons/shaders" codeFileId="1:301407" groupId="1:301817" id="1:301408"/>
-        <LibraryCodeFile componentId="0:1284851" codeFileTypeValue="3" id="1:301409"/>
-        <ScriptAsset name="SAOShader" folderPath="three/addons/shaders" codeFileId="1:301409" groupId="1:301817" id="1:301410"/>
-        <LibraryCodeFile componentId="0:1286641" codeFileTypeValue="3" id="1:301411"/>
-        <ScriptAsset name="SMAAShader" folderPath="three/addons/shaders" codeFileId="1:301411" groupId="1:301817" id="1:301412"/>
-        <LibraryCodeFile componentId="0:1288945" codeFileTypeValue="3" id="1:301413"/>
-        <ScriptAsset name="SSAOShader" folderPath="three/addons/shaders" codeFileId="1:301413" groupId="1:301817" id="1:301414"/>
-        <LibraryCodeFile componentId="0:1292118" codeFileTypeValue="3" id="1:301415"/>
-        <ScriptAsset name="BufferGeometryUtils" folderPath="three/addons/utils" codeFileId="1:301415" groupId="1:301817" id="1:301416"/>
-        <LibraryCodeFile componentId="0:1299247" codeFileTypeValue="3" id="1:301417"/>
-        <ScriptAsset name="SceneUtils" folderPath="three/addons/utils" codeFileId="1:301417" groupId="1:301817" id="1:301418"/>
-        <LibraryCodeFile componentId="0:1301238" codeFileTypeValue="3" id="1:301419"/>
-        <ScriptAsset name="SkeletonUtils" folderPath="three/addons/utils" codeFileId="1:301419" groupId="1:301817" id="1:301420"/>
-        <LibraryCodeFile componentId="0:1304709" codeFileTypeValue="3" id="1:301421"/>
-        <ScriptAsset name="AnimationClip" folderPath="three/animation" codeFileId="1:301421" groupId="1:301817" id="1:301422"/>
-        <LibraryCodeFile componentId="0:1313133" codeFileTypeValue="3" id="1:301423"/>
-        <ScriptAsset name="AnimationMixer" folderPath="three/animation" codeFileId="1:301423" groupId="1:301817" id="1:301424"/>
-        <LibraryCodeFile componentId="0:1331003" codeFileTypeValue="3" id="1:301425"/>
-        <ScriptAsset name="AnimationObjectGroup" folderPath="three/animation" codeFileId="1:301425" groupId="1:301817" id="1:301426"/>
-        <LibraryCodeFile componentId="0:1334348" codeFileTypeValue="3" id="1:301427"/>
-        <ScriptAsset name="AnimationUtils" folderPath="three/animation" codeFileId="1:301427" groupId="1:301817" id="1:301428"/>
-        <LibraryCodeFile componentId="0:1343591" codeFileTypeValue="3" id="1:301429"/>
-        <ScriptAsset name="KeyframeTrack" folderPath="three/animation" codeFileId="1:301429" groupId="1:301817" id="1:301430"/>
-        <LibraryCodeFile componentId="0:1359550" codeFileTypeValue="3" id="1:301431"/>
-        <ScriptAsset name="PropertyBinding" folderPath="three/animation" codeFileId="1:301431" groupId="1:301817" id="1:301432"/>
-        <LibraryCodeFile componentId="0:1379528" codeFileTypeValue="3" id="1:301433"/>
-        <ScriptAsset name="ArrayCamera" folderPath="three/cameras" codeFileId="1:301433" groupId="1:301817" id="1:301434"/>
-        <LibraryCodeFile componentId="0:1380513" codeFileTypeValue="3" id="1:301435"/>
-        <ScriptAsset name="Camera" folderPath="three/cameras" codeFileId="1:301435" groupId="1:301817" id="1:301436"/>
-        <LibraryCodeFile componentId="0:1384123" codeFileTypeValue="3" id="1:301437"/>
-        <ScriptAsset name="CubeCamera" folderPath="three/cameras" codeFileId="1:301437" groupId="1:301817" id="1:301438"/>
-        <LibraryCodeFile componentId="0:1386231" codeFileTypeValue="3" id="1:301439"/>
-        <ScriptAsset name="OrthographicCamera" folderPath="three/cameras" codeFileId="1:301439" groupId="1:301817" id="1:301440"/>
-        <LibraryCodeFile componentId="0:1389134" codeFileTypeValue="3" id="1:301441"/>
-        <ScriptAsset name="PerspectiveCamera" folderPath="three/cameras" codeFileId="1:301441" groupId="1:301817" id="1:301442"/>
-        <LibraryCodeFile componentId="0:1393641" codeFileTypeValue="3" id="1:301443"/>
-        <ScriptAsset name="StereoCamera" folderPath="three/cameras" codeFileId="1:301443" groupId="1:301817" id="1:301444"/>
-        <LibraryCodeFile componentId="0:1397469" codeFileTypeValue="3" id="1:301445"/>
-        <ScriptAsset name="constants" folderPath="three" codeFileId="1:301445" groupId="1:301817" id="1:301446"/>
-        <LibraryCodeFile componentId="0:1402416" codeFileTypeValue="3" id="1:301447"/>
-        <ScriptAsset name="BufferAttribute" folderPath="three/core" codeFileId="1:301447" groupId="1:301817" id="1:301448"/>
-        <LibraryCodeFile componentId="0:1409244" codeFileTypeValue="3" id="1:301449"/>
-        <ScriptAsset name="BufferGeometry" folderPath="three/core" codeFileId="1:301449" groupId="1:301817" id="1:301450"/>
-        <LibraryCodeFile componentId="0:1428972" codeFileTypeValue="3" id="1:301451"/>
-        <ScriptAsset name="Clock" folderPath="three/core" codeFileId="1:301451" groupId="1:301817" id="1:301452"/>
-        <LibraryCodeFile componentId="0:1431028" codeFileTypeValue="3" id="1:301453"/>
-        <ScriptAsset name="ColorOrTexture" folderPath="three/core" codeFileId="1:301453" groupId="1:301817" id="1:301454"/>
-        <LibraryCodeFile componentId="0:1431421" codeFileTypeValue="3" id="1:301455"/>
-        <ScriptAsset name="EventDispatcher" folderPath="three/core" codeFileId="1:301455" groupId="1:301817" id="1:301456"/>
-        <LibraryCodeFile componentId="0:1434033" codeFileTypeValue="3" id="1:301457"/>
-        <ScriptAsset name="InstancedBufferAttribute" folderPath="three/core" codeFileId="1:301457" groupId="1:301817" id="1:301458"/>
-        <LibraryCodeFile componentId="0:1434969" codeFileTypeValue="3" id="1:301459"/>
-        <ScriptAsset name="InterleavedBuffer" folderPath="three/core" codeFileId="1:301459" groupId="1:301817" id="1:301460"/>
-        <LibraryCodeFile componentId="0:1439087" codeFileTypeValue="3" id="1:301461"/>
-        <ScriptAsset name="JSON" folderPath="three/core" codeFileId="1:301461" groupId="1:301817" id="1:301462"/>
-        <LibraryCodeFile componentId="0:1451896" codeFileTypeValue="3" id="1:301463"/>
-        <ScriptAsset name="Layers" folderPath="three/core" codeFileId="1:301463" groupId="1:301817" id="1:301464"/>
-        <LibraryCodeFile componentId="0:1452594" codeFileTypeValue="3" id="1:301465"/>
-        <ScriptAsset name="Object3D" folderPath="three/core" codeFileId="1:301465" groupId="1:301817" id="1:301466"/>
-        <LibraryCodeFile componentId="0:1472241" codeFileTypeValue="3" id="1:301467"/>
-        <ScriptAsset name="Raycaster" folderPath="three/core" codeFileId="1:301467" groupId="1:301817" id="1:301468"/>
-        <LibraryCodeFile componentId="0:1476702" codeFileTypeValue="3" id="1:301469"/>
-        <ScriptAsset name="geometryOf" folderPath="three/core" codeFileId="1:301469" groupId="1:301817" id="1:301470"/>
-        <LibraryCodeFile componentId="0:1477321" codeFileTypeValue="3" id="1:301471"/>
-        <ScriptAsset name="Controls" folderPath="three/extras" codeFileId="1:301471" groupId="1:301817" id="1:301472"/>
-        <LibraryCodeFile componentId="0:1479798" codeFileTypeValue="3" id="1:301473"/>
-        <ScriptAsset name="Earcut" folderPath="three/extras" codeFileId="1:301473" groupId="1:301817" id="1:301474"/>
-        <LibraryCodeFile componentId="0:1495662" codeFileTypeValue="3" id="1:301475"/>
-        <ScriptAsset name="PMREMGenerator" folderPath="three/extras" codeFileId="1:301475" groupId="1:301817" id="1:301476"/>
-        <LibraryCodeFile componentId="0:1498359" codeFileTypeValue="3" id="1:301477"/>
-        <ScriptAsset name="ShapeUtils" folderPath="three/extras" codeFileId="1:301477" groupId="1:301817" id="1:301478"/>
-        <LibraryCodeFile componentId="0:1500202" codeFileTypeValue="3" id="1:301479"/>
-        <ScriptAsset name="Curve" folderPath="three/extras/core" codeFileId="1:301479" groupId="1:301817" id="1:301480"/>
-        <LibraryCodeFile componentId="0:1507213" codeFileTypeValue="3" id="1:301481"/>
-        <ScriptAsset name="CurvePath" folderPath="three/extras/core" codeFileId="1:301481" groupId="1:301817" id="1:301482"/>
-        <LibraryCodeFile componentId="0:1511135" codeFileTypeValue="3" id="1:301483"/>
-        <ScriptAsset name="Interpolations" folderPath="three/extras/core" codeFileId="1:301483" groupId="1:301817" id="1:301484"/>
-        <LibraryCodeFile componentId="0:1511833" codeFileTypeValue="3" id="1:301485"/>
-        <ScriptAsset name="Path" folderPath="three/extras/core" codeFileId="1:301485" groupId="1:301817" id="1:301486"/>
-        <LibraryCodeFile componentId="0:1516170" codeFileTypeValue="3" id="1:301487"/>
-        <ScriptAsset name="Shape" folderPath="three/extras/core" codeFileId="1:301487" groupId="1:301817" id="1:301488"/>
-        <LibraryCodeFile componentId="0:1518306" codeFileTypeValue="3" id="1:301489"/>
-        <ScriptAsset name="ShapePath" folderPath="three/extras/core" codeFileId="1:301489" groupId="1:301817" id="1:301490"/>
-        <LibraryCodeFile componentId="0:1525102" codeFileTypeValue="3" id="1:301491"/>
-        <ScriptAsset name="Curves" folderPath="three/extras/curves" codeFileId="1:301491" groupId="1:301817" id="1:301492"/>
-        <LibraryCodeFile componentId="0:1544154" codeFileTypeValue="3" id="1:301493"/>
-        <ScriptAsset name="BoxGeometry" folderPath="three/geometries" codeFileId="1:301493" groupId="1:301817" id="1:301494"/>
-        <LibraryCodeFile componentId="0:1549156" codeFileTypeValue="3" id="1:301495"/>
-        <ScriptAsset name="CapsuleGeometry" folderPath="three/geometries" codeFileId="1:301495" groupId="1:301817" id="1:301496"/>
-        <LibraryCodeFile componentId="0:1554573" codeFileTypeValue="3" id="1:301497"/>
-        <ScriptAsset name="CircleGeometry" folderPath="three/geometries" codeFileId="1:301497" groupId="1:301817" id="1:301498"/>
-        <LibraryCodeFile componentId="0:1557054" codeFileTypeValue="3" id="1:301499"/>
-        <ScriptAsset name="ConeGeometry" folderPath="three/geometries" codeFileId="1:301499" groupId="1:301817" id="1:301500"/>
-        <LibraryCodeFile componentId="0:1558619" codeFileTypeValue="3" id="1:301501"/>
-        <ScriptAsset name="CylinderGeometry" folderPath="three/geometries" codeFileId="1:301501" groupId="1:301817" id="1:301502"/>
-        <LibraryCodeFile componentId="0:1565473" codeFileTypeValue="3" id="1:301503"/>
-        <ScriptAsset name="EdgesGeometry" folderPath="three/geometries" codeFileId="1:301503" groupId="1:301817" id="1:301504"/>
-        <LibraryCodeFile componentId="0:1569511" codeFileTypeValue="3" id="1:301505"/>
-        <ScriptAsset name="ExtrudeGeometry" folderPath="three/geometries" codeFileId="1:301505" groupId="1:301817" id="1:301506"/>
-        <LibraryCodeFile componentId="0:1584967" codeFileTypeValue="3" id="1:301507"/>
-        <ScriptAsset name="LatheGeometry" folderPath="three/geometries" codeFileId="1:301507" groupId="1:301817" id="1:301508"/>
-        <LibraryCodeFile componentId="0:1590143" codeFileTypeValue="3" id="1:301509"/>
-        <ScriptAsset name="PlaneGeometry" folderPath="three/geometries" codeFileId="1:301509" groupId="1:301817" id="1:301510"/>
-        <LibraryCodeFile componentId="0:1593203" codeFileTypeValue="3" id="1:301511"/>
-        <ScriptAsset name="PolyhedronGeometry" folderPath="three/geometries" codeFileId="1:301511" groupId="1:301817" id="1:301512"/>
-        <LibraryCodeFile componentId="0:1603254" codeFileTypeValue="3" id="1:301513"/>
-        <ScriptAsset name="RingGeometry" folderPath="three/geometries" codeFileId="1:301513" groupId="1:301817" id="1:301514"/>
-        <LibraryCodeFile componentId="0:1606653" codeFileTypeValue="3" id="1:301515"/>
-        <ScriptAsset name="ShapeGeometry" folderPath="three/geometries" codeFileId="1:301515" groupId="1:301817" id="1:301516"/>
-        <LibraryCodeFile componentId="0:1610926" codeFileTypeValue="3" id="1:301517"/>
-        <ScriptAsset name="SphereGeometry" folderPath="three/geometries" codeFileId="1:301517" groupId="1:301817" id="1:301518"/>
-        <LibraryCodeFile componentId="0:1615198" codeFileTypeValue="3" id="1:301519"/>
-        <ScriptAsset name="TorusGeometry" folderPath="three/geometries" codeFileId="1:301519" groupId="1:301817" id="1:301520"/>
-        <LibraryCodeFile componentId="0:1618669" codeFileTypeValue="3" id="1:301521"/>
-        <ScriptAsset name="TorusKnotGeometry" folderPath="three/geometries" codeFileId="1:301521" groupId="1:301817" id="1:301522"/>
-        <LibraryCodeFile componentId="0:1623052" codeFileTypeValue="3" id="1:301523"/>
-        <ScriptAsset name="TubeGeometry" folderPath="three/geometries" codeFileId="1:301523" groupId="1:301817" id="1:301524"/>
-        <LibraryCodeFile componentId="0:1626451" codeFileTypeValue="3" id="1:301525"/>
-        <ScriptAsset name="WireframeGeometry" folderPath="three/geometries" codeFileId="1:301525" groupId="1:301817" id="1:301526"/>
-        <LibraryCodeFile componentId="0:1629350" codeFileTypeValue="3" id="1:301527"/>
-        <ScriptAsset name="ArrowHelper" folderPath="three/helpers" codeFileId="1:301527" groupId="1:301817" id="1:301528"/>
-        <LibraryCodeFile componentId="0:1632424" codeFileTypeValue="3" id="1:301529"/>
-        <ScriptAsset name="AxesHelper" folderPath="three/helpers" codeFileId="1:301529" groupId="1:301817" id="1:301530"/>
-        <LibraryCodeFile componentId="0:1633829" codeFileTypeValue="3" id="1:301531"/>
-        <ScriptAsset name="Box3Helper" folderPath="three/helpers" codeFileId="1:301531" groupId="1:301817" id="1:301532"/>
-        <LibraryCodeFile componentId="0:1635206" codeFileTypeValue="3" id="1:301533"/>
-        <ScriptAsset name="BoxHelper" folderPath="three/helpers" codeFileId="1:301533" groupId="1:301817" id="1:301534"/>
-        <LibraryCodeFile componentId="0:1637280" codeFileTypeValue="3" id="1:301535"/>
-        <ScriptAsset name="CameraHelper" folderPath="three/helpers" codeFileId="1:301535" groupId="1:301817" id="1:301536"/>
-        <LibraryCodeFile componentId="0:1641493" codeFileTypeValue="3" id="1:301537"/>
-        <ScriptAsset name="GridHelper" folderPath="three/helpers" codeFileId="1:301537" groupId="1:301817" id="1:301538"/>
-        <LibraryCodeFile componentId="0:1643287" codeFileTypeValue="3" id="1:301539"/>
-        <ScriptAsset name="LightHelpers" folderPath="three/helpers" codeFileId="1:301539" groupId="1:301817" id="1:301540"/>
-        <LibraryCodeFile componentId="0:1651230" codeFileTypeValue="3" id="1:301541"/>
-        <ScriptAsset name="PlaneHelper" folderPath="three/helpers" codeFileId="1:301541" groupId="1:301817" id="1:301542"/>
-        <LibraryCodeFile componentId="0:1653195" codeFileTypeValue="3" id="1:301543"/>
-        <ScriptAsset name="PolarGridHelper" folderPath="three/helpers" codeFileId="1:301543" groupId="1:301817" id="1:301544"/>
-        <LibraryCodeFile componentId="0:1655602" codeFileTypeValue="3" id="1:301545"/>
-        <ScriptAsset name="SkeletonHelper" folderPath="three/helpers" codeFileId="1:301545" groupId="1:301817" id="1:301546"/>
-        <LibraryCodeFile componentId="0:1658649" codeFileTypeValue="3" id="1:301547"/>
-        <ScriptAsset name="AmbientLight" folderPath="three/lights" codeFileId="1:301547" groupId="1:301817" id="1:301548"/>
-        <LibraryCodeFile componentId="0:1659268" codeFileTypeValue="3" id="1:301549"/>
-        <ScriptAsset name="DirectionalLight" folderPath="three/lights" codeFileId="1:301549" groupId="1:301817" id="1:301550"/>
-        <LibraryCodeFile componentId="0:1661232" codeFileTypeValue="3" id="1:301551"/>
-        <ScriptAsset name="HemisphereLight" folderPath="three/lights" codeFileId="1:301551" groupId="1:301817" id="1:301552"/>
-        <LibraryCodeFile componentId="0:1662657" codeFileTypeValue="3" id="1:301553"/>
-        <ScriptAsset name="Light" folderPath="three/lights" codeFileId="1:301553" groupId="1:301817" id="1:301554"/>
-        <LibraryCodeFile componentId="0:1663983" codeFileTypeValue="3" id="1:301555"/>
-        <ScriptAsset name="LightProbe" folderPath="three/lights" codeFileId="1:301555" groupId="1:301817" id="1:301556"/>
-        <LibraryCodeFile componentId="0:1665244" codeFileTypeValue="3" id="1:301557"/>
-        <ScriptAsset name="LightShadow" folderPath="three/lights" codeFileId="1:301557" groupId="1:301817" id="1:301558"/>
-        <LibraryCodeFile componentId="0:1668260" codeFileTypeValue="3" id="1:301559"/>
-        <ScriptAsset name="PointLight" folderPath="three/lights" codeFileId="1:301559" groupId="1:301817" id="1:301560"/>
-        <LibraryCodeFile componentId="0:1669957" codeFileTypeValue="3" id="1:301561"/>
-        <ScriptAsset name="RectAreaLight" folderPath="three/lights" codeFileId="1:301561" groupId="1:301817" id="1:301562"/>
-        <LibraryCodeFile componentId="0:1671676" codeFileTypeValue="3" id="1:301563"/>
-        <ScriptAsset name="RectAreaLightTables" folderPath="three/lights" codeFileId="1:301563" groupId="1:301817" id="1:301564"/>
-        <LibraryCodeFile componentId="0:1723456" codeFileTypeValue="3" id="1:301565"/>
-        <ScriptAsset name="SpotLight" folderPath="three/lights" codeFileId="1:301565" groupId="1:301817" id="1:301566"/>
-        <LibraryCodeFile componentId="0:1725921" codeFileTypeValue="3" id="1:301567"/>
-        <ScriptAsset name="BufferGeometryLoader" folderPath="three/loaders" codeFileId="1:301567" groupId="1:301817" id="1:301568"/>
-        <LibraryCodeFile componentId="0:1736043" codeFileTypeValue="3" id="1:301569"/>
-        <ScriptAsset name="CubeTextureLoader" folderPath="three/loaders" codeFileId="1:301569" groupId="1:301817" id="1:301570"/>
-        <LibraryCodeFile componentId="0:1737349" codeFileTypeValue="3" id="1:301571"/>
-        <ScriptAsset name="FileLoader" folderPath="three/loaders" codeFileId="1:301571" groupId="1:301817" id="1:301572"/>
-        <LibraryCodeFile componentId="0:1740311" codeFileTypeValue="3" id="1:301573"/>
-        <ScriptAsset name="Loader" folderPath="three/loaders" codeFileId="1:301573" groupId="1:301817" id="1:301574"/>
-        <LibraryCodeFile componentId="0:1741652" codeFileTypeValue="3" id="1:301575"/>
-        <ScriptAsset name="LoaderUtils" folderPath="three/loaders" codeFileId="1:301575" groupId="1:301817" id="1:301576"/>
-        <LibraryCodeFile componentId="0:1742924" codeFileTypeValue="3" id="1:301577"/>
-        <ScriptAsset name="LoadingManager" folderPath="three/loaders" codeFileId="1:301577" groupId="1:301817" id="1:301578"/>
-        <LibraryCodeFile componentId="0:1745408" codeFileTypeValue="3" id="1:301579"/>
-        <ScriptAsset name="MaterialLoader" folderPath="three/loaders" codeFileId="1:301579" groupId="1:301817" id="1:301580"/>
-        <LibraryCodeFile componentId="0:1773700" codeFileTypeValue="3" id="1:301581"/>
-        <ScriptAsset name="ObjectLoader" folderPath="three/loaders" codeFileId="1:301581" groupId="1:301817" id="1:301582"/>
-        <LibraryCodeFile componentId="0:1818639" codeFileTypeValue="3" id="1:301583"/>
-        <ScriptAsset name="TextureLoader" folderPath="three/loaders" codeFileId="1:301583" groupId="1:301817" id="1:301584"/>
-        <LibraryCodeFile componentId="0:1822449" codeFileTypeValue="3" id="1:301585"/>
-        <ScriptAsset name="LineBasicMaterial" folderPath="three/materials" codeFileId="1:301585" groupId="1:301817" id="1:301586"/>
-        <LibraryCodeFile componentId="0:1824599" codeFileTypeValue="3" id="1:301587"/>
-        <ScriptAsset name="LineDashedMaterial" folderPath="three/materials" codeFileId="1:301587" groupId="1:301817" id="1:301588"/>
-        <LibraryCodeFile componentId="0:1826154" codeFileTypeValue="3" id="1:301589"/>
-        <ScriptAsset name="Material" folderPath="three/materials" codeFileId="1:301589" groupId="1:301817" id="1:301590"/>
-        <LibraryCodeFile componentId="0:1839784" codeFileTypeValue="3" id="1:301591"/>
-        <ScriptAsset name="MaterialUniforms" folderPath="three/materials" codeFileId="1:301591" groupId="1:301817" id="1:301592"/>
-        <LibraryCodeFile componentId="0:1846444" codeFileTypeValue="3" id="1:301593"/>
-        <ScriptAsset name="MeshBasicMaterial" folderPath="three/materials" codeFileId="1:301593" groupId="1:301817" id="1:301594"/>
-        <LibraryCodeFile componentId="0:1850286" codeFileTypeValue="3" id="1:301595"/>
-        <ScriptAsset name="MeshDepthMaterial" folderPath="three/materials" codeFileId="1:301595" groupId="1:301817" id="1:301596"/>
-        <LibraryCodeFile componentId="0:1852844" codeFileTypeValue="3" id="1:301597"/>
-        <ScriptAsset name="MeshDistanceMaterial" folderPath="three/materials" codeFileId="1:301597" groupId="1:301817" id="1:301598"/>
-        <LibraryCodeFile componentId="0:1855630" codeFileTypeValue="3" id="1:301599"/>
-        <ScriptAsset name="MeshLambertMaterial" folderPath="three/materials" codeFileId="1:301599" groupId="1:301817" id="1:301600"/>
-        <LibraryCodeFile componentId="0:1862003" codeFileTypeValue="3" id="1:301601"/>
-        <ScriptAsset name="MeshMatcapMaterial" folderPath="three/materials" codeFileId="1:301601" groupId="1:301817" id="1:301602"/>
-        <LibraryCodeFile componentId="0:1865736" codeFileTypeValue="3" id="1:301603"/>
-        <ScriptAsset name="MeshNormalMaterial" folderPath="three/materials" codeFileId="1:301603" groupId="1:301817" id="1:301604"/>
-        <LibraryCodeFile componentId="0:1868548" codeFileTypeValue="3" id="1:301605"/>
-        <ScriptAsset name="MeshPhongMaterial" folderPath="three/materials" codeFileId="1:301605" groupId="1:301817" id="1:301606"/>
-        <LibraryCodeFile componentId="0:1875465" codeFileTypeValue="3" id="1:301607"/>
-        <ScriptAsset name="MeshPhysicalMaterial" folderPath="three/materials" codeFileId="1:301607" groupId="1:301817" id="1:301608"/>
-        <LibraryCodeFile componentId="0:1885812" codeFileTypeValue="3" id="1:301609"/>
-        <ScriptAsset name="MeshStandardMaterial" folderPath="three/materials" codeFileId="1:301609" groupId="1:301817" id="1:301610"/>
-        <LibraryCodeFile componentId="0:1892375" codeFileTypeValue="3" id="1:301611"/>
-        <ScriptAsset name="MeshToonMaterial" folderPath="three/materials" codeFileId="1:301611" groupId="1:301817" id="1:301612"/>
-        <LibraryCodeFile componentId="0:1897915" codeFileTypeValue="3" id="1:301613"/>
-        <ScriptAsset name="PointsMaterial" folderPath="three/materials" codeFileId="1:301613" groupId="1:301817" id="1:301614"/>
-        <LibraryCodeFile componentId="0:1900043" codeFileTypeValue="3" id="1:301615"/>
-        <ScriptAsset name="ShaderMaterial" folderPath="three/materials" codeFileId="1:301615" groupId="1:301817" id="1:301616"/>
-        <LibraryCodeFile componentId="0:1911012" codeFileTypeValue="3" id="1:301617"/>
-        <ScriptAsset name="ShadowMaterial" folderPath="three/materials" codeFileId="1:301617" groupId="1:301817" id="1:301618"/>
-        <LibraryCodeFile componentId="0:1912324" codeFileTypeValue="3" id="1:301619"/>
-        <ScriptAsset name="SpriteMaterial" folderPath="three/materials" codeFileId="1:301619" groupId="1:301817" id="1:301620"/>
-        <LibraryCodeFile componentId="0:1914625" codeFileTypeValue="3" id="1:301621"/>
-        <ScriptAsset name="Box2" folderPath="three/math" codeFileId="1:301621" groupId="1:301817" id="1:301622"/>
-        <LibraryCodeFile componentId="0:1918169" codeFileTypeValue="3" id="1:301623"/>
-        <ScriptAsset name="Box3" folderPath="three/math" codeFileId="1:301623" groupId="1:301817" id="1:301624"/>
-        <LibraryCodeFile componentId="0:1928025" codeFileTypeValue="3" id="1:301625"/>
-        <ScriptAsset name="Color" folderPath="three/math" codeFileId="1:301625" groupId="1:301817" id="1:301626"/>
-        <LibraryCodeFile componentId="0:1941199" codeFileTypeValue="3" id="1:301627"/>
-        <ScriptAsset name="Cylindrical" folderPath="three/math" codeFileId="1:301627" groupId="1:301817" id="1:301628"/>
-        <LibraryCodeFile componentId="0:1942202" codeFileTypeValue="3" id="1:301629"/>
-        <ScriptAsset name="Euler" folderPath="three/math" codeFileId="1:301629" groupId="1:301817" id="1:301630"/>
-        <LibraryCodeFile componentId="0:1946805" codeFileTypeValue="3" id="1:301631"/>
-        <ScriptAsset name="Frustum" folderPath="three/math" codeFileId="1:301631" groupId="1:301817" id="1:301632"/>
-        <LibraryCodeFile componentId="0:1950518" codeFileTypeValue="3" id="1:301633"/>
-        <ScriptAsset name="Line3" folderPath="three/math" codeFileId="1:301633" groupId="1:301817" id="1:301634"/>
-        <LibraryCodeFile componentId="0:1952547" codeFileTypeValue="3" id="1:301635"/>
-        <ScriptAsset name="MathUtils" folderPath="three/math" codeFileId="1:301635" groupId="1:301817" id="1:301636"/>
-        <LibraryCodeFile componentId="0:1955591" codeFileTypeValue="3" id="1:301637"/>
-        <ScriptAsset name="Matrix3" folderPath="three/math" codeFileId="1:301637" groupId="1:301817" id="1:301638"/>
-        <LibraryCodeFile componentId="0:1961026" codeFileTypeValue="3" id="1:301639"/>
-        <ScriptAsset name="Matrix4" folderPath="three/math" codeFileId="1:301639" groupId="1:301817" id="1:301640"/>
-        <LibraryCodeFile componentId="0:1974534" codeFileTypeValue="3" id="1:301641"/>
-        <ScriptAsset name="Plane" folderPath="three/math" codeFileId="1:301641" groupId="1:301817" id="1:301642"/>
-        <LibraryCodeFile componentId="0:1978585" codeFileTypeValue="3" id="1:301643"/>
-        <ScriptAsset name="Quaternion" folderPath="three/math" codeFileId="1:301643" groupId="1:301817" id="1:301644"/>
-        <LibraryCodeFile componentId="0:1987288" codeFileTypeValue="3" id="1:301645"/>
-        <ScriptAsset name="Ray" folderPath="three/math" codeFileId="1:301645" groupId="1:301817" id="1:301646"/>
-        <LibraryCodeFile componentId="0:1996738" codeFileTypeValue="3" id="1:301647"/>
-        <ScriptAsset name="Sphere" folderPath="three/math" codeFileId="1:301647" groupId="1:301817" id="1:301648"/>
-        <LibraryCodeFile componentId="0:2001030" codeFileTypeValue="3" id="1:301649"/>
-        <ScriptAsset name="Spherical" folderPath="three/math" codeFileId="1:301649" groupId="1:301817" id="1:301650"/>
-        <LibraryCodeFile componentId="0:2002420" codeFileTypeValue="3" id="1:301651"/>
-        <ScriptAsset name="SphericalHarmonics3" folderPath="three/math" codeFileId="1:301651" groupId="1:301817" id="1:301652"/>
-        <LibraryCodeFile componentId="0:2006916" codeFileTypeValue="3" id="1:301653"/>
-        <ScriptAsset name="Triangle" folderPath="three/math" codeFileId="1:301653" groupId="1:301817" id="1:301654"/>
-        <LibraryCodeFile componentId="0:2013138" codeFileTypeValue="3" id="1:301655"/>
-        <ScriptAsset name="Vector2" folderPath="three/math" codeFileId="1:301655" groupId="1:301817" id="1:301656"/>
-        <LibraryCodeFile componentId="0:2017894" codeFileTypeValue="3" id="1:301657"/>
-        <ScriptAsset name="Vector3" folderPath="three/math" codeFileId="1:301657" groupId="1:301817" id="1:301658"/>
-        <LibraryCodeFile componentId="0:2029757" codeFileTypeValue="3" id="1:301659"/>
-        <ScriptAsset name="Vector4" folderPath="three/math" codeFileId="1:301659" groupId="1:301817" id="1:301660"/>
-        <LibraryCodeFile componentId="0:2032253" codeFileTypeValue="3" id="1:301661"/>
-        <ScriptAsset name="BatchedMesh" folderPath="three/objects" codeFileId="1:301661" groupId="1:301817" id="1:301662"/>
-        <LibraryCodeFile componentId="0:2048002" codeFileTypeValue="3" id="1:301663"/>
-        <ScriptAsset name="Group" folderPath="three/objects" codeFileId="1:301663" groupId="1:301817" id="1:301664"/>
-        <LibraryCodeFile componentId="0:2048514" codeFileTypeValue="3" id="1:301665"/>
-        <ScriptAsset name="InstancedMesh" folderPath="three/objects" codeFileId="1:301665" groupId="1:301817" id="1:301666"/>
-        <LibraryCodeFile componentId="0:2056214" codeFileTypeValue="3" id="1:301667"/>
-        <ScriptAsset name="LOD" folderPath="three/objects" codeFileId="1:301667" groupId="1:301817" id="1:301668"/>
-        <LibraryCodeFile componentId="0:2060976" codeFileTypeValue="3" id="1:301669"/>
-        <ScriptAsset name="Line" folderPath="three/objects" codeFileId="1:301669" groupId="1:301817" id="1:301670"/>
-        <LibraryCodeFile componentId="0:2065740" codeFileTypeValue="3" id="1:301671"/>
-        <ScriptAsset name="Mesh" folderPath="three/objects" codeFileId="1:301671" groupId="1:301817" id="1:301672"/>
-        <LibraryCodeFile componentId="0:2070322" codeFileTypeValue="3" id="1:301673"/>
-        <ScriptAsset name="Points" folderPath="three/objects" codeFileId="1:301673" groupId="1:301817" id="1:301674"/>
-        <LibraryCodeFile componentId="0:2072329" codeFileTypeValue="3" id="1:301675"/>
-        <ScriptAsset name="Skeleton" folderPath="three/objects" codeFileId="1:301675" groupId="1:301817" id="1:301676"/>
-        <LibraryCodeFile componentId="0:2078023" codeFileTypeValue="3" id="1:301677"/>
-        <ScriptAsset name="SkinnedMesh" folderPath="three/objects" codeFileId="1:301677" groupId="1:301817" id="1:301678"/>
-        <LibraryCodeFile componentId="0:2084967" codeFileTypeValue="3" id="1:301679"/>
-        <ScriptAsset name="Sprite" folderPath="three/objects" codeFileId="1:301679" groupId="1:301817" id="1:301680"/>
-        <LibraryCodeFile componentId="0:2086864" codeFileTypeValue="3" id="1:301681"/>
-        <ScriptAsset name="raycasting" folderPath="three/objects" codeFileId="1:301681" groupId="1:301817" id="1:301682"/>
-        <LibraryCodeFile componentId="0:2100487" codeFileTypeValue="3" id="1:301683"/>
-        <ScriptAsset name="serialize" folderPath="three/objects" codeFileId="1:301683" groupId="1:301817" id="1:301684"/>
-        <LibraryCodeFile componentId="0:2102056" codeFileTypeValue="3" id="1:301685"/>
-        <ScriptAsset name="GPURenderer" folderPath="three/renderers" codeFileId="1:301685" groupId="1:301817" id="1:301686"/>
-        <LibraryCodeFile componentId="0:2330743" codeFileTypeValue="3" id="1:301687"/>
-        <ScriptAsset name="RenderTarget" folderPath="three/renderers" codeFileId="1:301687" groupId="1:301817" id="1:301688"/>
-        <LibraryCodeFile componentId="0:2339583" codeFileTypeValue="3" id="1:301689"/>
-        <ScriptAsset name="WebGLCubeRenderTarget" folderPath="three/renderers" codeFileId="1:301689" groupId="1:301817" id="1:301690"/>
-        <LibraryCodeFile componentId="0:2342064" codeFileTypeValue="3" id="1:301693"/>
-        <ScriptAsset name="Culling" folderPath="three/renderers/gpu" codeFileId="1:301693" groupId="1:301817" id="1:301694"/>
-        <LibraryCodeFile componentId="0:2347241" codeFileTypeValue="3" id="1:301695"/>
-        <ScriptAsset name="GPUGeometries" folderPath="three/renderers/gpu" codeFileId="1:301695" groupId="1:301817" id="1:301696"/>
-        <LibraryCodeFile componentId="0:2362528" codeFileTypeValue="3" id="1:301697"/>
-        <ScriptAsset name="GPUTextures" folderPath="three/renderers/gpu" codeFileId="1:301697" groupId="1:301817" id="1:301698"/>
-        <LibraryCodeFile componentId="0:2384132" codeFileTypeValue="3" id="1:301699"/>
-        <ScriptAsset name="Layout" folderPath="three/renderers/gpu" codeFileId="1:301699" groupId="1:301817" id="1:301700"/>
-        <LibraryCodeFile componentId="0:2389901" codeFileTypeValue="3" id="1:301701"/>
-        <ScriptAsset name="MorphTexels" folderPath="three/renderers/gpu" codeFileId="1:301701" groupId="1:301817" id="1:301702"/>
-        <LibraryCodeFile componentId="0:2393835" codeFileTypeValue="3" id="1:301703"/>
-        <ScriptAsset name="ShaderSourceHash" folderPath="three/renderers/gpu" codeFileId="1:301703" groupId="1:301817" id="1:301704"/>
-        <LibraryCodeFile componentId="0:2394108" codeFileTypeValue="3" id="1:301705"/>
-        <ScriptAsset name="ArtboardOverlay" folderPath="three/rive" codeFileId="1:301705" groupId="1:301817" id="1:301706"/>
-        <LibraryCodeFile componentId="0:2411496" codeFileTypeValue="3" id="1:301707"/>
-        <ScriptAsset name="ArtboardTexture" folderPath="three/rive" codeFileId="1:301707" groupId="1:301817" id="1:301708"/>
-        <LibraryCodeFile componentId="0:2417400" codeFileTypeValue="3" id="1:301709"/>
-        <ScriptAsset name="RiveNodes" folderPath="three/rive" codeFileId="1:301709" groupId="1:301817" id="1:301710"/>
-        <LibraryCodeFile componentId="0:2418301" codeFileTypeValue="3" id="1:301711"/>
-        <ScriptAsset name="RivePaths" folderPath="three/rive" codeFileId="1:301711" groupId="1:301817" id="1:301712"/>
-        <LibraryCodeFile componentId="0:2424572" codeFileTypeValue="3" id="1:301713"/>
-        <ScriptAsset name="RiveRig" folderPath="three/rive" codeFileId="1:301713" groupId="1:301817" id="1:301714"/>
-        <LibraryCodeFile componentId="0:2436705" codeFileTypeValue="3" id="1:301715"/>
-        <ScriptAsset name="SceneBindings" folderPath="three/rive" codeFileId="1:301715" groupId="1:301817" id="1:301716"/>
-        <LibraryCodeFile componentId="0:2456821" codeFileTypeValue="3" id="1:301717"/>
-        <ScriptAsset name="ThreeLayout" folderPath="three/rive" codeFileId="1:301717" groupId="1:301817" id="1:301718"/>
-        <LibraryCodeFile componentId="0:2470963" codeFileTypeValue="3" id="1:301719"/>
-        <ScriptAsset name="Fog" folderPath="three/scenes" codeFileId="1:301719" groupId="1:301817" id="1:301720"/>
-        <LibraryCodeFile componentId="0:2472977" codeFileTypeValue="3" id="1:301721"/>
-        <ScriptAsset name="Scene" folderPath="three/scenes" codeFileId="1:301721" groupId="1:301817" id="1:301722"/>
-        <LibraryCodeFile componentId="0:2476660" codeFileTypeValue="3" id="1:301723"/>
-        <ScriptAsset name="CanvasTexture" folderPath="three/textures" codeFileId="1:301723" groupId="1:301817" id="1:301724"/>
-        <LibraryCodeFile componentId="0:2477166" codeFileTypeValue="3" id="1:301725"/>
-        <ScriptAsset name="CompressedTexture" folderPath="three/textures" codeFileId="1:301725" groupId="1:301817" id="1:301726"/>
-        <LibraryCodeFile componentId="0:2483188" codeFileTypeValue="3" id="1:301727"/>
-        <ScriptAsset name="CubeTexture" folderPath="three/textures" codeFileId="1:301727" groupId="1:301817" id="1:301728"/>
-        <LibraryCodeFile componentId="0:2485704" codeFileTypeValue="3" id="1:301729"/>
-        <ScriptAsset name="DataArrayTexture" folderPath="three/textures" codeFileId="1:301729" groupId="1:301817" id="1:301730"/>
-        <LibraryCodeFile componentId="0:2489820" codeFileTypeValue="3" id="1:301731"/>
-        <ScriptAsset name="DataTexture" folderPath="three/textures" codeFileId="1:301731" groupId="1:301817" id="1:301732"/>
-        <LibraryCodeFile componentId="0:2494460" codeFileTypeValue="3" id="1:301733"/>
-        <ScriptAsset name="DataUpload" folderPath="three/textures" codeFileId="1:301733" groupId="1:301817" id="1:301734"/>
-        <LibraryCodeFile componentId="0:2499109" codeFileTypeValue="3" id="1:301735"/>
-        <ScriptAsset name="DepthTexture" folderPath="three/textures" codeFileId="1:301735" groupId="1:301817" id="1:301736"/>
-        <LibraryCodeFile componentId="0:2502608" codeFileTypeValue="3" id="1:301737"/>
-        <ScriptAsset name="FramebufferTexture" folderPath="three/textures" codeFileId="1:301737" groupId="1:301817" id="1:301738"/>
-        <LibraryCodeFile componentId="0:2503841" codeFileTypeValue="3" id="1:301739"/>
-        <ScriptAsset name="Source" folderPath="three/textures" codeFileId="1:301739" groupId="1:301817" id="1:301740"/>
-        <LibraryCodeFile componentId="0:2505583" codeFileTypeValue="3" id="1:301741"/>
-        <ScriptAsset name="Texture" folderPath="three/textures" codeFileId="1:301741" groupId="1:301817" id="1:301742"/>
-        <LibraryCodeFile componentId="0:2514092" codeFileTypeValue="1" id="1:301743"/>
-        <ShaderAsset name="three/shaders/lib/three_chunks" codeFileId="1:301743" groupId="1:301817" id="1:301744"/>
-        <LibraryCodeFile componentId="0:2529728" codeFileTypeValue="1" id="1:301745"/>
-        <ShaderAsset name="three/shaders/post/afterimage" codeFileId="1:301745" groupId="1:301817" id="1:301746"/>
-        <LibraryCodeFile componentId="0:2531123" codeFileTypeValue="1" id="1:301747"/>
-        <ShaderAsset name="three/shaders/post/bloom" codeFileId="1:301747" groupId="1:301817" id="1:301748"/>
-        <LibraryCodeFile componentId="0:2534635" codeFileTypeValue="1" id="1:301749"/>
-        <ShaderAsset name="three/shaders/post/bokeh" codeFileId="1:301749" groupId="1:301817" id="1:301750"/>
-        <LibraryCodeFile componentId="0:2539456" codeFileTypeValue="1" id="1:301751"/>
-        <ShaderAsset name="three/shaders/post/copy" codeFileId="1:301751" groupId="1:301817" id="1:301752"/>
-        <LibraryCodeFile componentId="0:2540692" codeFileTypeValue="1" id="1:301753"/>
-        <ShaderAsset name="three/shaders/post/depth_limited_blur" codeFileId="1:301753" groupId="1:301817" id="1:301754"/>
-        <LibraryCodeFile componentId="0:2544046" codeFileTypeValue="1" id="1:301755"/>
-        <ShaderAsset name="three/shaders/post/dot_screen" codeFileId="1:301755" groupId="1:301817" id="1:301756"/>
-        <LibraryCodeFile componentId="0:2545674" codeFileTypeValue="1" id="1:301757"/>
-        <ShaderAsset name="three/shaders/post/film" codeFileId="1:301757" groupId="1:301817" id="1:301758"/>
-        <LibraryCodeFile componentId="0:2547457" codeFileTypeValue="1" id="1:301759"/>
-        <ShaderAsset name="three/shaders/post/fxaa" codeFileId="1:301759" groupId="1:301817" id="1:301760"/>
-        <LibraryCodeFile componentId="0:2550161" codeFileTypeValue="1" id="1:301761"/>
-        <ShaderAsset name="three/shaders/post/glitch" codeFileId="1:301761" groupId="1:301817" id="1:301762"/>
-        <LibraryCodeFile componentId="0:2553226" codeFileTypeValue="1" id="1:301763"/>
-        <ShaderAsset name="three/shaders/post/gtao" codeFileId="1:301763" groupId="1:301817" id="1:301764"/>
-        <LibraryCodeFile componentId="0:2561869" codeFileTypeValue="1" id="1:301765"/>
-        <ShaderAsset name="three/shaders/post/gtao_blend" codeFileId="1:301765" groupId="1:301817" id="1:301766"/>
-        <LibraryCodeFile componentId="0:2563034" codeFileTypeValue="1" id="1:301767"/>
-        <ShaderAsset name="three/shaders/post/gtao_depth" codeFileId="1:301767" groupId="1:301817" id="1:301768"/>
-        <LibraryCodeFile componentId="0:2564883" codeFileTypeValue="1" id="1:301769"/>
-        <ShaderAsset name="three/shaders/post/halftone" codeFileId="1:301769" groupId="1:301817" id="1:301770"/>
-        <LibraryCodeFile componentId="0:2573013" codeFileTypeValue="1" id="1:301771"/>
-        <ShaderAsset name="three/shaders/post/lut" codeFileId="1:301771" groupId="1:301817" id="1:301772"/>
-        <LibraryCodeFile componentId="0:2574688" codeFileTypeValue="1" id="1:301773"/>
-        <ShaderAsset name="three/shaders/post/mask" codeFileId="1:301773" groupId="1:301817" id="1:301774"/>
-        <LibraryCodeFile componentId="0:2576274" codeFileTypeValue="1" id="1:301775"/>
-        <ShaderAsset name="three/shaders/post/outline_blur" codeFileId="1:301775" groupId="1:301817" id="1:301776"/>
-        <LibraryCodeFile componentId="0:2578386" codeFileTypeValue="1" id="1:301777"/>
-        <ShaderAsset name="three/shaders/post/outline_edge" codeFileId="1:301777" groupId="1:301817" id="1:301778"/>
-        <LibraryCodeFile componentId="0:2580404" codeFileTypeValue="1" id="1:301779"/>
-        <ShaderAsset name="three/shaders/post/outline_mask" codeFileId="1:301779" groupId="1:301817" id="1:301780"/>
-        <LibraryCodeFile componentId="0:2582835" codeFileTypeValue="1" id="1:301781"/>
-        <ShaderAsset name="three/shaders/post/outline_overlay" codeFileId="1:301781" groupId="1:301817" id="1:301782"/>
-        <LibraryCodeFile componentId="0:2585260" codeFileTypeValue="1" id="1:301783"/>
-        <ShaderAsset name="three/shaders/post/output" codeFileId="1:301783" groupId="1:301817" id="1:301784"/>
-        <LibraryCodeFile componentId="0:2590169" codeFileTypeValue="1" id="1:301785"/>
-        <ShaderAsset name="three/shaders/post/pixelated" codeFileId="1:301785" groupId="1:301817" id="1:301786"/>
-        <LibraryCodeFile componentId="0:2594283" codeFileTypeValue="1" id="1:301787"/>
-        <ShaderAsset name="three/shaders/post/poisson_denoise" codeFileId="1:301787" groupId="1:301817" id="1:301788"/>
-        <LibraryCodeFile componentId="0:2600354" codeFileTypeValue="1" id="1:301789"/>
-        <ShaderAsset name="three/shaders/post/sao" codeFileId="1:301789" groupId="1:301817" id="1:301790"/>
-        <LibraryCodeFile componentId="0:2605126" codeFileTypeValue="1" id="1:301791"/>
-        <ShaderAsset name="three/shaders/post/smaa_blend" codeFileId="1:301791" groupId="1:301817" id="1:301792"/>
-        <LibraryCodeFile componentId="0:2608161" codeFileTypeValue="1" id="1:301793"/>
-        <ShaderAsset name="three/shaders/post/smaa_edges" codeFileId="1:301793" groupId="1:301817" id="1:301794"/>
-        <LibraryCodeFile componentId="0:2611233" codeFileTypeValue="1" id="1:301795"/>
-        <ShaderAsset name="three/shaders/post/smaa_weights" codeFileId="1:301795" groupId="1:301817" id="1:301796"/>
-        <LibraryCodeFile componentId="0:2618376" codeFileTypeValue="1" id="1:301797"/>
-        <ShaderAsset name="three/shaders/post/ssao" codeFileId="1:301797" groupId="1:301817" id="1:301798"/>
-        <LibraryCodeFile componentId="0:2623159" codeFileTypeValue="1" id="1:301799"/>
-        <ShaderAsset name="three/shaders/post/ssao_blur" codeFileId="1:301799" groupId="1:301817" id="1:301800"/>
-        <LibraryCodeFile componentId="0:2624495" codeFileTypeValue="1" id="1:301801"/>
-        <ShaderAsset name="three/shaders/post/ssao_depth" codeFileId="1:301801" groupId="1:301817" id="1:301802"/>
-        <LibraryCodeFile componentId="0:2626344" codeFileTypeValue="1" id="1:301803"/>
-        <ShaderAsset name="three/shaders/post/texture" codeFileId="1:301803" groupId="1:301817" id="1:301804"/>
-        <LibraryCodeFile componentId="0:2628190" codeFileTypeValue="1" id="1:301805"/>
-        <ShaderAsset name="three/shaders/three" codeFileId="1:301805" groupId="1:301817" id="1:301806"/>
-        <LibraryCodeFile componentId="0:2701974" codeFileTypeValue="1" id="1:301807"/>
-        <ShaderAsset name="three/shaders/three_background" codeFileId="1:301807" groupId="1:301817" id="1:301808"/>
-        <LibraryCodeFile componentId="0:2705693" codeFileTypeValue="1" id="1:301809"/>
-        <ShaderAsset name="three/shaders/three_cube" codeFileId="1:301809" groupId="1:301817" id="1:301810"/>
-        <LibraryCodeFile componentId="0:2708913" codeFileTypeValue="1" id="1:301811"/>
-        <ShaderAsset name="three/shaders/three_mip" codeFileId="1:301811" groupId="1:301817" id="1:301812"/>
-        <LibraryCodeFile componentId="0:2709653" codeFileTypeValue="1" id="1:301813"/>
-        <ShaderAsset name="three/shaders/three_pmrem" codeFileId="1:301813" groupId="1:301817" id="1:301814"/>
-        <LibraryCodeFile componentId="0:2713678" codeFileTypeValue="1" id="1:301815"/>
-        <ShaderAsset name="three/shaders/three_util" codeFileId="1:301815" groupId="1:301817" id="1:301816"/>
+    <LibraryAsset libraryId="5221" libraryVersionId="30641" assetId="7560337" name="threeas" id="1:3695317">
+        <LibraryCodeFile componentId="0:322" codeFileTypeValue="3" id="1:3695318"/>
+        <ScriptAsset name="Three" folderPath="three" codeFileId="1:3695318" groupId="1:3695317" id="1:3695319"/>
+        <LibraryCodeFile componentId="0:6750" codeFileTypeValue="3" id="1:3695320"/>
+        <ScriptAsset name="Addons" folderPath="three/addons" codeFileId="1:3695320" groupId="1:3695317" id="1:3695321"/>
+        <LibraryCodeFile componentId="0:8816" codeFileTypeValue="3" id="1:3695322"/>
+        <ScriptAsset name="DragControls" folderPath="three/addons/controls" codeFileId="1:3695322" groupId="1:3695317" id="1:3695323"/>
+        <LibraryCodeFile componentId="0:13320" codeFileTypeValue="3" id="1:3695324"/>
+        <ScriptAsset name="FirstPersonControls" folderPath="three/addons/controls" codeFileId="1:3695324" groupId="1:3695317" id="1:3695325"/>
+        <LibraryCodeFile componentId="0:18348" codeFileTypeValue="3" id="1:3695326"/>
+        <ScriptAsset name="FlyControls" folderPath="three/addons/controls" codeFileId="1:3695326" groupId="1:3695317" id="1:3695327"/>
+        <LibraryCodeFile componentId="0:23725" codeFileTypeValue="3" id="1:3695328"/>
+        <ScriptAsset name="OrbitControls" folderPath="three/addons/controls" codeFileId="1:3695328" groupId="1:3695317" id="1:3695329"/>
+        <LibraryCodeFile componentId="0:39215" codeFileTypeValue="3" id="1:3695330"/>
+        <ScriptAsset name="TrackballControls" folderPath="three/addons/controls" codeFileId="1:3695330" groupId="1:3695317" id="1:3695331"/>
+        <LibraryCodeFile componentId="0:49605" codeFileTypeValue="3" id="1:3695332"/>
+        <ScriptAsset name="TransformControls" folderPath="three/addons/controls" codeFileId="1:3695332" groupId="1:3695317" id="1:3695333"/>
+        <LibraryCodeFile componentId="0:67602" codeFileTypeValue="3" id="1:3695334"/>
+        <ScriptAsset name="CSM" folderPath="three/addons/csm" codeFileId="1:3695334" groupId="1:3695317" id="1:3695335"/>
+        <LibraryCodeFile componentId="0:76397" codeFileTypeValue="3" id="1:3695336"/>
+        <ScriptAsset name="CSMFrustum" folderPath="three/addons/csm" codeFileId="1:3695336" groupId="1:3695317" id="1:3695337"/>
+        <LibraryCodeFile componentId="0:78661" codeFileTypeValue="3" id="1:3695338"/>
+        <ScriptAsset name="NURBSCurve" folderPath="three/addons/curves" codeFileId="1:3695338" groupId="1:3695317" id="1:3695339"/>
+        <LibraryCodeFile componentId="0:80776" codeFileTypeValue="3" id="1:3695340"/>
+        <ScriptAsset name="NURBSUtils" folderPath="three/addons/curves" codeFileId="1:3695340" groupId="1:3695317" id="1:3695341"/>
+        <LibraryCodeFile componentId="0:89762" codeFileTypeValue="3" id="1:3695342"/>
+        <ScriptAsset name="RoomEnvironment" folderPath="three/addons/environments" codeFileId="1:3695342" groupId="1:3695317" id="1:3695343"/>
+        <LibraryCodeFile componentId="0:92781" codeFileTypeValue="3" id="1:3695344"/>
+        <ScriptAsset name="GLTFExporter" folderPath="three/addons/exporters" codeFileId="1:3695344" groupId="1:3695317" id="1:3695345"/>
+        <LibraryCodeFile componentId="0:196504" codeFileTypeValue="3" id="1:3695346"/>
+        <ScriptAsset name="ConvexGeometry" folderPath="three/addons/geometries" codeFileId="1:3695346" groupId="1:3695317" id="1:3695347"/>
+        <LibraryCodeFile componentId="0:197758" codeFileTypeValue="3" id="1:3695348"/>
+        <ScriptAsset name="DecalGeometry" folderPath="three/addons/geometries" codeFileId="1:3695348" groupId="1:3695317" id="1:3695349"/>
+        <LibraryCodeFile componentId="0:203709" codeFileTypeValue="3" id="1:3695350"/>
+        <ScriptAsset name="ParametricFunctions" folderPath="three/addons/geometries" codeFileId="1:3695350" groupId="1:3695317" id="1:3695351"/>
+        <LibraryCodeFile componentId="0:205247" codeFileTypeValue="3" id="1:3695352"/>
+        <ScriptAsset name="ParametricGeometry" folderPath="three/addons/geometries" codeFileId="1:3695352" groupId="1:3695317" id="1:3695353"/>
+        <LibraryCodeFile componentId="0:208106" codeFileTypeValue="3" id="1:3695354"/>
+        <ScriptAsset name="RoundedBoxGeometry" folderPath="three/addons/geometries" codeFileId="1:3695354" groupId="1:3695317" id="1:3695355"/>
+        <LibraryCodeFile componentId="0:212717" codeFileTypeValue="3" id="1:3695356"/>
+        <ScriptAsset name="TextGeometry" folderPath="three/addons/geometries" codeFileId="1:3695356" groupId="1:3695317" id="1:3695357"/>
+        <LibraryCodeFile componentId="0:213751" codeFileTypeValue="3" id="1:3695358"/>
+        <ScriptAsset name="VertexNormalsHelper" folderPath="three/addons/helpers" codeFileId="1:3695358" groupId="1:3695317" id="1:3695359"/>
+        <LibraryCodeFile componentId="0:216154" codeFileTypeValue="3" id="1:3695360"/>
+        <ScriptAsset name="dom_parser" folderPath="three/addons/libs" codeFileId="1:3695360" groupId="1:3695317" id="1:3695361"/>
+        <LibraryCodeFile componentId="0:256856" codeFileTypeValue="3" id="1:3695362"/>
+        <ScriptAsset name="fflate" folderPath="three/addons/libs" codeFileId="1:3695362" groupId="1:3695317" id="1:3695363"/>
+        <LibraryCodeFile componentId="0:263744" codeFileTypeValue="3" id="1:3695364"/>
+        <ScriptAsset name="meshopt_decoder" folderPath="three/addons/libs" codeFileId="1:3695364" groupId="1:3695317" id="1:3695365"/>
+        <LibraryCodeFile componentId="0:278254" codeFileTypeValue="3" id="1:3695366"/>
+        <ScriptAsset name="LightProbeGenerator" folderPath="three/addons/lights" codeFileId="1:3695366" groupId="1:3695317" id="1:3695367"/>
+        <LibraryCodeFile componentId="0:281393" codeFileTypeValue="3" id="1:3695368"/>
+        <ScriptAsset name="RectAreaLightUniformsLib" folderPath="three/addons/lights" codeFileId="1:3695368" groupId="1:3695317" id="1:3695369"/>
+        <LibraryCodeFile componentId="0:281691" codeFileTypeValue="3" id="1:3695370"/>
+        <ScriptAsset name="LineGeometry" folderPath="three/addons/lines" codeFileId="1:3695370" groupId="1:3695317" id="1:3695371"/>
+        <LibraryCodeFile componentId="0:283363" codeFileTypeValue="3" id="1:3695372"/>
+        <ScriptAsset name="LineMaterial" folderPath="three/addons/lines" codeFileId="1:3695372" groupId="1:3695317" id="1:3695373"/>
+        <LibraryCodeFile componentId="0:285554" codeFileTypeValue="3" id="1:3695374"/>
+        <ScriptAsset name="LineSegments2" folderPath="three/addons/lines" codeFileId="1:3695374" groupId="1:3695317" id="1:3695375"/>
+        <LibraryCodeFile componentId="0:287448" codeFileTypeValue="3" id="1:3695376"/>
+        <ScriptAsset name="LineSegmentsGeometry" folderPath="three/addons/lines" codeFileId="1:3695376" groupId="1:3695317" id="1:3695377"/>
+        <LibraryCodeFile componentId="0:292523" codeFileTypeValue="3" id="1:3695378"/>
+        <ScriptAsset name="EXRLoader" folderPath="three/addons/loaders" codeFileId="1:3695378" groupId="1:3695317" id="1:3695379"/>
+        <LibraryCodeFile componentId="0:303323" codeFileTypeValue="3" id="1:3695380"/>
+        <ScriptAsset name="FBXLoader" folderPath="three/addons/loaders" codeFileId="1:3695380" groupId="1:3695317" id="1:3695381"/>
+        <LibraryCodeFile componentId="0:462663" codeFileTypeValue="3" id="1:3695382"/>
+        <ScriptAsset name="FontLoader" folderPath="three/addons/loaders" codeFileId="1:3695382" groupId="1:3695317" id="1:3695383"/>
+        <LibraryCodeFile componentId="0:471246" codeFileTypeValue="3" id="1:3695384"/>
+        <ScriptAsset name="GLTFLoader" folderPath="three/addons/loaders" codeFileId="1:3695384" groupId="1:3695317" id="1:3695385"/>
+        <LibraryCodeFile componentId="0:538504" codeFileTypeValue="3" id="1:3695386"/>
+        <ScriptAsset name="KTX2Loader" folderPath="three/addons/loaders" codeFileId="1:3695386" groupId="1:3695317" id="1:3695387"/>
+        <LibraryCodeFile componentId="0:546444" codeFileTypeValue="3" id="1:3695388"/>
+        <ScriptAsset name="LUT3dlLoader" folderPath="three/addons/loaders" codeFileId="1:3695388" groupId="1:3695317" id="1:3695389"/>
+        <LibraryCodeFile componentId="0:551864" codeFileTypeValue="3" id="1:3695390"/>
+        <ScriptAsset name="LUTCubeLoader" folderPath="three/addons/loaders" codeFileId="1:3695390" groupId="1:3695317" id="1:3695391"/>
+        <LibraryCodeFile componentId="0:559526" codeFileTypeValue="3" id="1:3695392"/>
+        <ScriptAsset name="OBJLoader" folderPath="three/addons/loaders" codeFileId="1:3695392" groupId="1:3695317" id="1:3695393"/>
+        <LibraryCodeFile componentId="0:569067" codeFileTypeValue="3" id="1:3695394"/>
+        <ScriptAsset name="PLYLoader" folderPath="three/addons/loaders" codeFileId="1:3695394" groupId="1:3695317" id="1:3695395"/>
+        <LibraryCodeFile componentId="0:585624" codeFileTypeValue="3" id="1:3695396"/>
+        <ScriptAsset name="RGBELoader" folderPath="three/addons/loaders" codeFileId="1:3695396" groupId="1:3695317" id="1:3695397"/>
+        <LibraryCodeFile componentId="0:593417" codeFileTypeValue="3" id="1:3695398"/>
+        <ScriptAsset name="STLLoader" folderPath="three/addons/loaders" codeFileId="1:3695398" groupId="1:3695317" id="1:3695399"/>
+        <LibraryCodeFile componentId="0:601925" codeFileTypeValue="3" id="1:3695400"/>
+        <ScriptAsset name="SVGLoader" folderPath="three/addons/loaders" codeFileId="1:3695400" groupId="1:3695317" id="1:3695401"/>
+        <LibraryCodeFile componentId="0:699942" codeFileTypeValue="3" id="1:3695402"/>
+        <ScriptAsset name="ConvexHull" folderPath="three/addons/math" codeFileId="1:3695402" groupId="1:3695317" id="1:3695403"/>
+        <LibraryCodeFile componentId="0:706237" codeFileTypeValue="3" id="1:3695404"/>
+        <ScriptAsset name="AOPassUtils" folderPath="three/addons/postprocessing" codeFileId="1:3695404" groupId="1:3695317" id="1:3695405"/>
+        <LibraryCodeFile componentId="0:710906" codeFileTypeValue="3" id="1:3695406"/>
+        <ScriptAsset name="AfterimagePass" folderPath="three/addons/postprocessing" codeFileId="1:3695406" groupId="1:3695317" id="1:3695407"/>
+        <LibraryCodeFile componentId="0:715046" codeFileTypeValue="3" id="1:3695408"/>
+        <ScriptAsset name="BokehPass" folderPath="three/addons/postprocessing" codeFileId="1:3695408" groupId="1:3695317" id="1:3695409"/>
+        <LibraryCodeFile componentId="0:720885" codeFileTypeValue="3" id="1:3695410"/>
+        <ScriptAsset name="ClearPass" folderPath="three/addons/postprocessing" codeFileId="1:3695410" groupId="1:3695317" id="1:3695411"/>
+        <LibraryCodeFile componentId="0:722319" codeFileTypeValue="3" id="1:3695412"/>
+        <ScriptAsset name="DotScreenPass" folderPath="three/addons/postprocessing" codeFileId="1:3695412" groupId="1:3695317" id="1:3695413"/>
+        <LibraryCodeFile componentId="0:724573" codeFileTypeValue="3" id="1:3695414"/>
+        <ScriptAsset name="EffectComposer" folderPath="three/addons/postprocessing" codeFileId="1:3695414" groupId="1:3695317" id="1:3695415"/>
+        <LibraryCodeFile componentId="0:733861" codeFileTypeValue="3" id="1:3695416"/>
+        <ScriptAsset name="FXAAPass" folderPath="three/addons/postprocessing" codeFileId="1:3695416" groupId="1:3695317" id="1:3695417"/>
+        <LibraryCodeFile componentId="0:734486" codeFileTypeValue="3" id="1:3695418"/>
+        <ScriptAsset name="FilmPass" folderPath="three/addons/postprocessing" codeFileId="1:3695418" groupId="1:3695317" id="1:3695419"/>
+        <LibraryCodeFile componentId="0:736448" codeFileTypeValue="3" id="1:3695420"/>
+        <ScriptAsset name="GTAOPass" folderPath="three/addons/postprocessing" codeFileId="1:3695420" groupId="1:3695317" id="1:3695421"/>
+        <LibraryCodeFile componentId="0:753563" codeFileTypeValue="3" id="1:3695422"/>
+        <ScriptAsset name="GlitchPass" folderPath="three/addons/postprocessing" codeFileId="1:3695422" groupId="1:3695317" id="1:3695423"/>
+        <LibraryCodeFile componentId="0:757727" codeFileTypeValue="3" id="1:3695424"/>
+        <ScriptAsset name="HalftonePass" folderPath="three/addons/postprocessing" codeFileId="1:3695424" groupId="1:3695317" id="1:3695425"/>
+        <LibraryCodeFile componentId="0:760960" codeFileTypeValue="3" id="1:3695426"/>
+        <ScriptAsset name="LUTPass" folderPath="three/addons/postprocessing" codeFileId="1:3695426" groupId="1:3695317" id="1:3695427"/>
+        <LibraryCodeFile componentId="0:764649" codeFileTypeValue="3" id="1:3695428"/>
+        <ScriptAsset name="MaskPass" folderPath="three/addons/postprocessing" codeFileId="1:3695428" groupId="1:3695317" id="1:3695429"/>
+        <LibraryCodeFile componentId="0:769424" codeFileTypeValue="3" id="1:3695430"/>
+        <ScriptAsset name="OutlinePass" folderPath="three/addons/postprocessing" codeFileId="1:3695430" groupId="1:3695317" id="1:3695431"/>
+        <LibraryCodeFile componentId="0:792091" codeFileTypeValue="3" id="1:3695432"/>
+        <ScriptAsset name="OutputPass" folderPath="three/addons/postprocessing" codeFileId="1:3695432" groupId="1:3695317" id="1:3695433"/>
+        <LibraryCodeFile componentId="0:793754" codeFileTypeValue="3" id="1:3695434"/>
+        <ScriptAsset name="Pass" folderPath="three/addons/postprocessing" codeFileId="1:3695434" groupId="1:3695317" id="1:3695435"/>
+        <LibraryCodeFile componentId="0:795937" codeFileTypeValue="3" id="1:3695436"/>
+        <ScriptAsset name="RenderPass" folderPath="three/addons/postprocessing" codeFileId="1:3695436" groupId="1:3695317" id="1:3695437"/>
+        <LibraryCodeFile componentId="0:798304" codeFileTypeValue="3" id="1:3695438"/>
+        <ScriptAsset name="RenderPixelatedPass" folderPath="three/addons/postprocessing" codeFileId="1:3695438" groupId="1:3695317" id="1:3695439"/>
+        <LibraryCodeFile componentId="0:804399" codeFileTypeValue="3" id="1:3695440"/>
+        <ScriptAsset name="SAOPass" folderPath="three/addons/postprocessing" codeFileId="1:3695440" groupId="1:3695317" id="1:3695441"/>
+        <LibraryCodeFile componentId="0:814800" codeFileTypeValue="3" id="1:3695442"/>
+        <ScriptAsset name="SMAAPass" folderPath="three/addons/postprocessing" codeFileId="1:3695442" groupId="1:3695317" id="1:3695443"/>
+        <LibraryCodeFile componentId="0:819896" codeFileTypeValue="3" id="1:3695444"/>
+        <ScriptAsset name="SMAATextures" folderPath="three/addons/postprocessing" codeFileId="1:3695444" groupId="1:3695317" id="1:3695445"/>
+        <LibraryCodeFile componentId="0:875168" codeFileTypeValue="3" id="1:3695446"/>
+        <ScriptAsset name="SSAARenderPass" folderPath="three/addons/postprocessing" codeFileId="1:3695446" groupId="1:3695317" id="1:3695447"/>
+        <LibraryCodeFile componentId="0:882054" codeFileTypeValue="3" id="1:3695448"/>
+        <ScriptAsset name="SSAOPass" folderPath="three/addons/postprocessing" codeFileId="1:3695448" groupId="1:3695317" id="1:3695449"/>
+        <LibraryCodeFile componentId="0:893710" codeFileTypeValue="3" id="1:3695450"/>
+        <ScriptAsset name="ShaderPass" folderPath="three/addons/postprocessing" codeFileId="1:3695450" groupId="1:3695317" id="1:3695451"/>
+        <LibraryCodeFile componentId="0:896105" codeFileTypeValue="3" id="1:3695452"/>
+        <ScriptAsset name="TAARenderPass" folderPath="three/addons/postprocessing" codeFileId="1:3695452" groupId="1:3695317" id="1:3695453"/>
+        <LibraryCodeFile componentId="0:902147" codeFileTypeValue="3" id="1:3695454"/>
+        <ScriptAsset name="TexturePass" folderPath="three/addons/postprocessing" codeFileId="1:3695454" groupId="1:3695317" id="1:3695455"/>
+        <LibraryCodeFile componentId="0:905188" codeFileTypeValue="3" id="1:3695456"/>
+        <ScriptAsset name="UnrealBloomPass" folderPath="three/addons/postprocessing" codeFileId="1:3695456" groupId="1:3695317" id="1:3695457"/>
+        <LibraryCodeFile componentId="0:912434" codeFileTypeValue="3" id="1:3695458"/>
+        <ScriptAsset name="AfterimageShader" folderPath="three/addons/shaders" codeFileId="1:3695458" groupId="1:3695317" id="1:3695459"/>
+        <LibraryCodeFile componentId="0:913245" codeFileTypeValue="3" id="1:3695460"/>
+        <ScriptAsset name="BokehShader" folderPath="three/addons/shaders" codeFileId="1:3695460" groupId="1:3695317" id="1:3695461"/>
+        <LibraryCodeFile componentId="0:914467" codeFileTypeValue="3" id="1:3695462"/>
+        <ScriptAsset name="DepthLimitedBlurShader" folderPath="three/addons/shaders" codeFileId="1:3695462" groupId="1:3695317" id="1:3695463"/>
+        <LibraryCodeFile componentId="0:917993" codeFileTypeValue="3" id="1:3695464"/>
+        <ScriptAsset name="DigitalGlitch" folderPath="three/addons/shaders" codeFileId="1:3695464" groupId="1:3695317" id="1:3695465"/>
+        <LibraryCodeFile componentId="0:919218" codeFileTypeValue="3" id="1:3695466"/>
+        <ScriptAsset name="DotScreenShader" folderPath="three/addons/shaders" codeFileId="1:3695466" groupId="1:3695317" id="1:3695467"/>
+        <LibraryCodeFile componentId="0:920216" codeFileTypeValue="3" id="1:3695468"/>
+        <ScriptAsset name="FilmShader" folderPath="three/addons/shaders" codeFileId="1:3695468" groupId="1:3695317" id="1:3695469"/>
+        <LibraryCodeFile componentId="0:921133" codeFileTypeValue="3" id="1:3695470"/>
+        <ScriptAsset name="GTAOShader" folderPath="three/addons/shaders" codeFileId="1:3695470" groupId="1:3695317" id="1:3695471"/>
+        <LibraryCodeFile componentId="0:926811" codeFileTypeValue="3" id="1:3695472"/>
+        <ScriptAsset name="HalftoneShader" folderPath="three/addons/shaders" codeFileId="1:3695472" groupId="1:3695317" id="1:3695473"/>
+        <LibraryCodeFile componentId="0:928311" codeFileTypeValue="3" id="1:3695474"/>
+        <ScriptAsset name="PoissonDenoiseShader" folderPath="three/addons/shaders" codeFileId="1:3695474" groupId="1:3695317" id="1:3695475"/>
+        <LibraryCodeFile componentId="0:931644" codeFileTypeValue="3" id="1:3695476"/>
+        <ScriptAsset name="PostShaders" folderPath="three/addons/shaders" codeFileId="1:3695476" groupId="1:3695317" id="1:3695477"/>
+        <LibraryCodeFile componentId="0:936301" codeFileTypeValue="3" id="1:3695478"/>
+        <ScriptAsset name="SAOShader" folderPath="three/addons/shaders" codeFileId="1:3695478" groupId="1:3695317" id="1:3695479"/>
+        <LibraryCodeFile componentId="0:938091" codeFileTypeValue="3" id="1:3695480"/>
+        <ScriptAsset name="SMAAShader" folderPath="three/addons/shaders" codeFileId="1:3695480" groupId="1:3695317" id="1:3695481"/>
+        <LibraryCodeFile componentId="0:940395" codeFileTypeValue="3" id="1:3695482"/>
+        <ScriptAsset name="SSAOShader" folderPath="three/addons/shaders" codeFileId="1:3695482" groupId="1:3695317" id="1:3695483"/>
+        <LibraryCodeFile componentId="0:943568" codeFileTypeValue="3" id="1:3695484"/>
+        <ScriptAsset name="BufferGeometryUtils" folderPath="three/addons/utils" codeFileId="1:3695484" groupId="1:3695317" id="1:3695485"/>
+        <LibraryCodeFile componentId="0:950697" codeFileTypeValue="3" id="1:3695486"/>
+        <ScriptAsset name="SceneUtils" folderPath="three/addons/utils" codeFileId="1:3695486" groupId="1:3695317" id="1:3695487"/>
+        <LibraryCodeFile componentId="0:952688" codeFileTypeValue="3" id="1:3695488"/>
+        <ScriptAsset name="SkeletonUtils" folderPath="three/addons/utils" codeFileId="1:3695488" groupId="1:3695317" id="1:3695489"/>
+        <LibraryCodeFile componentId="0:956159" codeFileTypeValue="3" id="1:3695490"/>
+        <ScriptAsset name="AnimationClip" folderPath="three/animation" codeFileId="1:3695490" groupId="1:3695317" id="1:3695491"/>
+        <LibraryCodeFile componentId="0:964583" codeFileTypeValue="3" id="1:3695492"/>
+        <ScriptAsset name="AnimationMixer" folderPath="three/animation" codeFileId="1:3695492" groupId="1:3695317" id="1:3695493"/>
+        <LibraryCodeFile componentId="0:982453" codeFileTypeValue="3" id="1:3695494"/>
+        <ScriptAsset name="AnimationObjectGroup" folderPath="three/animation" codeFileId="1:3695494" groupId="1:3695317" id="1:3695495"/>
+        <LibraryCodeFile componentId="0:985798" codeFileTypeValue="3" id="1:3695496"/>
+        <ScriptAsset name="AnimationUtils" folderPath="three/animation" codeFileId="1:3695496" groupId="1:3695317" id="1:3695497"/>
+        <LibraryCodeFile componentId="0:995041" codeFileTypeValue="3" id="1:3695498"/>
+        <ScriptAsset name="KeyframeTrack" folderPath="three/animation" codeFileId="1:3695498" groupId="1:3695317" id="1:3695499"/>
+        <LibraryCodeFile componentId="0:1011000" codeFileTypeValue="3" id="1:3695500"/>
+        <ScriptAsset name="PropertyBinding" folderPath="three/animation" codeFileId="1:3695500" groupId="1:3695317" id="1:3695501"/>
+        <LibraryCodeFile componentId="0:1030978" codeFileTypeValue="3" id="1:3695502"/>
+        <ScriptAsset name="ArrayCamera" folderPath="three/cameras" codeFileId="1:3695502" groupId="1:3695317" id="1:3695503"/>
+        <LibraryCodeFile componentId="0:1031963" codeFileTypeValue="3" id="1:3695504"/>
+        <ScriptAsset name="Camera" folderPath="three/cameras" codeFileId="1:3695504" groupId="1:3695317" id="1:3695505"/>
+        <LibraryCodeFile componentId="0:1035573" codeFileTypeValue="3" id="1:3695506"/>
+        <ScriptAsset name="CubeCamera" folderPath="three/cameras" codeFileId="1:3695506" groupId="1:3695317" id="1:3695507"/>
+        <LibraryCodeFile componentId="0:1037681" codeFileTypeValue="3" id="1:3695508"/>
+        <ScriptAsset name="OrthographicCamera" folderPath="three/cameras" codeFileId="1:3695508" groupId="1:3695317" id="1:3695509"/>
+        <LibraryCodeFile componentId="0:1040584" codeFileTypeValue="3" id="1:3695510"/>
+        <ScriptAsset name="PerspectiveCamera" folderPath="three/cameras" codeFileId="1:3695510" groupId="1:3695317" id="1:3695511"/>
+        <LibraryCodeFile componentId="0:1045091" codeFileTypeValue="3" id="1:3695512"/>
+        <ScriptAsset name="StereoCamera" folderPath="three/cameras" codeFileId="1:3695512" groupId="1:3695317" id="1:3695513"/>
+        <LibraryCodeFile componentId="0:1048919" codeFileTypeValue="3" id="1:3695514"/>
+        <ScriptAsset name="constants" folderPath="three" codeFileId="1:3695514" groupId="1:3695317" id="1:3695515"/>
+        <LibraryCodeFile componentId="0:1053866" codeFileTypeValue="3" id="1:3695516"/>
+        <ScriptAsset name="BufferAttribute" folderPath="three/core" codeFileId="1:3695516" groupId="1:3695317" id="1:3695517"/>
+        <LibraryCodeFile componentId="0:1060694" codeFileTypeValue="3" id="1:3695518"/>
+        <ScriptAsset name="BufferGeometry" folderPath="three/core" codeFileId="1:3695518" groupId="1:3695317" id="1:3695519"/>
+        <LibraryCodeFile componentId="0:1080422" codeFileTypeValue="3" id="1:3695520"/>
+        <ScriptAsset name="Clock" folderPath="three/core" codeFileId="1:3695520" groupId="1:3695317" id="1:3695521"/>
+        <LibraryCodeFile componentId="0:1082478" codeFileTypeValue="3" id="1:3695522"/>
+        <ScriptAsset name="ColorOrTexture" folderPath="three/core" codeFileId="1:3695522" groupId="1:3695317" id="1:3695523"/>
+        <LibraryCodeFile componentId="0:1082871" codeFileTypeValue="3" id="1:3695524"/>
+        <ScriptAsset name="EventDispatcher" folderPath="three/core" codeFileId="1:3695524" groupId="1:3695317" id="1:3695525"/>
+        <LibraryCodeFile componentId="0:1085483" codeFileTypeValue="3" id="1:3695526"/>
+        <ScriptAsset name="InstancedBufferAttribute" folderPath="three/core" codeFileId="1:3695526" groupId="1:3695317" id="1:3695527"/>
+        <LibraryCodeFile componentId="0:1086419" codeFileTypeValue="3" id="1:3695528"/>
+        <ScriptAsset name="InterleavedBuffer" folderPath="three/core" codeFileId="1:3695528" groupId="1:3695317" id="1:3695529"/>
+        <LibraryCodeFile componentId="0:1090537" codeFileTypeValue="3" id="1:3695530"/>
+        <ScriptAsset name="JSON" folderPath="three/core" codeFileId="1:3695530" groupId="1:3695317" id="1:3695531"/>
+        <LibraryCodeFile componentId="0:1103346" codeFileTypeValue="3" id="1:3695532"/>
+        <ScriptAsset name="Layers" folderPath="three/core" codeFileId="1:3695532" groupId="1:3695317" id="1:3695533"/>
+        <LibraryCodeFile componentId="0:1104044" codeFileTypeValue="3" id="1:3695534"/>
+        <ScriptAsset name="Object3D" folderPath="three/core" codeFileId="1:3695534" groupId="1:3695317" id="1:3695535"/>
+        <LibraryCodeFile componentId="0:1123691" codeFileTypeValue="3" id="1:3695536"/>
+        <ScriptAsset name="Raycaster" folderPath="three/core" codeFileId="1:3695536" groupId="1:3695317" id="1:3695537"/>
+        <LibraryCodeFile componentId="0:1128152" codeFileTypeValue="3" id="1:3695538"/>
+        <ScriptAsset name="geometryOf" folderPath="three/core" codeFileId="1:3695538" groupId="1:3695317" id="1:3695539"/>
+        <LibraryCodeFile componentId="0:1128771" codeFileTypeValue="3" id="1:3695540"/>
+        <ScriptAsset name="Controls" folderPath="three/extras" codeFileId="1:3695540" groupId="1:3695317" id="1:3695541"/>
+        <LibraryCodeFile componentId="0:1131248" codeFileTypeValue="3" id="1:3695542"/>
+        <ScriptAsset name="Earcut" folderPath="three/extras" codeFileId="1:3695542" groupId="1:3695317" id="1:3695543"/>
+        <LibraryCodeFile componentId="0:1147112" codeFileTypeValue="3" id="1:3695544"/>
+        <ScriptAsset name="PMREMGenerator" folderPath="three/extras" codeFileId="1:3695544" groupId="1:3695317" id="1:3695545"/>
+        <LibraryCodeFile componentId="0:1149809" codeFileTypeValue="3" id="1:3695546"/>
+        <ScriptAsset name="ShapeUtils" folderPath="three/extras" codeFileId="1:3695546" groupId="1:3695317" id="1:3695547"/>
+        <LibraryCodeFile componentId="0:1151652" codeFileTypeValue="3" id="1:3695548"/>
+        <ScriptAsset name="Curve" folderPath="three/extras/core" codeFileId="1:3695548" groupId="1:3695317" id="1:3695549"/>
+        <LibraryCodeFile componentId="0:1158663" codeFileTypeValue="3" id="1:3695550"/>
+        <ScriptAsset name="CurvePath" folderPath="three/extras/core" codeFileId="1:3695550" groupId="1:3695317" id="1:3695551"/>
+        <LibraryCodeFile componentId="0:1162585" codeFileTypeValue="3" id="1:3695552"/>
+        <ScriptAsset name="Interpolations" folderPath="three/extras/core" codeFileId="1:3695552" groupId="1:3695317" id="1:3695553"/>
+        <LibraryCodeFile componentId="0:1163283" codeFileTypeValue="3" id="1:3695554"/>
+        <ScriptAsset name="Path" folderPath="three/extras/core" codeFileId="1:3695554" groupId="1:3695317" id="1:3695555"/>
+        <LibraryCodeFile componentId="0:1167620" codeFileTypeValue="3" id="1:3695556"/>
+        <ScriptAsset name="Shape" folderPath="three/extras/core" codeFileId="1:3695556" groupId="1:3695317" id="1:3695557"/>
+        <LibraryCodeFile componentId="0:1169756" codeFileTypeValue="3" id="1:3695558"/>
+        <ScriptAsset name="ShapePath" folderPath="three/extras/core" codeFileId="1:3695558" groupId="1:3695317" id="1:3695559"/>
+        <LibraryCodeFile componentId="0:1176552" codeFileTypeValue="3" id="1:3695560"/>
+        <ScriptAsset name="Curves" folderPath="three/extras/curves" codeFileId="1:3695560" groupId="1:3695317" id="1:3695561"/>
+        <LibraryCodeFile componentId="0:1195604" codeFileTypeValue="3" id="1:3695562"/>
+        <ScriptAsset name="BoxGeometry" folderPath="three/geometries" codeFileId="1:3695562" groupId="1:3695317" id="1:3695563"/>
+        <LibraryCodeFile componentId="0:1200606" codeFileTypeValue="3" id="1:3695564"/>
+        <ScriptAsset name="CapsuleGeometry" folderPath="three/geometries" codeFileId="1:3695564" groupId="1:3695317" id="1:3695565"/>
+        <LibraryCodeFile componentId="0:1206023" codeFileTypeValue="3" id="1:3695566"/>
+        <ScriptAsset name="CircleGeometry" folderPath="three/geometries" codeFileId="1:3695566" groupId="1:3695317" id="1:3695567"/>
+        <LibraryCodeFile componentId="0:1208504" codeFileTypeValue="3" id="1:3695568"/>
+        <ScriptAsset name="ConeGeometry" folderPath="three/geometries" codeFileId="1:3695568" groupId="1:3695317" id="1:3695569"/>
+        <LibraryCodeFile componentId="0:1210069" codeFileTypeValue="3" id="1:3695570"/>
+        <ScriptAsset name="CylinderGeometry" folderPath="three/geometries" codeFileId="1:3695570" groupId="1:3695317" id="1:3695571"/>
+        <LibraryCodeFile componentId="0:1216923" codeFileTypeValue="3" id="1:3695572"/>
+        <ScriptAsset name="EdgesGeometry" folderPath="three/geometries" codeFileId="1:3695572" groupId="1:3695317" id="1:3695573"/>
+        <LibraryCodeFile componentId="0:1220961" codeFileTypeValue="3" id="1:3695574"/>
+        <ScriptAsset name="ExtrudeGeometry" folderPath="three/geometries" codeFileId="1:3695574" groupId="1:3695317" id="1:3695575"/>
+        <LibraryCodeFile componentId="0:1236417" codeFileTypeValue="3" id="1:3695576"/>
+        <ScriptAsset name="LatheGeometry" folderPath="three/geometries" codeFileId="1:3695576" groupId="1:3695317" id="1:3695577"/>
+        <LibraryCodeFile componentId="0:1241593" codeFileTypeValue="3" id="1:3695578"/>
+        <ScriptAsset name="PlaneGeometry" folderPath="three/geometries" codeFileId="1:3695578" groupId="1:3695317" id="1:3695579"/>
+        <LibraryCodeFile componentId="0:1244653" codeFileTypeValue="3" id="1:3695580"/>
+        <ScriptAsset name="PolyhedronGeometry" folderPath="three/geometries" codeFileId="1:3695580" groupId="1:3695317" id="1:3695581"/>
+        <LibraryCodeFile componentId="0:1254704" codeFileTypeValue="3" id="1:3695582"/>
+        <ScriptAsset name="RingGeometry" folderPath="three/geometries" codeFileId="1:3695582" groupId="1:3695317" id="1:3695583"/>
+        <LibraryCodeFile componentId="0:1258103" codeFileTypeValue="3" id="1:3695584"/>
+        <ScriptAsset name="ShapeGeometry" folderPath="three/geometries" codeFileId="1:3695584" groupId="1:3695317" id="1:3695585"/>
+        <LibraryCodeFile componentId="0:1262376" codeFileTypeValue="3" id="1:3695586"/>
+        <ScriptAsset name="SphereGeometry" folderPath="three/geometries" codeFileId="1:3695586" groupId="1:3695317" id="1:3695587"/>
+        <LibraryCodeFile componentId="0:1266648" codeFileTypeValue="3" id="1:3695588"/>
+        <ScriptAsset name="TorusGeometry" folderPath="three/geometries" codeFileId="1:3695588" groupId="1:3695317" id="1:3695589"/>
+        <LibraryCodeFile componentId="0:1270119" codeFileTypeValue="3" id="1:3695590"/>
+        <ScriptAsset name="TorusKnotGeometry" folderPath="three/geometries" codeFileId="1:3695590" groupId="1:3695317" id="1:3695591"/>
+        <LibraryCodeFile componentId="0:1274502" codeFileTypeValue="3" id="1:3695592"/>
+        <ScriptAsset name="TubeGeometry" folderPath="three/geometries" codeFileId="1:3695592" groupId="1:3695317" id="1:3695593"/>
+        <LibraryCodeFile componentId="0:1277901" codeFileTypeValue="3" id="1:3695594"/>
+        <ScriptAsset name="WireframeGeometry" folderPath="three/geometries" codeFileId="1:3695594" groupId="1:3695317" id="1:3695595"/>
+        <LibraryCodeFile componentId="0:1280800" codeFileTypeValue="3" id="1:3695596"/>
+        <ScriptAsset name="ArrowHelper" folderPath="three/helpers" codeFileId="1:3695596" groupId="1:3695317" id="1:3695597"/>
+        <LibraryCodeFile componentId="0:1283874" codeFileTypeValue="3" id="1:3695598"/>
+        <ScriptAsset name="AxesHelper" folderPath="three/helpers" codeFileId="1:3695598" groupId="1:3695317" id="1:3695599"/>
+        <LibraryCodeFile componentId="0:1285279" codeFileTypeValue="3" id="1:3695600"/>
+        <ScriptAsset name="Box3Helper" folderPath="three/helpers" codeFileId="1:3695600" groupId="1:3695317" id="1:3695601"/>
+        <LibraryCodeFile componentId="0:1286656" codeFileTypeValue="3" id="1:3695602"/>
+        <ScriptAsset name="BoxHelper" folderPath="three/helpers" codeFileId="1:3695602" groupId="1:3695317" id="1:3695603"/>
+        <LibraryCodeFile componentId="0:1288730" codeFileTypeValue="3" id="1:3695604"/>
+        <ScriptAsset name="CameraHelper" folderPath="three/helpers" codeFileId="1:3695604" groupId="1:3695317" id="1:3695605"/>
+        <LibraryCodeFile componentId="0:1292943" codeFileTypeValue="3" id="1:3695606"/>
+        <ScriptAsset name="GridHelper" folderPath="three/helpers" codeFileId="1:3695606" groupId="1:3695317" id="1:3695607"/>
+        <LibraryCodeFile componentId="0:1294737" codeFileTypeValue="3" id="1:3695608"/>
+        <ScriptAsset name="LightHelpers" folderPath="three/helpers" codeFileId="1:3695608" groupId="1:3695317" id="1:3695609"/>
+        <LibraryCodeFile componentId="0:1302680" codeFileTypeValue="3" id="1:3695610"/>
+        <ScriptAsset name="PlaneHelper" folderPath="three/helpers" codeFileId="1:3695610" groupId="1:3695317" id="1:3695611"/>
+        <LibraryCodeFile componentId="0:1304645" codeFileTypeValue="3" id="1:3695612"/>
+        <ScriptAsset name="PolarGridHelper" folderPath="three/helpers" codeFileId="1:3695612" groupId="1:3695317" id="1:3695613"/>
+        <LibraryCodeFile componentId="0:1307052" codeFileTypeValue="3" id="1:3695614"/>
+        <ScriptAsset name="SkeletonHelper" folderPath="three/helpers" codeFileId="1:3695614" groupId="1:3695317" id="1:3695615"/>
+        <LibraryCodeFile componentId="0:1310099" codeFileTypeValue="3" id="1:3695616"/>
+        <ScriptAsset name="AmbientLight" folderPath="three/lights" codeFileId="1:3695616" groupId="1:3695317" id="1:3695617"/>
+        <LibraryCodeFile componentId="0:1310718" codeFileTypeValue="3" id="1:3695618"/>
+        <ScriptAsset name="DirectionalLight" folderPath="three/lights" codeFileId="1:3695618" groupId="1:3695317" id="1:3695619"/>
+        <LibraryCodeFile componentId="0:1312682" codeFileTypeValue="3" id="1:3695620"/>
+        <ScriptAsset name="HemisphereLight" folderPath="three/lights" codeFileId="1:3695620" groupId="1:3695317" id="1:3695621"/>
+        <LibraryCodeFile componentId="0:1314107" codeFileTypeValue="3" id="1:3695622"/>
+        <ScriptAsset name="Light" folderPath="three/lights" codeFileId="1:3695622" groupId="1:3695317" id="1:3695623"/>
+        <LibraryCodeFile componentId="0:1315433" codeFileTypeValue="3" id="1:3695624"/>
+        <ScriptAsset name="LightProbe" folderPath="three/lights" codeFileId="1:3695624" groupId="1:3695317" id="1:3695625"/>
+        <LibraryCodeFile componentId="0:1316694" codeFileTypeValue="3" id="1:3695626"/>
+        <ScriptAsset name="LightShadow" folderPath="three/lights" codeFileId="1:3695626" groupId="1:3695317" id="1:3695627"/>
+        <LibraryCodeFile componentId="0:1319710" codeFileTypeValue="3" id="1:3695628"/>
+        <ScriptAsset name="PointLight" folderPath="three/lights" codeFileId="1:3695628" groupId="1:3695317" id="1:3695629"/>
+        <LibraryCodeFile componentId="0:1321407" codeFileTypeValue="3" id="1:3695630"/>
+        <ScriptAsset name="RectAreaLight" folderPath="three/lights" codeFileId="1:3695630" groupId="1:3695317" id="1:3695631"/>
+        <LibraryCodeFile componentId="0:1323126" codeFileTypeValue="3" id="1:3695632"/>
+        <ScriptAsset name="RectAreaLightTables" folderPath="three/lights" codeFileId="1:3695632" groupId="1:3695317" id="1:3695633"/>
+        <LibraryCodeFile componentId="0:1374906" codeFileTypeValue="3" id="1:3695634"/>
+        <ScriptAsset name="SpotLight" folderPath="three/lights" codeFileId="1:3695634" groupId="1:3695317" id="1:3695635"/>
+        <LibraryCodeFile componentId="0:1377371" codeFileTypeValue="3" id="1:3695636"/>
+        <ScriptAsset name="BufferGeometryLoader" folderPath="three/loaders" codeFileId="1:3695636" groupId="1:3695317" id="1:3695637"/>
+        <LibraryCodeFile componentId="0:1387493" codeFileTypeValue="3" id="1:3695638"/>
+        <ScriptAsset name="CubeTextureLoader" folderPath="three/loaders" codeFileId="1:3695638" groupId="1:3695317" id="1:3695639"/>
+        <LibraryCodeFile componentId="0:1388799" codeFileTypeValue="3" id="1:3695640"/>
+        <ScriptAsset name="FileLoader" folderPath="three/loaders" codeFileId="1:3695640" groupId="1:3695317" id="1:3695641"/>
+        <LibraryCodeFile componentId="0:1391761" codeFileTypeValue="3" id="1:3695642"/>
+        <ScriptAsset name="Loader" folderPath="three/loaders" codeFileId="1:3695642" groupId="1:3695317" id="1:3695643"/>
+        <LibraryCodeFile componentId="0:1393102" codeFileTypeValue="3" id="1:3695644"/>
+        <ScriptAsset name="LoaderUtils" folderPath="three/loaders" codeFileId="1:3695644" groupId="1:3695317" id="1:3695645"/>
+        <LibraryCodeFile componentId="0:1394374" codeFileTypeValue="3" id="1:3695646"/>
+        <ScriptAsset name="LoadingManager" folderPath="three/loaders" codeFileId="1:3695646" groupId="1:3695317" id="1:3695647"/>
+        <LibraryCodeFile componentId="0:1396858" codeFileTypeValue="3" id="1:3695648"/>
+        <ScriptAsset name="MaterialLoader" folderPath="three/loaders" codeFileId="1:3695648" groupId="1:3695317" id="1:3695649"/>
+        <LibraryCodeFile componentId="0:1425150" codeFileTypeValue="3" id="1:3695650"/>
+        <ScriptAsset name="ObjectLoader" folderPath="three/loaders" codeFileId="1:3695650" groupId="1:3695317" id="1:3695651"/>
+        <LibraryCodeFile componentId="0:1470089" codeFileTypeValue="3" id="1:3695652"/>
+        <ScriptAsset name="TextureLoader" folderPath="three/loaders" codeFileId="1:3695652" groupId="1:3695317" id="1:3695653"/>
+        <LibraryCodeFile componentId="0:1473899" codeFileTypeValue="3" id="1:3695654"/>
+        <ScriptAsset name="LineBasicMaterial" folderPath="three/materials" codeFileId="1:3695654" groupId="1:3695317" id="1:3695655"/>
+        <LibraryCodeFile componentId="0:1476049" codeFileTypeValue="3" id="1:3695656"/>
+        <ScriptAsset name="LineDashedMaterial" folderPath="three/materials" codeFileId="1:3695656" groupId="1:3695317" id="1:3695657"/>
+        <LibraryCodeFile componentId="0:1477604" codeFileTypeValue="3" id="1:3695658"/>
+        <ScriptAsset name="Material" folderPath="three/materials" codeFileId="1:3695658" groupId="1:3695317" id="1:3695659"/>
+        <LibraryCodeFile componentId="0:1491234" codeFileTypeValue="3" id="1:3695660"/>
+        <ScriptAsset name="MaterialUniforms" folderPath="three/materials" codeFileId="1:3695660" groupId="1:3695317" id="1:3695661"/>
+        <LibraryCodeFile componentId="0:1497894" codeFileTypeValue="3" id="1:3695662"/>
+        <ScriptAsset name="MeshBasicMaterial" folderPath="three/materials" codeFileId="1:3695662" groupId="1:3695317" id="1:3695663"/>
+        <LibraryCodeFile componentId="0:1501736" codeFileTypeValue="3" id="1:3695664"/>
+        <ScriptAsset name="MeshDepthMaterial" folderPath="three/materials" codeFileId="1:3695664" groupId="1:3695317" id="1:3695665"/>
+        <LibraryCodeFile componentId="0:1504294" codeFileTypeValue="3" id="1:3695666"/>
+        <ScriptAsset name="MeshDistanceMaterial" folderPath="three/materials" codeFileId="1:3695666" groupId="1:3695317" id="1:3695667"/>
+        <LibraryCodeFile componentId="0:1507080" codeFileTypeValue="3" id="1:3695668"/>
+        <ScriptAsset name="MeshLambertMaterial" folderPath="three/materials" codeFileId="1:3695668" groupId="1:3695317" id="1:3695669"/>
+        <LibraryCodeFile componentId="0:1513453" codeFileTypeValue="3" id="1:3695670"/>
+        <ScriptAsset name="MeshMatcapMaterial" folderPath="three/materials" codeFileId="1:3695670" groupId="1:3695317" id="1:3695671"/>
+        <LibraryCodeFile componentId="0:1517186" codeFileTypeValue="3" id="1:3695672"/>
+        <ScriptAsset name="MeshNormalMaterial" folderPath="three/materials" codeFileId="1:3695672" groupId="1:3695317" id="1:3695673"/>
+        <LibraryCodeFile componentId="0:1519998" codeFileTypeValue="3" id="1:3695674"/>
+        <ScriptAsset name="MeshPhongMaterial" folderPath="three/materials" codeFileId="1:3695674" groupId="1:3695317" id="1:3695675"/>
+        <LibraryCodeFile componentId="0:1526915" codeFileTypeValue="3" id="1:3695676"/>
+        <ScriptAsset name="MeshPhysicalMaterial" folderPath="three/materials" codeFileId="1:3695676" groupId="1:3695317" id="1:3695677"/>
+        <LibraryCodeFile componentId="0:1537262" codeFileTypeValue="3" id="1:3695678"/>
+        <ScriptAsset name="MeshStandardMaterial" folderPath="three/materials" codeFileId="1:3695678" groupId="1:3695317" id="1:3695679"/>
+        <LibraryCodeFile componentId="0:1543825" codeFileTypeValue="3" id="1:3695680"/>
+        <ScriptAsset name="MeshToonMaterial" folderPath="three/materials" codeFileId="1:3695680" groupId="1:3695317" id="1:3695681"/>
+        <LibraryCodeFile componentId="0:1549365" codeFileTypeValue="3" id="1:3695682"/>
+        <ScriptAsset name="PointsMaterial" folderPath="three/materials" codeFileId="1:3695682" groupId="1:3695317" id="1:3695683"/>
+        <LibraryCodeFile componentId="0:1551493" codeFileTypeValue="3" id="1:3695684"/>
+        <ScriptAsset name="ShaderMaterial" folderPath="three/materials" codeFileId="1:3695684" groupId="1:3695317" id="1:3695685"/>
+        <LibraryCodeFile componentId="0:1562462" codeFileTypeValue="3" id="1:3695686"/>
+        <ScriptAsset name="ShadowMaterial" folderPath="three/materials" codeFileId="1:3695686" groupId="1:3695317" id="1:3695687"/>
+        <LibraryCodeFile componentId="0:1563774" codeFileTypeValue="3" id="1:3695688"/>
+        <ScriptAsset name="SpriteMaterial" folderPath="three/materials" codeFileId="1:3695688" groupId="1:3695317" id="1:3695689"/>
+        <LibraryCodeFile componentId="0:1566075" codeFileTypeValue="3" id="1:3695690"/>
+        <ScriptAsset name="Box2" folderPath="three/math" codeFileId="1:3695690" groupId="1:3695317" id="1:3695691"/>
+        <LibraryCodeFile componentId="0:1569619" codeFileTypeValue="3" id="1:3695692"/>
+        <ScriptAsset name="Box3" folderPath="three/math" codeFileId="1:3695692" groupId="1:3695317" id="1:3695693"/>
+        <LibraryCodeFile componentId="0:1579475" codeFileTypeValue="3" id="1:3695694"/>
+        <ScriptAsset name="Color" folderPath="three/math" codeFileId="1:3695694" groupId="1:3695317" id="1:3695695"/>
+        <LibraryCodeFile componentId="0:1592649" codeFileTypeValue="3" id="1:3695696"/>
+        <ScriptAsset name="Cylindrical" folderPath="three/math" codeFileId="1:3695696" groupId="1:3695317" id="1:3695697"/>
+        <LibraryCodeFile componentId="0:1593652" codeFileTypeValue="3" id="1:3695698"/>
+        <ScriptAsset name="Euler" folderPath="three/math" codeFileId="1:3695698" groupId="1:3695317" id="1:3695699"/>
+        <LibraryCodeFile componentId="0:1598255" codeFileTypeValue="3" id="1:3695700"/>
+        <ScriptAsset name="Frustum" folderPath="three/math" codeFileId="1:3695700" groupId="1:3695317" id="1:3695701"/>
+        <LibraryCodeFile componentId="0:1601968" codeFileTypeValue="3" id="1:3695702"/>
+        <ScriptAsset name="Line3" folderPath="three/math" codeFileId="1:3695702" groupId="1:3695317" id="1:3695703"/>
+        <LibraryCodeFile componentId="0:1603997" codeFileTypeValue="3" id="1:3695704"/>
+        <ScriptAsset name="MathUtils" folderPath="three/math" codeFileId="1:3695704" groupId="1:3695317" id="1:3695705"/>
+        <LibraryCodeFile componentId="0:1607041" codeFileTypeValue="3" id="1:3695706"/>
+        <ScriptAsset name="Matrix3" folderPath="three/math" codeFileId="1:3695706" groupId="1:3695317" id="1:3695707"/>
+        <LibraryCodeFile componentId="0:1612476" codeFileTypeValue="3" id="1:3695708"/>
+        <ScriptAsset name="Matrix4" folderPath="three/math" codeFileId="1:3695708" groupId="1:3695317" id="1:3695709"/>
+        <LibraryCodeFile componentId="0:1625984" codeFileTypeValue="3" id="1:3695710"/>
+        <ScriptAsset name="Plane" folderPath="three/math" codeFileId="1:3695710" groupId="1:3695317" id="1:3695711"/>
+        <LibraryCodeFile componentId="0:1630035" codeFileTypeValue="3" id="1:3695712"/>
+        <ScriptAsset name="Quaternion" folderPath="three/math" codeFileId="1:3695712" groupId="1:3695317" id="1:3695713"/>
+        <LibraryCodeFile componentId="0:1638738" codeFileTypeValue="3" id="1:3695714"/>
+        <ScriptAsset name="Ray" folderPath="three/math" codeFileId="1:3695714" groupId="1:3695317" id="1:3695715"/>
+        <LibraryCodeFile componentId="0:1648188" codeFileTypeValue="3" id="1:3695716"/>
+        <ScriptAsset name="Sphere" folderPath="three/math" codeFileId="1:3695716" groupId="1:3695317" id="1:3695717"/>
+        <LibraryCodeFile componentId="0:1652480" codeFileTypeValue="3" id="1:3695718"/>
+        <ScriptAsset name="Spherical" folderPath="three/math" codeFileId="1:3695718" groupId="1:3695317" id="1:3695719"/>
+        <LibraryCodeFile componentId="0:1653870" codeFileTypeValue="3" id="1:3695720"/>
+        <ScriptAsset name="SphericalHarmonics3" folderPath="three/math" codeFileId="1:3695720" groupId="1:3695317" id="1:3695721"/>
+        <LibraryCodeFile componentId="0:1658366" codeFileTypeValue="3" id="1:3695722"/>
+        <ScriptAsset name="Triangle" folderPath="three/math" codeFileId="1:3695722" groupId="1:3695317" id="1:3695723"/>
+        <LibraryCodeFile componentId="0:1664588" codeFileTypeValue="3" id="1:3695724"/>
+        <ScriptAsset name="Vector2" folderPath="three/math" codeFileId="1:3695724" groupId="1:3695317" id="1:3695725"/>
+        <LibraryCodeFile componentId="0:1669344" codeFileTypeValue="3" id="1:3695726"/>
+        <ScriptAsset name="Vector3" folderPath="three/math" codeFileId="1:3695726" groupId="1:3695317" id="1:3695727"/>
+        <LibraryCodeFile componentId="0:1681207" codeFileTypeValue="3" id="1:3695728"/>
+        <ScriptAsset name="Vector4" folderPath="three/math" codeFileId="1:3695728" groupId="1:3695317" id="1:3695729"/>
+        <LibraryCodeFile componentId="0:1683703" codeFileTypeValue="3" id="1:3695730"/>
+        <ScriptAsset name="BatchedMesh" folderPath="three/objects" codeFileId="1:3695730" groupId="1:3695317" id="1:3695731"/>
+        <LibraryCodeFile componentId="0:1699452" codeFileTypeValue="3" id="1:3695732"/>
+        <ScriptAsset name="Group" folderPath="three/objects" codeFileId="1:3695732" groupId="1:3695317" id="1:3695733"/>
+        <LibraryCodeFile componentId="0:1699964" codeFileTypeValue="3" id="1:3695734"/>
+        <ScriptAsset name="InstancedMesh" folderPath="three/objects" codeFileId="1:3695734" groupId="1:3695317" id="1:3695735"/>
+        <LibraryCodeFile componentId="0:1707664" codeFileTypeValue="3" id="1:3695736"/>
+        <ScriptAsset name="LOD" folderPath="three/objects" codeFileId="1:3695736" groupId="1:3695317" id="1:3695737"/>
+        <LibraryCodeFile componentId="0:1712426" codeFileTypeValue="3" id="1:3695738"/>
+        <ScriptAsset name="Line" folderPath="three/objects" codeFileId="1:3695738" groupId="1:3695317" id="1:3695739"/>
+        <LibraryCodeFile componentId="0:1717190" codeFileTypeValue="3" id="1:3695740"/>
+        <ScriptAsset name="Mesh" folderPath="three/objects" codeFileId="1:3695740" groupId="1:3695317" id="1:3695741"/>
+        <LibraryCodeFile componentId="0:1721772" codeFileTypeValue="3" id="1:3695742"/>
+        <ScriptAsset name="Points" folderPath="three/objects" codeFileId="1:3695742" groupId="1:3695317" id="1:3695743"/>
+        <LibraryCodeFile componentId="0:1723779" codeFileTypeValue="3" id="1:3695744"/>
+        <ScriptAsset name="Skeleton" folderPath="three/objects" codeFileId="1:3695744" groupId="1:3695317" id="1:3695745"/>
+        <LibraryCodeFile componentId="0:1729473" codeFileTypeValue="3" id="1:3695746"/>
+        <ScriptAsset name="SkinnedMesh" folderPath="three/objects" codeFileId="1:3695746" groupId="1:3695317" id="1:3695747"/>
+        <LibraryCodeFile componentId="0:1736417" codeFileTypeValue="3" id="1:3695748"/>
+        <ScriptAsset name="Sprite" folderPath="three/objects" codeFileId="1:3695748" groupId="1:3695317" id="1:3695749"/>
+        <LibraryCodeFile componentId="0:1738314" codeFileTypeValue="3" id="1:3695750"/>
+        <ScriptAsset name="raycasting" folderPath="three/objects" codeFileId="1:3695750" groupId="1:3695317" id="1:3695751"/>
+        <LibraryCodeFile componentId="0:1751937" codeFileTypeValue="3" id="1:3695752"/>
+        <ScriptAsset name="serialize" folderPath="three/objects" codeFileId="1:3695752" groupId="1:3695317" id="1:3695753"/>
+        <LibraryCodeFile componentId="0:1753506" codeFileTypeValue="3" id="1:3695754"/>
+        <ScriptAsset name="GPURenderer" folderPath="three/renderers" codeFileId="1:3695754" groupId="1:3695317" id="1:3695755"/>
+        <LibraryCodeFile componentId="0:1982193" codeFileTypeValue="3" id="1:3695756"/>
+        <ScriptAsset name="RenderTarget" folderPath="three/renderers" codeFileId="1:3695756" groupId="1:3695317" id="1:3695757"/>
+        <LibraryCodeFile componentId="0:1991033" codeFileTypeValue="3" id="1:3695758"/>
+        <ScriptAsset name="WebGLCubeRenderTarget" folderPath="three/renderers" codeFileId="1:3695758" groupId="1:3695317" id="1:3695759"/>
+        <LibraryCodeFile componentId="0:1993514" codeFileTypeValue="3" id="1:3695760"/>
+        <ScriptAsset name="Culling" folderPath="three/renderers/gpu" codeFileId="1:3695760" groupId="1:3695317" id="1:3695761"/>
+        <LibraryCodeFile componentId="0:1998691" codeFileTypeValue="3" id="1:3695762"/>
+        <ScriptAsset name="GPUGeometries" folderPath="three/renderers/gpu" codeFileId="1:3695762" groupId="1:3695317" id="1:3695763"/>
+        <LibraryCodeFile componentId="0:2013978" codeFileTypeValue="3" id="1:3695764"/>
+        <ScriptAsset name="GPUTextures" folderPath="three/renderers/gpu" codeFileId="1:3695764" groupId="1:3695317" id="1:3695765"/>
+        <LibraryCodeFile componentId="0:2035582" codeFileTypeValue="3" id="1:3695766"/>
+        <ScriptAsset name="Layout" folderPath="three/renderers/gpu" codeFileId="1:3695766" groupId="1:3695317" id="1:3695767"/>
+        <LibraryCodeFile componentId="0:2041351" codeFileTypeValue="3" id="1:3695768"/>
+        <ScriptAsset name="MorphTexels" folderPath="three/renderers/gpu" codeFileId="1:3695768" groupId="1:3695317" id="1:3695769"/>
+        <LibraryCodeFile componentId="0:2045285" codeFileTypeValue="3" id="1:3695770"/>
+        <ScriptAsset name="ShaderSourceHash" folderPath="three/renderers/gpu" codeFileId="1:3695770" groupId="1:3695317" id="1:3695771"/>
+        <LibraryCodeFile componentId="0:2045558" codeFileTypeValue="3" id="1:3695772"/>
+        <ScriptAsset name="ArtboardOverlay" folderPath="three/rive" codeFileId="1:3695772" groupId="1:3695317" id="1:3695773"/>
+        <LibraryCodeFile componentId="0:2062946" codeFileTypeValue="3" id="1:3695774"/>
+        <ScriptAsset name="ArtboardTexture" folderPath="three/rive" codeFileId="1:3695774" groupId="1:3695317" id="1:3695775"/>
+        <LibraryCodeFile componentId="0:2068850" codeFileTypeValue="3" id="1:3695776"/>
+        <ScriptAsset name="RiveNodes" folderPath="three/rive" codeFileId="1:3695776" groupId="1:3695317" id="1:3695777"/>
+        <LibraryCodeFile componentId="0:2069751" codeFileTypeValue="3" id="1:3695778"/>
+        <ScriptAsset name="RivePaths" folderPath="three/rive" codeFileId="1:3695778" groupId="1:3695317" id="1:3695779"/>
+        <LibraryCodeFile componentId="0:2076022" codeFileTypeValue="3" id="1:3695780"/>
+        <ScriptAsset name="RiveRig" folderPath="three/rive" codeFileId="1:3695780" groupId="1:3695317" id="1:3695781"/>
+        <LibraryCodeFile componentId="0:2088155" codeFileTypeValue="3" id="1:3695782"/>
+        <ScriptAsset name="SceneBindings" folderPath="three/rive" codeFileId="1:3695782" groupId="1:3695317" id="1:3695783"/>
+        <LibraryCodeFile componentId="0:2108271" codeFileTypeValue="3" id="1:3695784"/>
+        <ScriptAsset name="ThreeLayout" folderPath="three/rive" codeFileId="1:3695784" groupId="1:3695317" id="1:3695785"/>
+        <LibraryCodeFile componentId="0:2122413" codeFileTypeValue="3" id="1:3695786"/>
+        <ScriptAsset name="Fog" folderPath="three/scenes" codeFileId="1:3695786" groupId="1:3695317" id="1:3695787"/>
+        <LibraryCodeFile componentId="0:2124427" codeFileTypeValue="3" id="1:3695788"/>
+        <ScriptAsset name="Scene" folderPath="three/scenes" codeFileId="1:3695788" groupId="1:3695317" id="1:3695789"/>
+        <LibraryCodeFile componentId="0:2128110" codeFileTypeValue="3" id="1:3695790"/>
+        <ScriptAsset name="CanvasTexture" folderPath="three/textures" codeFileId="1:3695790" groupId="1:3695317" id="1:3695791"/>
+        <LibraryCodeFile componentId="0:2128616" codeFileTypeValue="3" id="1:3695792"/>
+        <ScriptAsset name="CompressedTexture" folderPath="three/textures" codeFileId="1:3695792" groupId="1:3695317" id="1:3695793"/>
+        <LibraryCodeFile componentId="0:2134638" codeFileTypeValue="3" id="1:3695794"/>
+        <ScriptAsset name="CubeTexture" folderPath="three/textures" codeFileId="1:3695794" groupId="1:3695317" id="1:3695795"/>
+        <LibraryCodeFile componentId="0:2137154" codeFileTypeValue="3" id="1:3695796"/>
+        <ScriptAsset name="DataArrayTexture" folderPath="three/textures" codeFileId="1:3695796" groupId="1:3695317" id="1:3695797"/>
+        <LibraryCodeFile componentId="0:2141270" codeFileTypeValue="3" id="1:3695798"/>
+        <ScriptAsset name="DataTexture" folderPath="three/textures" codeFileId="1:3695798" groupId="1:3695317" id="1:3695799"/>
+        <LibraryCodeFile componentId="0:2145910" codeFileTypeValue="3" id="1:3695800"/>
+        <ScriptAsset name="DataUpload" folderPath="three/textures" codeFileId="1:3695800" groupId="1:3695317" id="1:3695801"/>
+        <LibraryCodeFile componentId="0:2150559" codeFileTypeValue="3" id="1:3695802"/>
+        <ScriptAsset name="DepthTexture" folderPath="three/textures" codeFileId="1:3695802" groupId="1:3695317" id="1:3695803"/>
+        <LibraryCodeFile componentId="0:2154058" codeFileTypeValue="3" id="1:3695804"/>
+        <ScriptAsset name="FramebufferTexture" folderPath="three/textures" codeFileId="1:3695804" groupId="1:3695317" id="1:3695805"/>
+        <LibraryCodeFile componentId="0:2155291" codeFileTypeValue="3" id="1:3695806"/>
+        <ScriptAsset name="Source" folderPath="three/textures" codeFileId="1:3695806" groupId="1:3695317" id="1:3695807"/>
+        <LibraryCodeFile componentId="0:2157033" codeFileTypeValue="3" id="1:3695808"/>
+        <ScriptAsset name="Texture" folderPath="three/textures" codeFileId="1:3695808" groupId="1:3695317" id="1:3695809"/>
+        <LibraryCodeFile componentId="0:2165542" codeFileTypeValue="1" id="1:3695810"/>
+        <ShaderAsset name="three/shaders/lib/three_chunks" codeFileId="1:3695810" groupId="1:3695317" id="1:3695811"/>
+        <LibraryCodeFile componentId="0:2181178" codeFileTypeValue="1" id="1:3695812"/>
+        <ShaderAsset name="three/shaders/post/afterimage" codeFileId="1:3695812" groupId="1:3695317" id="1:3695813"/>
+        <LibraryCodeFile componentId="0:2182573" codeFileTypeValue="1" id="1:3695814"/>
+        <ShaderAsset name="three/shaders/post/bloom" codeFileId="1:3695814" groupId="1:3695317" id="1:3695815"/>
+        <LibraryCodeFile componentId="0:2186085" codeFileTypeValue="1" id="1:3695816"/>
+        <ShaderAsset name="three/shaders/post/bokeh" codeFileId="1:3695816" groupId="1:3695317" id="1:3695817"/>
+        <LibraryCodeFile componentId="0:2190906" codeFileTypeValue="1" id="1:3695818"/>
+        <ShaderAsset name="three/shaders/post/copy" codeFileId="1:3695818" groupId="1:3695317" id="1:3695819"/>
+        <LibraryCodeFile componentId="0:2192142" codeFileTypeValue="1" id="1:3695820"/>
+        <ShaderAsset name="three/shaders/post/depth_limited_blur" codeFileId="1:3695820" groupId="1:3695317" id="1:3695821"/>
+        <LibraryCodeFile componentId="0:2195496" codeFileTypeValue="1" id="1:3695822"/>
+        <ShaderAsset name="three/shaders/post/dot_screen" codeFileId="1:3695822" groupId="1:3695317" id="1:3695823"/>
+        <LibraryCodeFile componentId="0:2197124" codeFileTypeValue="1" id="1:3695824"/>
+        <ShaderAsset name="three/shaders/post/film" codeFileId="1:3695824" groupId="1:3695317" id="1:3695825"/>
+        <LibraryCodeFile componentId="0:2198907" codeFileTypeValue="1" id="1:3695826"/>
+        <ShaderAsset name="three/shaders/post/fxaa" codeFileId="1:3695826" groupId="1:3695317" id="1:3695827"/>
+        <LibraryCodeFile componentId="0:2201611" codeFileTypeValue="1" id="1:3695828"/>
+        <ShaderAsset name="three/shaders/post/glitch" codeFileId="1:3695828" groupId="1:3695317" id="1:3695829"/>
+        <LibraryCodeFile componentId="0:2204676" codeFileTypeValue="1" id="1:3695830"/>
+        <ShaderAsset name="three/shaders/post/gtao" codeFileId="1:3695830" groupId="1:3695317" id="1:3695831"/>
+        <LibraryCodeFile componentId="0:2213319" codeFileTypeValue="1" id="1:3695832"/>
+        <ShaderAsset name="three/shaders/post/gtao_blend" codeFileId="1:3695832" groupId="1:3695317" id="1:3695833"/>
+        <LibraryCodeFile componentId="0:2214484" codeFileTypeValue="1" id="1:3695834"/>
+        <ShaderAsset name="three/shaders/post/gtao_depth" codeFileId="1:3695834" groupId="1:3695317" id="1:3695835"/>
+        <LibraryCodeFile componentId="0:2216333" codeFileTypeValue="1" id="1:3695836"/>
+        <ShaderAsset name="three/shaders/post/halftone" codeFileId="1:3695836" groupId="1:3695317" id="1:3695837"/>
+        <LibraryCodeFile componentId="0:2224463" codeFileTypeValue="1" id="1:3695838"/>
+        <ShaderAsset name="three/shaders/post/lut" codeFileId="1:3695838" groupId="1:3695317" id="1:3695839"/>
+        <LibraryCodeFile componentId="0:2226138" codeFileTypeValue="1" id="1:3695840"/>
+        <ShaderAsset name="three/shaders/post/mask" codeFileId="1:3695840" groupId="1:3695317" id="1:3695841"/>
+        <LibraryCodeFile componentId="0:2227724" codeFileTypeValue="1" id="1:3695842"/>
+        <ShaderAsset name="three/shaders/post/outline_blur" codeFileId="1:3695842" groupId="1:3695317" id="1:3695843"/>
+        <LibraryCodeFile componentId="0:2229836" codeFileTypeValue="1" id="1:3695844"/>
+        <ShaderAsset name="three/shaders/post/outline_edge" codeFileId="1:3695844" groupId="1:3695317" id="1:3695845"/>
+        <LibraryCodeFile componentId="0:2231854" codeFileTypeValue="1" id="1:3695846"/>
+        <ShaderAsset name="three/shaders/post/outline_mask" codeFileId="1:3695846" groupId="1:3695317" id="1:3695847"/>
+        <LibraryCodeFile componentId="0:2234285" codeFileTypeValue="1" id="1:3695848"/>
+        <ShaderAsset name="three/shaders/post/outline_overlay" codeFileId="1:3695848" groupId="1:3695317" id="1:3695849"/>
+        <LibraryCodeFile componentId="0:2236710" codeFileTypeValue="1" id="1:3695850"/>
+        <ShaderAsset name="three/shaders/post/output" codeFileId="1:3695850" groupId="1:3695317" id="1:3695851"/>
+        <LibraryCodeFile componentId="0:2241619" codeFileTypeValue="1" id="1:3695852"/>
+        <ShaderAsset name="three/shaders/post/pixelated" codeFileId="1:3695852" groupId="1:3695317" id="1:3695853"/>
+        <LibraryCodeFile componentId="0:2245733" codeFileTypeValue="1" id="1:3695854"/>
+        <ShaderAsset name="three/shaders/post/poisson_denoise" codeFileId="1:3695854" groupId="1:3695317" id="1:3695855"/>
+        <LibraryCodeFile componentId="0:2251804" codeFileTypeValue="1" id="1:3695856"/>
+        <ShaderAsset name="three/shaders/post/sao" codeFileId="1:3695856" groupId="1:3695317" id="1:3695857"/>
+        <LibraryCodeFile componentId="0:2256576" codeFileTypeValue="1" id="1:3695858"/>
+        <ShaderAsset name="three/shaders/post/smaa_blend" codeFileId="1:3695858" groupId="1:3695317" id="1:3695859"/>
+        <LibraryCodeFile componentId="0:2259611" codeFileTypeValue="1" id="1:3695860"/>
+        <ShaderAsset name="three/shaders/post/smaa_edges" codeFileId="1:3695860" groupId="1:3695317" id="1:3695861"/>
+        <LibraryCodeFile componentId="0:2262683" codeFileTypeValue="1" id="1:3695862"/>
+        <ShaderAsset name="three/shaders/post/smaa_weights" codeFileId="1:3695862" groupId="1:3695317" id="1:3695863"/>
+        <LibraryCodeFile componentId="0:2269826" codeFileTypeValue="1" id="1:3695864"/>
+        <ShaderAsset name="three/shaders/post/ssao" codeFileId="1:3695864" groupId="1:3695317" id="1:3695865"/>
+        <LibraryCodeFile componentId="0:2274609" codeFileTypeValue="1" id="1:3695866"/>
+        <ShaderAsset name="three/shaders/post/ssao_blur" codeFileId="1:3695866" groupId="1:3695317" id="1:3695867"/>
+        <LibraryCodeFile componentId="0:2275945" codeFileTypeValue="1" id="1:3695868"/>
+        <ShaderAsset name="three/shaders/post/ssao_depth" codeFileId="1:3695868" groupId="1:3695317" id="1:3695869"/>
+        <LibraryCodeFile componentId="0:2277794" codeFileTypeValue="1" id="1:3695870"/>
+        <ShaderAsset name="three/shaders/post/texture" codeFileId="1:3695870" groupId="1:3695317" id="1:3695871"/>
+        <LibraryCodeFile componentId="0:2279640" codeFileTypeValue="1" id="1:3695872"/>
+        <ShaderAsset name="three/shaders/three" codeFileId="1:3695872" groupId="1:3695317" id="1:3695873"/>
+        <LibraryCodeFile componentId="0:2353424" codeFileTypeValue="1" id="1:3695874"/>
+        <ShaderAsset name="three/shaders/three_background" codeFileId="1:3695874" groupId="1:3695317" id="1:3695875"/>
+        <LibraryCodeFile componentId="0:2357143" codeFileTypeValue="1" id="1:3695876"/>
+        <ShaderAsset name="three/shaders/three_cube" codeFileId="1:3695876" groupId="1:3695317" id="1:3695877"/>
+        <LibraryCodeFile componentId="0:2360363" codeFileTypeValue="1" id="1:3695878"/>
+        <ShaderAsset name="three/shaders/three_mip" codeFileId="1:3695878" groupId="1:3695317" id="1:3695879"/>
+        <LibraryCodeFile componentId="0:2361103" codeFileTypeValue="1" id="1:3695880"/>
+        <ShaderAsset name="three/shaders/three_pmrem" codeFileId="1:3695880" groupId="1:3695317" id="1:3695881"/>
+        <LibraryCodeFile componentId="0:2365128" codeFileTypeValue="1" id="1:3695882"/>
+        <ShaderAsset name="three/shaders/three_util" codeFileId="1:3695882" groupId="1:3695317" id="1:3695883"/>
+        <LibraryCodeFile componentId="0:2407180" codeFileTypeValue="3" id="1:3695884"/>
+        <ScriptAsset name="ASTCDecoder" folderPath="three/textures/decoders" codeFileId="1:3695884" groupId="1:3695317" id="1:3695885"/>
+        <LibraryCodeFile componentId="0:2435284" codeFileTypeValue="3" id="1:3695886"/>
+        <ScriptAsset name="BCDecoder" folderPath="three/textures/decoders" codeFileId="1:3695886" groupId="1:3695317" id="1:3695887"/>
+        <LibraryCodeFile componentId="0:2458819" codeFileTypeValue="3" id="1:3695888"/>
+        <ScriptAsset name="ETCDecoder" folderPath="three/textures/decoders" codeFileId="1:3695888" groupId="1:3695317" id="1:3695889"/>
+        <LibraryCodeFile componentId="0:2471209" codeFileTypeValue="3" id="1:3695890"/>
+        <ScriptAsset name="TextureDecoders" folderPath="three/textures/decoders" codeFileId="1:3695890" groupId="1:3695317" id="1:3695891"/>
+        <LibraryCodeFile componentId="0:2490276" codeFileTypeValue="3" id="1:3695892"/>
+        <ScriptAsset name="PositionalAudioHelper" folderPath="three/addons/helpers" codeFileId="1:3695892" groupId="1:3695317" id="1:3695893"/>
+        <LibraryCodeFile componentId="0:2494709" codeFileTypeValue="3" id="1:3695894"/>
+        <ScriptAsset name="ans" folderPath="three/addons/libs/draco" codeFileId="1:3695894" groupId="1:3695317" id="1:3695895"/>
+        <LibraryCodeFile componentId="0:2504429" codeFileTypeValue="3" id="1:3695896"/>
+        <ScriptAsset name="attributes_decoder" folderPath="three/addons/libs/draco" codeFileId="1:3695896" groupId="1:3695317" id="1:3695897"/>
+        <LibraryCodeFile componentId="0:2540646" codeFileTypeValue="3" id="1:3695898"/>
+        <ScriptAsset name="bit_decoders" folderPath="three/addons/libs/draco" codeFileId="1:3695898" groupId="1:3695317" id="1:3695899"/>
+        <LibraryCodeFile componentId="0:2545682" codeFileTypeValue="3" id="1:3695900"/>
+        <ScriptAsset name="corner_table" folderPath="three/addons/libs/draco" codeFileId="1:3695900" groupId="1:3695317" id="1:3695901"/>
+        <LibraryCodeFile componentId="0:2555164" codeFileTypeValue="3" id="1:3695902"/>
+        <ScriptAsset name="decoder_buffer" folderPath="three/addons/libs/draco" codeFileId="1:3695902" groupId="1:3695317" id="1:3695903"/>
+        <LibraryCodeFile componentId="0:2561562" codeFileTypeValue="3" id="1:3695904"/>
+        <ScriptAsset name="draco_decoder" folderPath="three/addons/libs/draco" codeFileId="1:3695904" groupId="1:3695317" id="1:3695905"/>
+        <LibraryCodeFile componentId="0:2573783" codeFileTypeValue="3" id="1:3695906"/>
+        <ScriptAsset name="kd_tree_attributes_decoder" folderPath="three/addons/libs/draco" codeFileId="1:3695906" groupId="1:3695317" id="1:3695907"/>
+        <LibraryCodeFile componentId="0:2588125" codeFileTypeValue="3" id="1:3695908"/>
+        <ScriptAsset name="mesh_edgebreaker_decoder" folderPath="three/addons/libs/draco" codeFileId="1:3695908" groupId="1:3695317" id="1:3695909"/>
+        <LibraryCodeFile componentId="0:2630730" codeFileTypeValue="3" id="1:3695910"/>
+        <ScriptAsset name="point_cloud" folderPath="three/addons/libs/draco" codeFileId="1:3695910" groupId="1:3695317" id="1:3695911"/>
+        <LibraryCodeFile componentId="0:2643713" codeFileTypeValue="3" id="1:3695912"/>
+        <ScriptAsset name="point_cloud_decoder" folderPath="three/addons/libs/draco" codeFileId="1:3695912" groupId="1:3695317" id="1:3695913"/>
+        <LibraryCodeFile componentId="0:2654854" codeFileTypeValue="3" id="1:3695914"/>
+        <ScriptAsset name="prediction_schemes" folderPath="three/addons/libs/draco" codeFileId="1:3695914" groupId="1:3695317" id="1:3695915"/>
+        <LibraryCodeFile componentId="0:2692660" codeFileTypeValue="3" id="1:3695916"/>
+        <ScriptAsset name="tex_coords_deprecated" folderPath="three/addons/libs/draco" codeFileId="1:3695916" groupId="1:3695317" id="1:3695917"/>
+        <LibraryCodeFile componentId="0:2700002" codeFileTypeValue="3" id="1:3695918"/>
+        <ScriptAsset name="DRACOLoader" folderPath="three/addons/loaders" codeFileId="1:3695918" groupId="1:3695317" id="1:3695919"/>
+        <LibraryCodeFile componentId="0:2789186" codeFileTypeValue="3" id="1:3695920"/>
+        <ScriptAsset name="Lensflare" folderPath="three/addons/objects" codeFileId="1:3695920" groupId="1:3695317" id="1:3695921"/>
+        <LibraryCodeFile componentId="0:2800896" codeFileTypeValue="3" id="1:3695922"/>
+        <ScriptAsset name="MarchingCubes" folderPath="three/addons/objects" codeFileId="1:3695922" groupId="1:3695317" id="1:3695923"/>
+        <LibraryCodeFile componentId="0:2844239" codeFileTypeValue="3" id="1:3695924"/>
+        <ScriptAsset name="Reflector" folderPath="three/addons/objects" codeFileId="1:3695924" groupId="1:3695317" id="1:3695925"/>
+        <LibraryCodeFile componentId="0:2854821" codeFileTypeValue="3" id="1:3695926"/>
+        <ScriptAsset name="Refractor" folderPath="three/addons/objects" codeFileId="1:3695926" groupId="1:3695317" id="1:3695927"/>
+        <LibraryCodeFile componentId="0:2865136" codeFileTypeValue="3" id="1:3695928"/>
+        <ScriptAsset name="Sky" folderPath="three/addons/objects" codeFileId="1:3695928" groupId="1:3695317" id="1:3695929"/>
+        <LibraryCodeFile componentId="0:2867881" codeFileTypeValue="3" id="1:3695930"/>
+        <ScriptAsset name="Water" folderPath="three/addons/objects" codeFileId="1:3695930" groupId="1:3695317" id="1:3695931"/>
+        <LibraryCodeFile componentId="0:2877683" codeFileTypeValue="3" id="1:3695932"/>
+        <ScriptAsset name="Water2" folderPath="three/addons/objects" codeFileId="1:3695932" groupId="1:3695317" id="1:3695933"/>
+        <LibraryCodeFile componentId="0:2887102" codeFileTypeValue="3" id="1:3695934"/>
+        <ScriptAsset name="WaterRefractionShader" folderPath="three/addons/shaders" codeFileId="1:3695934" groupId="1:3695317" id="1:3695935"/>
+        <LibraryCodeFile componentId="0:2888711" codeFileTypeValue="3" id="1:3695936"/>
+        <ScriptAsset name="Audio" folderPath="three/audio" codeFileId="1:3695936" groupId="1:3695317" id="1:3695937"/>
+        <LibraryCodeFile componentId="0:2903467" codeFileTypeValue="3" id="1:3695938"/>
+        <ScriptAsset name="AudioAnalyser" folderPath="three/audio" codeFileId="1:3695938" groupId="1:3695317" id="1:3695939"/>
+        <LibraryCodeFile componentId="0:2904625" codeFileTypeValue="3" id="1:3695940"/>
+        <ScriptAsset name="AudioContext" folderPath="three/audio" codeFileId="1:3695940" groupId="1:3695317" id="1:3695941"/>
+        <LibraryCodeFile componentId="0:2918233" codeFileTypeValue="3" id="1:3695942"/>
+        <ScriptAsset name="AudioListener" folderPath="three/audio" codeFileId="1:3695942" groupId="1:3695317" id="1:3695943"/>
+        <LibraryCodeFile componentId="0:2921507" codeFileTypeValue="3" id="1:3695944"/>
+        <ScriptAsset name="AudioMath" folderPath="three/audio" codeFileId="1:3695944" groupId="1:3695317" id="1:3695945"/>
+        <LibraryCodeFile componentId="0:2933981" codeFileTypeValue="3" id="1:3695946"/>
+        <ScriptAsset name="AudioMixer" folderPath="three/audio" codeFileId="1:3695946" groupId="1:3695317" id="1:3695947"/>
+        <LibraryCodeFile componentId="0:2966422" codeFileTypeValue="3" id="1:3695948"/>
+        <ScriptAsset name="AudioNodes" folderPath="three/audio" codeFileId="1:3695948" groupId="1:3695317" id="1:3695949"/>
+        <LibraryCodeFile componentId="0:2981247" codeFileTypeValue="3" id="1:3695950"/>
+        <ScriptAsset name="PositionalAudio" folderPath="three/audio" codeFileId="1:3695950" groupId="1:3695317" id="1:3695951"/>
+        <LibraryCodeFile componentId="0:2986333" codeFileTypeValue="3" id="1:3695952"/>
+        <ScriptAsset name="WAV" folderPath="three/audio" codeFileId="1:3695952" groupId="1:3695317" id="1:3695953"/>
+        <LibraryCodeFile componentId="0:3012572" codeFileTypeValue="3" id="1:3695954"/>
+        <ScriptAsset name="AudioLoader" folderPath="three/loaders" codeFileId="1:3695954" groupId="1:3695317" id="1:3695955"/>
+        <LibraryCodeFile componentId="0:3285337" codeFileTypeValue="3" id="1:3695956"/>
+        <ScriptAsset name="ShaderVariants" folderPath="three/renderers/gpu" codeFileId="1:3695956" groupId="1:3695317" id="1:3695957"/>
+        <LibraryCodeFile componentId="0:3303419" codeFileTypeValue="3" id="1:3695958"/>
+        <ScriptAsset name="ArtboardPicker" folderPath="three/rive" codeFileId="1:3695958" groupId="1:3695317" id="1:3695959"/>
+        <LibraryCodeFile componentId="0:3319038" codeFileTypeValue="3" id="1:3695960"/>
+        <ScriptAsset name="GeometryBVH" folderPath="three/rive" codeFileId="1:3695960" groupId="1:3695317" id="1:3695961"/>
+        <LibraryCodeFile componentId="0:3349443" codeFileTypeValue="1" id="1:3695962"/>
+        <ShaderAsset name="three/shaders/objects/lensflare" codeFileId="1:3695962" groupId="1:3695317" id="1:3695963"/>
+        <LibraryCodeFile componentId="0:3352257" codeFileTypeValue="1" id="1:3695964"/>
+        <ShaderAsset name="three/shaders/objects/lensflare_copy" codeFileId="1:3695964" groupId="1:3695317" id="1:3695965"/>
+        <LibraryCodeFile componentId="0:3353658" codeFileTypeValue="1" id="1:3695966"/>
+        <ShaderAsset name="three/shaders/objects/lensflare_occlusion" codeFileId="1:3695966" groupId="1:3695317" id="1:3695967"/>
+        <LibraryCodeFile componentId="0:3354726" codeFileTypeValue="1" id="1:3695968"/>
+        <ShaderAsset name="three/shaders/objects/reflector" codeFileId="1:3695968" groupId="1:3695317" id="1:3695969"/>
+        <LibraryCodeFile componentId="0:3366485" codeFileTypeValue="1" id="1:3695970"/>
+        <ShaderAsset name="three/shaders/objects/refractor" codeFileId="1:3695970" groupId="1:3695317" id="1:3695971"/>
+        <LibraryCodeFile componentId="0:3378246" codeFileTypeValue="1" id="1:3695972"/>
+        <ShaderAsset name="three/shaders/objects/sky" codeFileId="1:3695972" groupId="1:3695317" id="1:3695973"/>
+        <LibraryCodeFile componentId="0:3394026" codeFileTypeValue="1" id="1:3695974"/>
+        <ShaderAsset name="three/shaders/objects/water" codeFileId="1:3695974" groupId="1:3695317" id="1:3695975"/>
+        <LibraryCodeFile componentId="0:3413586" codeFileTypeValue="1" id="1:3695976"/>
+        <ShaderAsset name="three/shaders/objects/water2" codeFileId="1:3695976" groupId="1:3695317" id="1:3695977"/>
+        <LibraryCodeFile componentId="0:3428308" codeFileTypeValue="1" id="1:3695978"/>
+        <ShaderAsset name="three/shaders/objects/water_refraction" codeFileId="1:3695978" groupId="1:3695317" id="1:3695979"/>
+        <LibraryCodeFile componentId="0:4591943" codeFileTypeValue="3" id="1:3695980"/>
+        <ScriptAsset name="RendererData" folderPath="three/core" codeFileId="1:3695980" groupId="1:3695317" id="1:3695981"/>
+        <LibraryCodeFile componentId="0:4921713" codeFileTypeValue="3" id="1:3695982"/>
+        <ScriptAsset name="Disposal" folderPath="three/renderers/gpu" codeFileId="1:3695982" groupId="1:3695317" id="1:3695983"/>
+        <LibraryCodeFile componentId="0:5086151" codeFileTypeValue="3" id="1:3695984"/>
+        <ScriptAsset name="ViewHelper" folderPath="three/addons/helpers" codeFileId="1:3695984" groupId="1:3695317" id="1:3695985"/>
+        <LibraryCodeFile componentId="0:7157484" codeFileTypeValue="3" id="1:3695986"/>
+        <ScriptAsset name="OctreeHelper" folderPath="three/addons/helpers" codeFileId="1:3695986" groupId="1:3695317" id="1:3695987"/>
+        <LibraryCodeFile componentId="0:7238064" codeFileTypeValue="3" id="1:3695988"/>
+        <ScriptAsset name="Capsule" folderPath="three/addons/math" codeFileId="1:3695988" groupId="1:3695317" id="1:3695989"/>
+        <LibraryCodeFile componentId="0:7240852" codeFileTypeValue="3" id="1:3695990"/>
+        <ScriptAsset name="Octree" folderPath="three/addons/math" codeFileId="1:3695990" groupId="1:3695317" id="1:3695991"/>
+        <LibraryCodeFile componentId="0:7268146" codeFileTypeValue="3" id="1:3695992"/>
+        <ScriptAsset name="GPUComputationRenderer" folderPath="three/addons/misc" codeFileId="1:3695992" groupId="1:3695317" id="1:3695993"/>
+        <LibraryCodeFile componentId="0:8265679" codeFileTypeValue="1" id="1:3695994"/>
+        <ShaderAsset name="three/shaders/misc/gpu_computation" codeFileId="1:3695994" groupId="1:3695317" id="1:3695995"/>
     </LibraryAsset>
 </Rive>

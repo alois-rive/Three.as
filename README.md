@@ -81,7 +81,7 @@ packages/gallery/   the gallery and every example, built on the engine
   examples/shared/  what several examples use (the Screen artboard, studio_rgbe.hdr)
   threeas.rml       the engine library import (written by rive library add/update)
   .libraries/       the published engine snapshot the gallery builds against (git-ignored:
-                    `rive library update packages/gallery --uat` downloads it)
+                    `rive library update packages/gallery` downloads it)
 tools/              scripts across both: publishing, screenshots, bench, samples
 docs/               DEVIATIONS.md, PERFORMANCE.md, screenshots
 ```

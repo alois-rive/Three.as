@@ -18,20 +18,23 @@ The repository root is not a Rive project. Each package is one, with its
 own `rive.yaml`, and every `rive` command runs in (or names) a package:
 
 - **`packages/threeas/`**: the engine, published as the Rive library
-  `threeas` (UAT: file 38630, library 761, in project 44599 "Rive Public
-  Libraries"; production: file 2738936 in project 2062040 "Rive Public
-  Libraries", see `packages/threeas/bindings/prod.yaml` and `tools/publish.sh`).
+  `threeas` (production, the default: file 2738936, library 5221, in
+  project 2062040 "Rive Public Libraries", workspace "Rive" 40887; UAT:
+  file 38630, library 761, in project 44599; see
+  `packages/threeas/bindings/` and `tools/publish.sh`).
   `three/` is the library, `tests/` its suites and `tests/fixtures/` the
   blobs they read by file stem. No example or gallery content here.
 - **`packages/gallery/`**: the gallery page (`gallery/`) and the examples
   (`examples/<name>/`: `<name>.as`, `<name>.rml` with its artboards, and
   the assets only it uses; `examples/shared/` for what several use). Bound
-  to the UAT file 38626 and the `threeas` web page.
+  to the production file 2754626 (in project 2062040, next to the library:
+  the only project that may import it, Library Sharing being off) and the
+  `threeas` web page (https://threeas-7ak11s.rive.to, workspace 40887).
 
 The gallery imports the engine as a library, through `threeas.rml` (the
 `LibraryAsset`), `rive.yaml`'s `libraries:` and `.libraries/` (the
 downloaded snapshot of that version; git-ignored, so after a clone run
-`rive library update packages/gallery --uat`: on the newest version it
+`rive library update packages/gallery`: on the newest version it
 only downloads, otherwise it also moves the import, so review the diff).
 Modules are named `lib:threeas/` plus their path in the library:
 
@@ -47,8 +50,8 @@ gallery's `rive.yaml` builds the gallery against the engine sources, so an
 engine edit shows in the gallery without publishing:
 
 - It is honoured only while `packages/threeas/rive.yaml` pushes to the
-  library's file (38630, the UAT binding). Keep that binding committed;
-  `tools/publish.sh` swaps in production's for a production publish.
+  library's file (2738936, the production binding). Keep that binding
+  committed; `tools/publish.sh` swaps in UAT's for a UAT publish.
 - The build says `library override ../threeas provides none of the N
   components`: that line counts markup components; the override's scripts
   and shaders are used all the same.
@@ -234,9 +237,9 @@ release has 131 GLSL shaders (the engine's 112 and the examples' 19).
 
 ```bash
 tools/publish.sh --dry-run                 # print the steps
-tools/publish.sh                           # engine to UAT, then the gallery
-tools/publish.sh --env=prod                # engine to production, then the gallery
-tools/publish.sh --env=both --description="v1.2"
+tools/publish.sh                           # engine to production, then the gallery
+tools/publish.sh --env=uat                 # engine to UAT only
+tools/publish.sh --env=both --description="v1.2"   # both, then the gallery
 tools/publish.sh --no-gallery              # the engine only
 ```
 
@@ -246,12 +249,15 @@ In order: verify and test both packages; release builds and
 (`rive.yaml` has one `push:` binding), create the library file on a first
 publish (`rive push --project=<id>`, its fileId saved to the bindings
 file), and run `rive library publish` (a second time when the first run
-only pushed); put the UAT binding back; then in packages/gallery `rive
-library update --uat`, verify, `rive push --uat` (file 38626) and
-`--publish=web` (from a copy without the override). Commit what it
-changed: `packages/gallery/{threeas.rml,rive.yaml}` (`.libraries/` is ignored) and, if
-production's fileId changes, `packages/threeas/bindings/prod.yaml`.
-The gallery always imports the UAT library.
+only pushed); put the production binding back; then, unless the run is
+UAT only, in packages/gallery `rive library update`, verify, a release
+build and `check_glsl.py`, `rive push` (file 2754626) and `--publish=web`
+to workspace 40887 (from a copy without the override). Commit what it
+changed: `packages/gallery/{threeas.rml,rive.yaml}` (`.libraries/` is
+ignored), any `.rml` ids the push wrote and, if a fileId changes,
+`packages/threeas/bindings/<env>.yaml`. The gallery always imports the
+production library; the UAT page (https://threeas-inksqd.uat.rive.to,
+gallery file 38626) is no longer updated.
 
 ## Notes
 

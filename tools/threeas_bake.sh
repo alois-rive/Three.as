@@ -181,7 +181,7 @@ else
     for f in "$project"/.libraries/*/three_shaders_three.wgsl; do
         [ -f "$f" ] && snapshots+=("$(dirname "$f")")
     done
-    [ ${#snapshots[@]} -gt 0 ] || die "no threeas library in $project/.libraries (rive library update <project> --uat, or pass --engine=DIR)"
+    [ ${#snapshots[@]} -gt 0 ] || die "no threeas library in $project/.libraries (rive library update <project>, or pass --engine=DIR)"
     snapshot="${snapshots[0]}"
     if [ ${#snapshots[@]} -gt 1 ]; then
         used=$(cat_rml_files | tr '\n' ' ' | { grep -o '<LibraryAsset [^>]*>' || true; } | sed -n 's/.* assetId="\([0-9]*\)".*/\1/p')
